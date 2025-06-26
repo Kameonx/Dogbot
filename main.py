@@ -3,6 +3,8 @@ from discord.ext import commands
 import logging
 from dotenv import load_dotenv
 import os
+import asyncio
+from aiohttp import web
 
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
@@ -49,13 +51,13 @@ async def on_message(message):
         await message.channel.send(f'Hello {message.author.name}!')
 
     if message.content.startswith('!help'):
-        await message.channel.send("Available commands: !hello, !help, !dogsrole, !catsrole, !removedogsrole, !removecatsrole")
+        await message.channel.send("Available commands: !hello, !help, !dogsrole, !catsrole, !removedogsrole, !removecatsrole, !poll")
     
     await bot.process_commands(message)
 
 @bot.command()
 async def hello(ctx):
-    await ctx.send(f'Hello {ctx.author.name}!')
+    await ctx.send(f'🐕 Woof woof! Hello {ctx.author.name}!')
 
 @bot.command()
 async def dogsrole(ctx):
@@ -105,6 +107,31 @@ async def poll(ctx, *, question):
     poll_message = await ctx.send(embed=embed)
     await poll_message.add_reaction("👍")
     await poll_message.add_reaction("👎")
-    
 
-bot.run(token, log_handler=handler, log_level=logging.DEBUG)
+# Simple web server for Render
+async def health_check(request):
+    return web.Response(text="Bot is running!")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    
+    port = int(os.environ.get('PORT', 10000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Web server started on port {port}")
+
+async def main():
+    # Start web server
+    await start_web_server()
+    
+    # Start Discord bot
+    if token:
+        await bot.start(token)
+    else:
+        print("No token provided")
+
+if __name__ == "__main__":
+    asyncio.run(main())
