@@ -109,6 +109,9 @@ async def get_ai_response_with_history(user_id: str, prompt: str, max_tokens: in
     
     messages = []
     
+    # Add system message for emoji usage
+    messages.append({"role": "system", "content": "You are a helpful AI assistant. Use emojis frequently in your responses to make them more engaging and fun! 😊🤖✨"})
+    
     # Add chat history for context if enabled
     if use_history:
         history = await get_chat_history(user_id, limit=3)  # Last 3 exchanges
@@ -158,7 +161,10 @@ async def get_ai_response(user_id: str, prompt: str, max_tokens: int = 500) -> s
     
     data = {
         "model": VENICE_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [
+            {"role": "system", "content": "You are a helpful AI assistant. Use emojis frequently in your responses to make them more engaging and fun! 😊🤖✨"},
+            {"role": "user", "content": prompt}
+        ],
         "max_tokens": max_tokens,
         "temperature": 0.7
     }
@@ -185,7 +191,7 @@ async def get_ai_response_with_campaign_history(channel_id: str, user_name: str,
     messages = []
     
     # Add campaign context
-    campaign_context = f"""You are the Dungeon Master for a D&D campaign. Remember all characters, their actions, the story so far, and maintain consistency across the adventure. 
+    campaign_context = f"""You are the Dungeon Master for a D&D campaign. Use emojis frequently to make the adventure more engaging! 🎲⚔️🏰🐉 Remember all characters, their actions, the story so far, and maintain consistency across the adventure. 
 
 Current player: {user_name}"""
     
@@ -388,7 +394,7 @@ async def chat(ctx, *, message):
         return
     
     # Add some personality to the prompt
-    prompt = f"You are a friendly dog bot assistant in a Discord server. Respond naturally and helpfully to: {message}"
+    prompt = f"You are a friendly dog bot assistant in a Discord server. Use emojis frequently and respond naturally and helpfully to: {message}"
     
     async with ctx.typing():
         response = await get_ai_response_with_history(ctx.author.id, prompt, max_tokens=600)
