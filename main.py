@@ -25,6 +25,7 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 dogs_role_name = "Dogs"
 cats_role_name = "Cats"
+lizards_role_name = "Lizards"
 
 # Venice AI Configuration
 VENICE_API_URL = "https://api.venice.ai/api/v1/chat/completions"
@@ -104,7 +105,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help", inline=False)
-    embed.add_field(name="🎭 Roles", value="`!dogsrole` - Get Dogs role\n`!catsrole` - Get Cats role\n`!removedogsrole` - Remove Dogs role\n`!removecatsrole` - Remove Cats role", inline=False)
+    embed.add_field(name="🎭 Roles", value="`!dogsrole` - Get Dogs role\n`!catsrole` - Get Cats role\n`!lizardsrole` - Get Lizards role\n`!removedogsrole` - Remove Dogs role\n`!removecatsrole` - Remove Cats role\n`!removelizardsrole` - Remove Lizards role", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll", inline=False)
     embed.add_field(name="🤖 AI", value="`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI", inline=False)
     await ctx.send(embed=embed)
@@ -126,6 +127,15 @@ async def catsrole(ctx):
         await ctx.send(f"🐱 Assigned {role.name} role to {ctx.author.name}!")
     else:
         await ctx.send("Cats role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def lizardsrole(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
+    if role:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🦎 Assigned {role.name} role to {ctx.author.name}!")
+    else:
+        await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
 
 @bot.command()
 async def removedogsrole(ctx):
@@ -150,6 +160,18 @@ async def removecatsrole(ctx):
             await ctx.send(f"You don't have the {role.name} role to remove.")
     else:
         await ctx.send("Cats role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def removelizardsrole(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
+    if role:
+        if role in ctx.author.roles:
+            await ctx.author.remove_roles(role)
+            await ctx.send(f"🦎 Removed {role.name} role from {ctx.author.name}!")
+        else:
+            await ctx.send(f"You don't have the {role.name} role to remove.")
+    else:
+        await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
 
 @bot.command()
 async def poll(ctx, *, question):
