@@ -683,7 +683,7 @@ async def redo(ctx):
 @bot.command()
 async def roll(ctx):
     """Roll a d20"""
-    roll = random.randint(1, 20)
+    roll_result = random.randint(1, 20)
     
     character_name = user_characters.get(str(ctx.author.id))
     player_display = ctx.author.name
@@ -692,17 +692,52 @@ async def roll(ctx):
     
     embed = discord.Embed(
         title="🎲 D20 Roll",
-        description=f"**{player_display}** rolled: **{roll}**",
+        description=f"**{player_display}** rolled: **{roll_result}**",
         color=discord.Color.gold()
     )
     
     # Add special messages for natural 20s and 1s
-    if roll == 20:
+    if roll_result == 20:
         embed.add_field(name="🌟 Natural 20!", value="Critical Success! ✨", inline=False)
-    elif roll == 1:
+    elif roll_result == 1:
         embed.add_field(name="💥 Natural 1!", value="Critical Failure! 😅", inline=False)
     
     await ctx.send(embed=embed)
+    
+    # Send the roll result to the AI campaign system
+    if venice_api_key:
+        roll_message = f"Rolled a d20 and got: {roll_result}"
+        if roll_result == 20:
+            roll_message += " (Natural 20!)"
+        elif roll_result == 1:
+            roll_message += " (Natural 1!)"
+        
+        async with ctx.typing():
+            ai_response = await get_ai_response_with_campaign_history(
+                str(ctx.channel.id),
+                ctx.author.name,
+                character_name,
+                roll_message,
+                max_tokens=800
+            )
+            
+            # Save the roll and AI response to campaign history
+            await save_campaign_history(
+                str(ctx.channel.id),
+                str(ctx.author.id),
+                ctx.author.name,
+                character_name,
+                roll_message,
+                ai_response
+            )
+            
+            # Send AI's interpretation of the roll
+            if len(ai_response) > 2000:
+                chunks = [ai_response[i:i+2000] for i in range(0, len(ai_response), 2000)]
+                for chunk in chunks:
+                    await ctx.send(chunk)
+            else:
+                await ctx.send(ai_response)
 
 # Simple web server for Render
 async def health_check(request):
