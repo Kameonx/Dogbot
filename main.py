@@ -388,7 +388,7 @@ async def help(ctx):
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll", inline=False)
     embed.add_field(name="🤖 AI", value="`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!history` - View your recent chat history\n`!clearhistory` - Clear your chat history", inline=False)
     embed.add_field(name="🎲 D&D Campaign", value="`!dnd <action>` - Take action in campaign\n`!character <name>` - Set your character name\n`!campaign` - View campaign history\n`!undo` - Undo last campaign action\n`!redo` - Redo last undone action\n`!clearcampaign` - Clear channel campaign", inline=False)
-    embed.add_field(name="🎯 D&D Dice & Rolling", value="`!roll <dice/skill/save>` - Smart dice rolling\n• `!roll 2d6+3` - Roll dice\n• `!roll perception` - Skill check\n• `!roll dex save` - Saving throw\n• `!roll initiative` - Initiative", inline=False)
+    embed.add_field(name="🎯 D&D Dice & Checks", value="`!roll <dice>` - Roll dice (e.g., !roll 2d6+3)\n`!skill <skill>` - Roll skill check\n`!check @user <skill>` - Request skill check\n`!save <ability>` - Roll saving throw", inline=False)
     await ctx.send(embed=embed)
 
 @bot.command()
@@ -750,165 +750,160 @@ async def redo(ctx):
         await ctx.send(f"❌ {message}")
 
 @bot.command()
-async def roll(ctx, *, input_text: str):
-    """Smart rolling! Handles dice (2d6+3), skills (perception), saves (dex save), initiative, and more"""
-    input_lower = input_text.lower().strip()
+async def roll(ctx):
+    """Roll a d20"""
+    roll = random.randint(1, 20)
     
     character_name = user_characters.get(str(ctx.author.id))
     player_display = ctx.author.name
     if character_name:
         player_display += f" ({character_name})"
     
-    # Check for initiative
-    if "initiative" in input_lower or input_lower == "init":
-        roll = random.randint(1, 20)
-        embed = discord.Embed(
-            title="⚔️ Initiative Roll",
-            description=f"**{player_display}** rolled initiative",
-            color=discord.Color.red()
-        )
-        embed.add_field(name="Roll", value=f"d20: **{roll}**", inline=True)
-        
-        if roll == 20:
-            embed.add_field(name="🌟 Natural 20!", value="Lightning reflexes! ⚡", inline=False)
-        elif roll == 1:
-            embed.add_field(name="💥 Natural 1!", value="Caught off guard! 😴", inline=False)
-        
-        await ctx.send(embed=embed)
-        return
-    
-    # Check for saving throws
-    save_patterns = ["save", "saving throw"]
-    is_save = any(pattern in input_lower for pattern in save_patterns)
-    
-    if is_save:
-        # Extract ability from input
-        abilities = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma", 
-                    "str", "dex", "con", "int", "wis", "cha"]
-        ability = None
-        modifier = 0
-        
-        for ab in abilities:
-            if ab in input_lower:
-                ability = ab
-                if ab in ["str", "dex", "con", "int", "wis", "cha"]:
-                    ability_map = {"str": "strength", "dex": "dexterity", "con": "constitution", 
-                                 "int": "intelligence", "wis": "wisdom", "cha": "charisma"}
-                    ability = ability_map[ab]
-                break
-        
-        # Extract modifier if present
-        import re
-        mod_match = re.search(r'([+-]\d+)', input_text)
-        if mod_match:
-            modifier = int(mod_match.group(1))
-        
-        if not ability:
-            await ctx.send("❌ Please specify which ability save (strength, dexterity, constitution, intelligence, wisdom, charisma)")
-            return
-        
-        roll = random.randint(1, 20)
-        total = roll + modifier
-        
-        embed = discord.Embed(
-            title="🛡️ Saving Throw",
-            description=f"**{player_display}** rolled {ability.title()} save",
-            color=discord.Color.green()
-        )
-        
-        if modifier == 0:
-            embed.add_field(name="Roll", value=f"d20: **{roll}**", inline=True)
-        else:
-            embed.add_field(name="Roll", value=f"d20{modifier:+d}: {roll} {modifier:+d} = **{total}**", inline=True)
-        
-        if roll == 20:
-            embed.add_field(name="🌟 Natural 20!", value="Critical Success! ✨", inline=False)
-        elif roll == 1:
-            embed.add_field(name="💥 Natural 1!", value="Critical Failure! 😅", inline=False)
-        
-        await ctx.send(embed=embed)
-        return
-    
-    # Check for skill checks
-    skill_found = None
-    for skill in DND_SKILLS.keys():
-        skill_display = skill.replace("_", " ")
-        if skill in input_lower or skill_display in input_lower:
-            skill_found = skill
-            break
-    
-    if skill_found:
-        # Extract modifier if present
-        import re
-        modifier = 0
-        mod_match = re.search(r'([+-]\d+)', input_text)
-        if mod_match:
-            modifier = int(mod_match.group(1))
-        
-        roll = random.randint(1, 20)
-        total = roll + modifier
-        
-        ability = DND_SKILLS[skill_found].title()
-        skill_display = skill_found.replace("_", " ").title()
-        
-        embed = discord.Embed(
-            title="🎯 Skill Check",
-            description=f"**{player_display}** rolled {skill_display} ({ability})",
-            color=discord.Color.blue()
-        )
-        
-        if modifier == 0:
-            embed.add_field(name="Roll", value=f"d20: **{roll}**", inline=True)
-        else:
-            embed.add_field(name="Roll", value=f"d20{modifier:+d}: {roll} {modifier:+d} = **{total}**", inline=True)
-        
-        if roll == 20:
-            embed.add_field(name="🌟 Natural 20!", value="Critical Success! ✨", inline=False)
-        elif roll == 1:
-            embed.add_field(name="💥 Natural 1!", value="Critical Failure! 😅", inline=False)
-        
-        await ctx.send(embed=embed)
-        return
-    
-    # Default to dice rolling
-    rolls, total, description = roll_dice(input_text)
-    
-    if not rolls:
-        # If dice parsing failed, ask AI to interpret
-        try:
-            prompt = f"🎲 **Dice Roll Interpretation** 🎲\n\nThe user '{ctx.author.name}' wants to roll: '{input_text}'\n\nThis doesn't match standard dice notation, skill names, or save formats. Please interpret what they might want to roll and provide a helpful response with appropriate dice suggestions or clarifications. Be encouraging and offer specific examples!"
-            
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    VENICE_API_URL,
-                    headers={"Authorization": f"Bearer {venice_api_key}"},
-                    json={
-                        "model": "venice-uncensored",
-                        "messages": [
-                            {"role": "system", "content": "You are a helpful D&D assistant that interprets dice rolling requests. Use emojis and be encouraging! Provide specific examples of correct dice notation or skill names."},
-                            {"role": "user", "content": prompt}
-                        ]
-                    }
-                )
-                ai_response = response.json()["choices"][0]["message"]["content"]
-                await ctx.send(ai_response)
-                return
-        except Exception as e:
-            await ctx.send(f"❌ Could not parse '{input_text}' as dice notation, skill, or save. Try examples like:\n• `!roll 2d6+3` (dice)\n• `!roll perception` (skill)\n• `!roll dex save` (saving throw)\n• `!roll initiative`")
-            return
-    
     embed = discord.Embed(
-        title="🎲 Dice Roll",
-        description=f"**{player_display}** rolled: {description}",
+        title="🎲 D20 Roll",
+        description=f"**{player_display}** rolled: **{roll}**",
         color=discord.Color.gold()
     )
     
-    # Add special messages for natural 20s and 1s on d20 rolls
-    if len(rolls) == 1 and input_text.lower().strip() in ['d20', '1d20']:
-        if rolls[0] == 20:
-            embed.add_field(name="🌟 Natural 20!", value="Critical Success! ✨", inline=False)
-        elif rolls[0] == 1:
-            embed.add_field(name="💥 Natural 1!", value="Critical Failure! 😅", inline=False)
+    # Add special messages for natural 20s and 1s
+    if roll == 20:
+        embed.add_field(name="🌟 Natural 20!", value="Critical Success! ✨", inline=False)
+    elif roll == 1:
+        embed.add_field(name="💥 Natural 1!", value="Critical Failure! 😅", inline=False)
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def skill(ctx, skill_name: str, modifier: int = 0):
+    """Roll a skill check (e.g., !skill perception, !skill athletics +5)"""
+    skill_name = skill_name.lower().replace(" ", "_")
+    
+    if skill_name not in DND_SKILLS:
+        available_skills = ", ".join(DND_SKILLS.keys())
+        await ctx.send(f"❌ Unknown skill: {skill_name}\n**Available skills:** {available_skills}")
+        return
+    
+    # Roll d20 + modifier
+    roll = random.randint(1, 20)
+    total = roll + modifier
+    
+    character_name = user_characters.get(str(ctx.author.id))
+    player_display = ctx.author.name
+    if character_name:
+        player_display += f" ({character_name})"
+    
+    ability = DND_SKILLS[skill_name].title()
+    skill_display = skill_name.replace("_", " ").title()
+    
+    embed = discord.Embed(
+        title="🎯 Skill Check",
+        description=f"**{player_display}** rolled {skill_display} ({ability})",
+        color=discord.Color.blue()
+    )
+    
+    if modifier == 0:
+        embed.add_field(name="Roll", value=f"d20: **{roll}**", inline=True)
+    else:
+        embed.add_field(name="Roll", value=f"d20{modifier:+d}: {roll} {modifier:+d} = **{total}**", inline=True)
+    
+    # Add special messages for natural 20s and 1s
+    if roll == 20:
+        embed.add_field(name="🌟 Natural 20!", value="Critical Success! ✨", inline=False)
+    elif roll == 1:
+        embed.add_field(name="💥 Natural 1!", value="Critical Failure! 😅", inline=False)
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def save(ctx, ability: str, modifier: int = 0):
+    """Roll a saving throw (e.g., !save dexterity, !save wisdom +3)"""
+    ability = ability.lower()
+    valid_abilities = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"]
+    
+    if ability not in valid_abilities:
+        await ctx.send(f"❌ Unknown ability: {ability}\n**Valid abilities:** {', '.join(valid_abilities)}")
+        return
+    
+    # Roll d20 + modifier
+    roll = random.randint(1, 20)
+    total = roll + modifier
+    
+    character_name = user_characters.get(str(ctx.author.id))
+    player_display = ctx.author.name
+    if character_name:
+        player_display += f" ({character_name})"
+    
+    embed = discord.Embed(
+        title="🛡️ Saving Throw",
+        description=f"**{player_display}** rolled {ability.title()} save",
+        color=discord.Color.green()
+    )
+    
+    if modifier == 0:
+        embed.add_field(name="Roll", value=f"d20: **{roll}**", inline=True)
+    else:
+        embed.add_field(name="Roll", value=f"d20{modifier:+d}: {roll} {modifier:+d} = **{total}**", inline=True)
+    
+    # Add special messages for natural 20s and 1s
+    if roll == 20:
+        embed.add_field(name="🌟 Natural 20!", value="Critical Success! ✨", inline=False)
+    elif roll == 1:
+        embed.add_field(name="💥 Natural 1!", value="Critical Failure! 😅", inline=False)
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def check(ctx, user: discord.Member, skill_name: str, dc: int | None = None):
+    """Request a skill check from a specific player (DM command)"""
+    skill_name = skill_name.lower().replace(" ", "_")
+    
+    if skill_name not in DND_SKILLS:
+        available_skills = ", ".join(DND_SKILLS.keys())
+        await ctx.send(f"❌ Unknown skill: {skill_name}\n**Available skills:** {available_skills}")
+        return
+    
+    ability = DND_SKILLS[skill_name].title()
+    skill_display = skill_name.replace("_", " ").title()
+    
+    embed = discord.Embed(
+        title="🎯 Skill Check Request",
+        description=f"**{ctx.author.name}** requests a {skill_display} ({ability}) check from {user.mention}!",
+        color=discord.Color.orange()
+    )
+    
+    if dc:
+        embed.add_field(name="Difficulty Class (DC)", value=f"**{dc}**", inline=True)
+    
+    embed.add_field(
+        name="How to roll", 
+        value=f"Use `!skill {skill_name}` or `!skill {skill_name} +modifier`", 
+        inline=False
+    )
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def initiative(ctx):
+    """Roll initiative for combat"""
+    roll = random.randint(1, 20)
+    
+    character_name = user_characters.get(str(ctx.author.id))
+    player_display = ctx.author.name
+    if character_name:
+        player_display += f" ({character_name})"
+    
+    embed = discord.Embed(
+        title="⚔️ Initiative Roll",
+        description=f"**{player_display}** rolled initiative",
+        color=discord.Color.red()
+    )
+    
+    embed.add_field(name="Roll", value=f"d20: **{roll}**", inline=True)
+    
+    if roll == 20:
+        embed.add_field(name="🌟 Natural 20!", value="Lightning reflexes! ⚡", inline=False)
+    elif roll == 1:
+        embed.add_field(name="💥 Natural 1!", value="Caught off guard! 😴", inline=False)
     
     await ctx.send(embed=embed)
 
