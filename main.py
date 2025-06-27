@@ -7,6 +7,8 @@ import asyncio
 from aiohttp import web
 import httpx
 import json
+import aiosqlite
+from datetime import datetime
 
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
@@ -31,8 +33,121 @@ lizards_role_name = "Lizards"
 VENICE_API_URL = "https://api.venice.ai/api/v1/chat/completions"
 VENICE_MODEL = "venice-uncensored"
 
-async def get_ai_response(prompt: str, max_tokens: int = 500) -> str:
-    """Get response from Venice AI"""
+# Database setup
+async def init_database():
+    """Initialize the chat history database"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS chat_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                user_name TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                message TEXT NOT NULL,
+                response TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Create campaign table for shared D&D sessions
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS campaign_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                user_name TEXT NOT NULL,
+                character_name TEXT,
+                message TEXT NOT NULL,
+                response TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await db.commit()
+
+async def save_chat_history(user_id: str, user_name: str, channel_id: str, message: str, response: str):
+    """Save chat interaction to database"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        await db.execute(
+            "INSERT INTO chat_history (user_id, user_name, channel_id, message, response) VALUES (?, ?, ?, ?, ?)",
+            (user_id, user_name, channel_id, message, response)
+        )
+        await db.commit()
+
+async def save_campaign_history(channel_id: str, user_id: str, user_name: str, character_name: str | None, message: str, response: str):
+    """Save campaign interaction to shared channel history"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        await db.execute(
+            "INSERT INTO campaign_history (channel_id, user_id, user_name, character_name, message, response) VALUES (?, ?, ?, ?, ?, ?)",
+            (channel_id, user_id, user_name, character_name, message, response)
+        )
+        await db.commit()
+
+async def get_chat_history(user_id: str, limit: int = 5):
+    """Get recent chat history for a user (for context)"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        cursor = await db.execute(
+            "SELECT message, response FROM chat_history WHERE user_id = ? ORDER BY timestamp ASC LIMIT ?",
+            (user_id, limit)
+        )
+        rows = await cursor.fetchall()
+        return [(str(row[0]), str(row[1])) for row in rows]
+
+async def get_campaign_history(channel_id: str, limit: int = 10):
+    """Get recent campaign history for a channel (shared between all players)"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        cursor = await db.execute(
+            "SELECT user_name, character_name, message, response FROM campaign_history WHERE channel_id = ? ORDER BY timestamp ASC LIMIT ?",
+            (channel_id, limit)
+        )
+        rows = await cursor.fetchall()
+        return [(str(row[0]), str(row[1]) if row[1] else None, str(row[2]), str(row[3])) for row in rows]
+
+async def get_ai_response_with_history(user_id: str, prompt: str, max_tokens: int = 500, use_history: bool = True) -> str:
+    """Get response from Venice AI with chat history context"""
+    if not venice_api_key:
+        return "AI features are disabled. Please set VENICE_API_KEY environment variable."
+    
+    messages = []
+    
+    # Add chat history for context if enabled
+    if use_history:
+        history = await get_chat_history(user_id, limit=3)  # Last 3 exchanges
+        for user_msg, ai_response in history:
+            messages.append({"role": "user", "content": user_msg})
+            messages.append({"role": "assistant", "content": ai_response})
+    
+    # Add current message
+    messages.append({"role": "user", "content": prompt})
+    
+    headers = {
+        "Authorization": f"Bearer {venice_api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": VENICE_MODEL,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": 0.7
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(VENICE_API_URL, headers=headers, json=data)
+            response.raise_for_status()
+            
+            result = response.json()
+            return result["choices"][0]["message"]["content"].strip()
+    except httpx.TimeoutException:
+        return "⏰ AI response timed out. Please try again."
+    except httpx.HTTPStatusError as e:
+        return f"❌ AI service error: {e.response.status_code}"
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+# Keep the old function for compatibility
+async def get_ai_response(user_id: str, prompt: str, max_tokens: int = 500) -> str:
+    """Get response from Venice AI, without chat history context"""
     if not venice_api_key:
         return "AI features are disabled. Please set VENICE_API_KEY environment variable."
     
@@ -43,11 +158,69 @@ async def get_ai_response(prompt: str, max_tokens: int = 500) -> str:
     
     data = {
         "model": VENICE_MODEL,
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
+        "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
         "temperature": 0.7
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(VENICE_API_URL, headers=headers, json=data)
+            response.raise_for_status()
+            
+            result = response.json()
+            return result["choices"][0]["message"]["content"].strip()
+    except httpx.TimeoutException:
+        return "⏰ AI response timed out. Please try again."
+    except httpx.HTTPStatusError as e:
+        return f"❌ AI service error: {e.response.status_code}"
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+async def get_ai_response_with_campaign_history(channel_id: str, user_name: str, character_name: str | None, prompt: str, max_tokens: int = 500) -> str:
+    """Get response from Venice AI using shared campaign history"""
+    if not venice_api_key:
+        return "AI features are disabled. Please set VENICE_API_KEY environment variable."
+    
+    messages = []
+    
+    # Add campaign context
+    campaign_context = f"""You are the Dungeon Master for a D&D campaign. Remember all characters, their actions, the story so far, and maintain consistency across the adventure. 
+
+Current player: {user_name}"""
+    
+    if character_name:
+        campaign_context += f" (playing as {character_name})"
+    
+    messages.append({"role": "system", "content": campaign_context})
+    
+    # Add campaign history for context
+    history = await get_campaign_history(channel_id, limit=8)  # More history for campaigns
+    for player_name, char_name, user_msg, ai_response in history:
+        player_display = f"{player_name}"
+        if char_name:
+            player_display += f" ({char_name})"
+        
+        messages.append({"role": "user", "content": f"{player_display}: {user_msg}"})
+        messages.append({"role": "assistant", "content": ai_response})
+    
+    # Add current message
+    current_player = f"{user_name}"
+    if character_name:
+        current_player += f" ({character_name})"
+    
+    messages.append({"role": "user", "content": f"{current_player}: {prompt}"})
+    
+    headers = {
+        "Authorization": f"Bearer {venice_api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": VENICE_MODEL,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": 0.8  # Slightly higher for creativity in storytelling
     }
     
     try:
@@ -70,6 +243,10 @@ async def on_ready():
         print(f"We are ready to go in, {bot.user.name}")
     else:
         print("We are ready to go in, but bot.user is None")
+    
+    # Initialize database
+    await init_database()
+    print("Chat history database initialized")
 
 @bot.event
 async def on_member_join(member):
@@ -107,7 +284,8 @@ async def help(ctx):
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help", inline=False)
     embed.add_field(name="🎭 Roles", value="`!dogsrole` - Get Dogs role\n`!catsrole` - Get Cats role\n`!lizardsrole` - Get Lizards role\n`!removedogsrole` - Remove Dogs role\n`!removecatsrole` - Remove Cats role\n`!removelizardsrole` - Remove Lizards role", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll", inline=False)
-    embed.add_field(name="🤖 AI", value="`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI", inline=False)
+    embed.add_field(name="🤖 AI", value="`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!history` - View your recent chat history\n`!clearhistory` - Clear your chat history", inline=False)
+    embed.add_field(name="🎲 D&D Campaign", value="`!dnd <action>` - Take action in campaign\n`!character <name>` - Set your character name\n`!campaign` - View campaign history\n`!clearcampaign` - Clear channel campaign", inline=False)
     await ctx.send(embed=embed)
 
 @bot.command()
@@ -189,7 +367,10 @@ async def ask(ctx, *, question):
     
     # Show typing indicator
     async with ctx.typing():
-        response = await get_ai_response(question, max_tokens=800)
+        response = await get_ai_response_with_history(ctx.author.id, question, max_tokens=800)
+    
+    # Save to chat history
+    await save_chat_history(ctx.author.id, ctx.author.name, ctx.channel.id, question, response)
     
     # Split long responses if needed
     if len(response) > 2000:
@@ -210,7 +391,10 @@ async def chat(ctx, *, message):
     prompt = f"You are a friendly dog bot assistant in a Discord server. Respond naturally and helpfully to: {message}"
     
     async with ctx.typing():
-        response = await get_ai_response(prompt, max_tokens=600)
+        response = await get_ai_response_with_history(ctx.author.id, prompt, max_tokens=600)
+    
+    # Save to chat history
+    await save_chat_history(ctx.author.id, ctx.author.name, ctx.channel.id, message, response)
     
     # Split long responses if needed  
     if len(response) > 2000:
@@ -219,6 +403,132 @@ async def chat(ctx, *, message):
             await ctx.send(chunk)
     else:
         await ctx.send(response)
+
+@bot.command()
+async def history(ctx):
+    """View your recent chat history"""
+    history = await get_chat_history(str(ctx.author.id), limit=5)
+    
+    if not history:
+        await ctx.send("📭 You don't have any chat history yet! Use `!chat` or `!ask` to start chatting.")
+        return
+    
+    embed = discord.Embed(
+        title=f"📚 Chat History for {ctx.author.name}",
+        description="Your recent AI conversations:",
+        color=discord.Color.green()
+    )
+    
+    for i, (user_msg, ai_response) in enumerate(history, 1):
+        # Truncate long messages for display
+        user_display = user_msg[:100] + "..." if len(user_msg) > 100 else user_msg
+        ai_display = ai_response[:100] + "..." if len(ai_response) > 100 else ai_response
+        
+        embed.add_field(
+            name=f"💬 Exchange {i}",
+            value=f"**You:** {user_display}\n**AI:** {ai_display}",
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def clearhistory(ctx):
+    """Clear your chat history"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        await db.execute("DELETE FROM chat_history WHERE user_id = ?", (str(ctx.author.id),))
+        await db.commit()
+    
+    await ctx.send("🗑️ Your chat history has been cleared!")
+
+user_characters = {}  # In-memory store for user characters
+
+@bot.command()
+async def character(ctx, *, name):
+    """Set your character name for D&D campaigns"""
+    user_characters[str(ctx.author.id)] = name
+    await ctx.send(f"🎭 Character set! You are now playing as **{name}**")
+
+@bot.command()
+async def dnd(ctx, *, action):
+    """Take an action in the D&D campaign"""
+    if not venice_api_key:
+        await ctx.send("❌ AI features are disabled. Please contact the bot owner to set up Venice API key.")
+        return
+    
+    character_name = user_characters.get(str(ctx.author.id))
+    
+    async with ctx.typing():
+        response = await get_ai_response_with_campaign_history(
+            str(ctx.channel.id), 
+            ctx.author.name, 
+            character_name, 
+            action, 
+            max_tokens=1000
+        )
+    
+    # Save to campaign history
+    await save_campaign_history(
+        str(ctx.channel.id), 
+        str(ctx.author.id), 
+        ctx.author.name, 
+        character_name, 
+        action, 
+        response
+    )
+    
+    # Split long responses if needed
+    if len(response) > 2000:
+        chunks = [response[i:i+2000] for i in range(0, len(response), 2000)]
+        for chunk in chunks:
+            await ctx.send(chunk)
+    else:
+        await ctx.send(response)
+
+@bot.command()
+async def campaign(ctx):
+    """View the campaign history for this channel"""
+    history = await get_campaign_history(str(ctx.channel.id), limit=8)
+    
+    if not history:
+        await ctx.send("📜 No campaign history in this channel yet! Use `!dnd <action>` to start your adventure.")
+        return
+    
+    embed = discord.Embed(
+        title="📜 Campaign History",
+        description="Recent events in your D&D adventure:",
+        color=discord.Color.purple()
+    )
+    
+    for i, (player_name, char_name, action, response) in enumerate(history, 1):
+        player_display = player_name
+        if char_name:
+            player_display += f" ({char_name})"
+        
+        # Truncate for display
+        action_display = action[:150] + "..." if len(action) > 150 else action
+        response_display = response[:200] + "..." if len(response) > 200 else response
+        
+        embed.add_field(
+            name=f"🎲 Scene {i}",
+            value=f"**{player_display}:** {action_display}\n**DM:** {response_display}",
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def clearcampaign(ctx):
+    """Clear the campaign history for this channel (requires manage_messages permission)"""
+    if not ctx.author.guild_permissions.manage_messages:
+        await ctx.send("❌ You need 'Manage Messages' permission to clear campaign history.")
+        return
+    
+    async with aiosqlite.connect("chat_history.db") as db:
+        await db.execute("DELETE FROM campaign_history WHERE channel_id = ?", (str(ctx.channel.id),))
+        await db.commit()
+    
+    await ctx.send("🗑️ Campaign history for this channel has been cleared! Time for a new adventure! 🎲")
 
 # Simple web server for Render
 async def health_check(request):
@@ -236,6 +546,9 @@ async def start_web_server():
     print(f"Web server started on port {port}")
 
 async def main():
+    # Initialize database
+    await init_database()
+    
     # Start web server
     await start_web_server()
     
