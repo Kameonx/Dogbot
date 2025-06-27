@@ -59,6 +59,17 @@ async def init_database():
                 character_name TEXT,
                 message TEXT NOT NULL,
                 response TEXT NOT NULL,
+                is_active INTEGER DEFAULT 1,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Create undo stack table
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS undo_stack (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                action_id INTEGER NOT NULL,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -73,14 +84,15 @@ async def save_chat_history(user_id: str, user_name: str, channel_id: str, messa
         )
         await db.commit()
 
-async def save_campaign_history(channel_id: str, user_id: str, user_name: str, character_name: str | None, message: str, response: str):
-    """Save campaign interaction to shared channel history"""
+async def save_campaign_history(channel_id: str, user_id: str, user_name: str, character_name: str | None, message: str, response: str) -> int:
+    """Save campaign interaction to shared channel history, returns the action ID"""
     async with aiosqlite.connect("chat_history.db") as db:
-        await db.execute(
-            "INSERT INTO campaign_history (channel_id, user_id, user_name, character_name, message, response) VALUES (?, ?, ?, ?, ?, ?)",
+        cursor = await db.execute(
+            "INSERT INTO campaign_history (channel_id, user_id, user_name, character_name, message, response, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)",
             (channel_id, user_id, user_name, character_name, message, response)
         )
         await db.commit()
+        return cursor.lastrowid or 0
 
 async def get_chat_history(user_id: str, limit: int = 5):
     """Get recent chat history for a user (for context)"""
@@ -93,14 +105,96 @@ async def get_chat_history(user_id: str, limit: int = 5):
         return [(str(row[0]), str(row[1])) for row in rows]
 
 async def get_campaign_history(channel_id: str, limit: int = 10):
-    """Get recent campaign history for a channel (shared between all players)"""
+    """Get recent campaign history for a channel (shared between all players) - only active actions"""
     async with aiosqlite.connect("chat_history.db") as db:
         cursor = await db.execute(
-            "SELECT user_name, character_name, message, response FROM campaign_history WHERE channel_id = ? ORDER BY timestamp ASC LIMIT ?",
+            "SELECT user_name, character_name, message, response FROM campaign_history WHERE channel_id = ? AND is_active = 1 ORDER BY timestamp ASC LIMIT ?",
             (channel_id, limit)
         )
         rows = await cursor.fetchall()
         return [(str(row[0]), str(row[1]) if row[1] else None, str(row[2]), str(row[3])) for row in rows]
+
+async def undo_last_action(channel_id: str) -> tuple[bool, str]:
+    """Undo the last action in the campaign. Returns (success, message)"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        # Get the last active action
+        cursor = await db.execute(
+            "SELECT id, user_name, character_name, message FROM campaign_history WHERE channel_id = ? AND is_active = 1 ORDER BY timestamp DESC LIMIT 1",
+            (channel_id,)
+        )
+        row = await cursor.fetchone()
+        
+        if not row:
+            return False, "No actions to undo!"
+        
+        action_id, user_name, char_name, action = row
+        
+        # Mark the action as inactive
+        await db.execute(
+            "UPDATE campaign_history SET is_active = 0 WHERE id = ?",
+            (action_id,)
+        )
+        
+        # Add to undo stack
+        await db.execute(
+            "INSERT INTO undo_stack (channel_id, action_id) VALUES (?, ?)",
+            (channel_id, action_id)
+        )
+        
+        await db.commit()
+        
+        player_display = user_name
+        if char_name:
+            player_display += f" ({char_name})"
+        
+        return True, f"Undone action by {player_display}: {action[:100]}..."
+
+async def redo_last_undo(channel_id: str) -> tuple[bool, str]:
+    """Redo the last undone action. Returns (success, message)"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        # Get the most recent undo
+        cursor = await db.execute(
+            "SELECT action_id FROM undo_stack WHERE channel_id = ? ORDER BY timestamp DESC LIMIT 1",
+            (channel_id,)
+        )
+        row = await cursor.fetchone()
+        
+        if not row:
+            return False, "No actions to redo!"
+        
+        action_id = row[0]
+        
+        # Get action details
+        cursor = await db.execute(
+            "SELECT user_name, character_name, message FROM campaign_history WHERE id = ?",
+            (action_id,)
+        )
+        action_row = await cursor.fetchone()
+        
+        if not action_row:
+            return False, "Action not found!"
+        
+        user_name, char_name, action = action_row
+        
+        # Reactivate the action
+        await db.execute(
+            "UPDATE campaign_history SET is_active = 1 WHERE id = ?",
+            (action_id,)
+        )
+        
+        # Remove from undo stack
+        await db.execute(
+            "DELETE FROM undo_stack WHERE channel_id = ? AND action_id = ?",
+            (channel_id, action_id)
+        )
+        
+        await db.commit()
+        
+        player_display = user_name
+        if char_name:
+            player_display += f" ({char_name})"
+        
+        return True, f"Redone action by {player_display}: {action[:100]}..."
 
 async def get_ai_response_with_history(user_id: str, prompt: str, max_tokens: int = 500, use_history: bool = True) -> str:
     """Get response from Venice AI with chat history context"""
@@ -291,7 +385,7 @@ async def help(ctx):
     embed.add_field(name="🎭 Roles", value="`!dogsrole` - Get Dogs role\n`!catsrole` - Get Cats role\n`!lizardsrole` - Get Lizards role\n`!removedogsrole` - Remove Dogs role\n`!removecatsrole` - Remove Cats role\n`!removelizardsrole` - Remove Lizards role", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll", inline=False)
     embed.add_field(name="🤖 AI", value="`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!history` - View your recent chat history\n`!clearhistory` - Clear your chat history", inline=False)
-    embed.add_field(name="🎲 D&D Campaign", value="`!dnd <action>` - Take action in campaign\n`!character <name>` - Set your character name\n`!campaign` - View campaign history\n`!clearcampaign` - Clear channel campaign", inline=False)
+    embed.add_field(name="🎲 D&D Campaign", value="`!dnd <action>` - Take action in campaign\n`!character <name>` - Set your character name\n`!campaign` - View campaign history\n`!undo` - Undo last campaign action\n`!redo` - Redo last undone action\n`!clearcampaign` - Clear channel campaign", inline=False)
     await ctx.send(embed=embed)
 
 @bot.command()
@@ -474,7 +568,7 @@ async def dnd(ctx, *, action):
         )
     
     # Save to campaign history
-    await save_campaign_history(
+    action_id = await save_campaign_history(
         str(ctx.channel.id), 
         str(ctx.author.id), 
         ctx.author.name, 
@@ -535,6 +629,52 @@ async def clearcampaign(ctx):
         await db.commit()
     
     await ctx.send("🗑️ Campaign history for this channel has been cleared! Time for a new adventure! 🎲")
+
+@bot.command()
+async def undo(ctx):
+    """Undo the last action in the D&D campaign"""
+    success, message = await undo_last_action(str(ctx.channel.id))
+    
+    if success:
+        await ctx.send(f"⏪ {message}")
+        
+        # Let the AI know about the undo
+        if venice_api_key:
+            async with ctx.typing():
+                undo_prompt = f"The last action has been undone. Please acknowledge this and continue the story from the previous state."
+                ai_response = await get_ai_response_with_campaign_history(
+                    str(ctx.channel.id),
+                    "Dungeon Master",
+                    None,
+                    undo_prompt,
+                    max_tokens=300
+                )
+                await ctx.send(ai_response)
+    else:
+        await ctx.send(f"❌ {message}")
+
+@bot.command()
+async def redo(ctx):
+    """Redo the last undone action in the D&D campaign"""
+    success, message = await redo_last_undo(str(ctx.channel.id))
+    
+    if success:
+        await ctx.send(f"⏩ {message}")
+        
+        # Let the AI know about the redo
+        if venice_api_key:
+            async with ctx.typing():
+                redo_prompt = f"The previously undone action has been restored. Please acknowledge this and continue the story."
+                ai_response = await get_ai_response_with_campaign_history(
+                    str(ctx.channel.id),
+                    "Dungeon Master", 
+                    None,
+                    redo_prompt,
+                    max_tokens=300
+                )
+                await ctx.send(ai_response)
+    else:
+        await ctx.send(f"❌ {message}")
 
 # Simple web server for Render
 async def health_check(request):
