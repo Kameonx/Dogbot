@@ -10,7 +10,6 @@ import json
 import aiosqlite
 from datetime import datetime
 import random
-import re
 
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
