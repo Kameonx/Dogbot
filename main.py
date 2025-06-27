@@ -29,6 +29,10 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 dogs_role_name = "Dogs"
 cats_role_name = "Cats"
 lizards_role_name = "Lizards"
+dnd_role_name = "DND"
+dnd1_role_name = "DND1"
+dnd2_role_name = "DND2"
+dnd3_role_name = "DND3"
 
 # Venice AI Configuration
 VENICE_API_URL = "https://api.venice.ai/api/v1/chat/completions"
@@ -65,25 +69,40 @@ async def init_database():
             )
         """)
         
-        # Create undo stack table
+        # Create undo stack table for universal undo/redo
         await db.execute("""
             CREATE TABLE IF NOT EXISTS undo_stack (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 channel_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                action_type TEXT NOT NULL,  -- 'chat' or 'campaign'
                 action_id INTEGER NOT NULL,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        
+        # Migration: Add user_id and action_type columns to existing undo_stack if they don't exist
+        try:
+            await db.execute("ALTER TABLE undo_stack ADD COLUMN user_id TEXT")
+        except:
+            pass  # Column already exists
+        
+        try:
+            await db.execute("ALTER TABLE undo_stack ADD COLUMN action_type TEXT DEFAULT 'campaign'")
+        except:
+            pass  # Column already exists
+            
         await db.commit()
 
-async def save_chat_history(user_id: str, user_name: str, channel_id: str, message: str, response: str):
-    """Save chat interaction to database"""
+async def save_chat_history(user_id: str, user_name: str, channel_id: str, message: str, response: str) -> int:
+    """Save chat interaction to database, returns the action ID"""
     async with aiosqlite.connect("chat_history.db") as db:
-        await db.execute(
+        cursor = await db.execute(
             "INSERT INTO chat_history (user_id, user_name, channel_id, message, response) VALUES (?, ?, ?, ?, ?)",
             (user_id, user_name, channel_id, message, response)
         )
         await db.commit()
+        return cursor.lastrowid or 0
 
 async def save_campaign_history(channel_id: str, user_id: str, user_name: str, character_name: str | None, message: str, response: str) -> int:
     """Save campaign interaction to shared channel history, returns the action ID"""
@@ -115,87 +134,137 @@ async def get_campaign_history(channel_id: str, limit: int = 10):
         rows = await cursor.fetchall()
         return [(str(row[0]), str(row[1]) if row[1] else None, str(row[2]), str(row[3])) for row in rows]
 
-async def undo_last_action(channel_id: str) -> tuple[bool, str]:
-    """Undo the last action in the campaign. Returns (success, message)"""
+async def undo_last_action(channel_id: str, user_id: str) -> tuple[bool, str]:
+    """Undo the last action (chat or campaign) by the user in the channel. Returns (success, message)"""
     async with aiosqlite.connect("chat_history.db") as db:
-        # Get the last active action
+        # Try campaign action first (most recent)
         cursor = await db.execute(
-            "SELECT id, user_name, character_name, message FROM campaign_history WHERE channel_id = ? AND is_active = 1 ORDER BY timestamp DESC LIMIT 1",
-            (channel_id,)
+            "SELECT id, user_name, character_name, message FROM campaign_history WHERE channel_id = ? AND user_id = ? AND is_active = 1 ORDER BY timestamp DESC LIMIT 1",
+            (channel_id, user_id)
         )
-        row = await cursor.fetchone()
+        campaign_row = await cursor.fetchone()
         
-        if not row:
+        # Try chat action
+        cursor = await db.execute(
+            "SELECT id, user_name, message FROM chat_history WHERE channel_id = ? AND user_id = ? ORDER BY timestamp DESC LIMIT 1",
+            (channel_id, user_id)
+        )
+        chat_row = await cursor.fetchone()
+        
+        campaign_action = None
+        chat_action = None
+        
+        if campaign_row:
+            campaign_action = {
+                'id': campaign_row[0],
+                'user_name': campaign_row[1],
+                'character_name': campaign_row[2],
+                'message': campaign_row[3],
+                'type': 'campaign'
+            }
+        
+        if chat_row:
+            chat_action = {
+                'id': chat_row[0],
+                'user_name': chat_row[1],
+                'message': chat_row[2],
+                'type': 'chat'
+            }
+        
+        # Choose the most recent action (simplified - assumes IDs are sequential)
+        action_to_undo = None
+        if campaign_action and chat_action:
+            action_to_undo = campaign_action if campaign_action['id'] > chat_action['id'] else chat_action
+        elif campaign_action:
+            action_to_undo = campaign_action
+        elif chat_action:
+            action_to_undo = chat_action
+        
+        if not action_to_undo:
             return False, "No actions to undo!"
         
-        action_id, user_name, char_name, action = row
-        
-        # Mark the action as inactive
-        await db.execute(
-            "UPDATE campaign_history SET is_active = 0 WHERE id = ?",
-            (action_id,)
-        )
+        if action_to_undo['type'] == 'campaign':
+            # Mark campaign action as inactive
+            await db.execute(
+                "UPDATE campaign_history SET is_active = 0 WHERE id = ?",
+                (action_to_undo['id'],)
+            )
+            
+            player_display = action_to_undo['user_name']
+            if action_to_undo['character_name']:
+                player_display += f" ({action_to_undo['character_name']})"
+            
+            message = f"Undone campaign action by {player_display}: {action_to_undo['message'][:100]}..."
+        else:
+            # Delete chat action
+            await db.execute(
+                "DELETE FROM chat_history WHERE id = ?",
+                (action_to_undo['id'],)
+            )
+            
+            message = f"Undone chat message by {action_to_undo['user_name']}: {action_to_undo['message'][:100]}..."
         
         # Add to undo stack
         await db.execute(
-            "INSERT INTO undo_stack (channel_id, action_id) VALUES (?, ?)",
-            (channel_id, action_id)
+            "INSERT INTO undo_stack (channel_id, user_id, action_type, action_id) VALUES (?, ?, ?, ?)",
+            (channel_id, user_id, action_to_undo['type'], action_to_undo['id'])
         )
         
         await db.commit()
-        
-        player_display = user_name
-        if char_name:
-            player_display += f" ({char_name})"
-        
-        return True, f"Undone action by {player_display}: {action[:100]}..."
+        return True, message
 
-async def redo_last_undo(channel_id: str) -> tuple[bool, str]:
-    """Redo the last undone action. Returns (success, message)"""
+async def redo_last_undo(channel_id: str, user_id: str) -> tuple[bool, str]:
+    """Redo the last undone action by the user. Returns (success, message)"""
     async with aiosqlite.connect("chat_history.db") as db:
-        # Get the most recent undo
+        # Get the most recent undo by this user
         cursor = await db.execute(
-            "SELECT action_id FROM undo_stack WHERE channel_id = ? ORDER BY timestamp DESC LIMIT 1",
-            (channel_id,)
+            "SELECT action_type, action_id FROM undo_stack WHERE channel_id = ? AND user_id = ? ORDER BY timestamp DESC LIMIT 1",
+            (channel_id, user_id)
         )
         row = await cursor.fetchone()
         
         if not row:
             return False, "No actions to redo!"
         
-        action_id = row[0]
+        action_type, action_id = row
         
-        # Get action details
-        cursor = await db.execute(
-            "SELECT user_name, character_name, message FROM campaign_history WHERE id = ?",
-            (action_id,)
-        )
-        action_row = await cursor.fetchone()
-        
-        if not action_row:
-            return False, "Action not found!"
-        
-        user_name, char_name, action = action_row
-        
-        # Reactivate the action
-        await db.execute(
-            "UPDATE campaign_history SET is_active = 1 WHERE id = ?",
-            (action_id,)
-        )
+        if action_type == 'campaign':
+            # Get campaign action details
+            cursor = await db.execute(
+                "SELECT user_name, character_name, message FROM campaign_history WHERE id = ?",
+                (action_id,)
+            )
+            action_row = await cursor.fetchone()
+            
+            if not action_row:
+                return False, "Action not found!"
+            
+            user_name, char_name, action = action_row
+            
+            # Reactivate the action
+            await db.execute(
+                "UPDATE campaign_history SET is_active = 1 WHERE id = ?",
+                (action_id,)
+            )
+            
+            player_display = user_name
+            if char_name:
+                player_display += f" ({char_name})"
+            
+            message = f"Redone campaign action by {player_display}: {action[:100]}..."
+        else:
+            # For chat actions, we need to restore them (this is complex since we deleted them)
+            # For now, just inform that chat actions can't be redone
+            return False, "Chat actions cannot be redone once undone!"
         
         # Remove from undo stack
         await db.execute(
-            "DELETE FROM undo_stack WHERE channel_id = ? AND action_id = ?",
-            (channel_id, action_id)
+            "DELETE FROM undo_stack WHERE channel_id = ? AND user_id = ? AND action_type = ? AND action_id = ? ORDER BY timestamp DESC LIMIT 1",
+            (channel_id, user_id, action_type, action_id)
         )
         
         await db.commit()
-        
-        player_display = user_name
-        if char_name:
-            player_display += f" ({char_name})"
-        
-        return True, f"Redone action by {player_display}: {action[:100]}..."
+        return True, message
 
 async def get_ai_response_with_history(user_id: str, prompt: str, max_tokens: int = 500, use_history: bool = True) -> str:
     """Get response from Venice AI with chat history context"""
@@ -385,7 +454,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help", inline=False)
-    embed.add_field(name="🎭 Roles", value="`!dogsrole` - Get Dogs role\n`!catsrole` - Get Cats role\n`!lizardsrole` - Get Lizards role\n`!removedogsrole` - Remove Dogs role\n`!removecatsrole` - Remove Cats role\n`!removelizardsrole` - Remove Lizards role", inline=False)
+    embed.add_field(name="🎭 Roles", value="`!dogsrole` - Get Dogs role\n`!catsrole` - Get Cats role\n`!lizardsrole` - Get Lizards role\n`!dndrole` - Get DND role\n`!dnd1role` - Get DND1 role\n`!dnd2role` - Get DND2 role\n`!dnd3role` - Get DND3 role\n`!removedogsrole` - Remove Dogs role\n`!removecatsrole` - Remove Cats role\n`!removelizardsrole` - Remove Lizards role", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll", inline=False)
     embed.add_field(name="🤖 AI", value="`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!history` - View your recent chat history\n`!clearhistory` - Clear your chat history", inline=False)
     embed.add_field(name="🎲 D&D Campaign", value="`!dnd <action>` - Take action in campaign\n`!character <name>` - Set your character name\n`!campaign` - View campaign history\n`!undo` - Undo last campaign action\n`!redo` - Redo last undone action\n`!clearcampaign` - Clear channel campaign\n`!roll` - Roll a d20", inline=False)
@@ -417,6 +486,42 @@ async def lizardsrole(ctx):
         await ctx.send(f"🦎 Assigned {role.name} role to {ctx.author.name}!")
     else:
         await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def dndrole(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=dnd_role_name)
+    if role:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🎲 Assigned {role.name} role to {ctx.author.name}!")
+    else:
+        await ctx.send("DND role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def dnd1role(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=dnd1_role_name)
+    if role:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🎲 Assigned {role.name} role to {ctx.author.name}!")
+    else:
+        await ctx.send("DND1 role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def dnd2role(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=dnd2_role_name)
+    if role:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🎲 Assigned {role.name} role to {ctx.author.name}!")
+    else:
+        await ctx.send("DND2 role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def dnd3role(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=dnd3_role_name)
+    if role:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🎲 Assigned {role.name} role to {ctx.author.name}!")
+    else:
+        await ctx.send("DND3 role not found. Please ensure the role exists in this server.")
 
 @bot.command()
 async def removedogsrole(ctx):
@@ -473,7 +578,7 @@ async def ask(ctx, *, question):
         response = await get_ai_response_with_history(ctx.author.id, question, max_tokens=800)
     
     # Save to chat history
-    await save_chat_history(ctx.author.id, ctx.author.name, ctx.channel.id, question, response)
+    action_id = await save_chat_history(str(ctx.author.id), ctx.author.name, str(ctx.channel.id), question, response)
     
     # Split long responses if needed
     if len(response) > 2000:
@@ -497,7 +602,7 @@ async def chat(ctx, *, message):
         response = await get_ai_response_with_history(ctx.author.id, prompt, max_tokens=600)
     
     # Save to chat history
-    await save_chat_history(ctx.author.id, ctx.author.name, ctx.channel.id, message, response)
+    action_id = await save_chat_history(str(ctx.author.id), ctx.author.name, str(ctx.channel.id), message, response)
     
     # Split long responses if needed  
     if len(response) > 2000:
@@ -636,14 +741,14 @@ async def clearcampaign(ctx):
 
 @bot.command()
 async def undo(ctx):
-    """Undo the last action in the D&D campaign"""
-    success, message = await undo_last_action(str(ctx.channel.id))
+    """Undo your last action (chat or campaign)"""
+    success, message = await undo_last_action(str(ctx.channel.id), str(ctx.author.id))
     
     if success:
         await ctx.send(f"⏪ {message}")
         
-        # Let the AI know about the undo
-        if venice_api_key:
+        # Let the AI know about the undo if it was a campaign action
+        if "campaign action" in message and venice_api_key:
             async with ctx.typing():
                 undo_prompt = f"The last action has been undone. Please acknowledge this and continue the story from the previous state."
                 ai_response = await get_ai_response_with_campaign_history(
@@ -659,14 +764,14 @@ async def undo(ctx):
 
 @bot.command()
 async def redo(ctx):
-    """Redo the last undone action in the D&D campaign"""
-    success, message = await redo_last_undo(str(ctx.channel.id))
+    """Redo your last undone action"""
+    success, message = await redo_last_undo(str(ctx.channel.id), str(ctx.author.id))
     
     if success:
         await ctx.send(f"⏩ {message}")
         
-        # Let the AI know about the redo
-        if venice_api_key:
+        # Let the AI know about the redo if it was a campaign action
+        if "campaign action" in message and venice_api_key:
             async with ctx.typing():
                 redo_prompt = f"The previously undone action has been restored. Please acknowledge this and continue the story."
                 ai_response = await get_ai_response_with_campaign_history(
