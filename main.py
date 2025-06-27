@@ -5,11 +5,16 @@ from dotenv import load_dotenv
 import os
 import asyncio
 from aiohttp import web
+import httpx
+import json
 
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
+venice_api_key = os.getenv('VENICE_API_KEY')
 if token is None:
     raise ValueError("DISCORD_TOKEN environment variable not set")
+if venice_api_key is None:
+    print("Warning: VENICE_API_KEY not set. AI features will be disabled.")
 
 handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
 intents = discord.Intents.default()
@@ -20,6 +25,43 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 dogs_role_name = "Dogs"
 cats_role_name = "Cats"
+
+# Venice AI Configuration
+VENICE_API_URL = "https://api.venice.ai/api/v1/chat/completions"
+VENICE_MODEL = "venice-uncensored"
+
+async def get_ai_response(prompt: str, max_tokens: int = 500) -> str:
+    """Get response from Venice AI"""
+    if not venice_api_key:
+        return "AI features are disabled. Please set VENICE_API_KEY environment variable."
+    
+    headers = {
+        "Authorization": f"Bearer {venice_api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": VENICE_MODEL,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": max_tokens,
+        "temperature": 0.7
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(VENICE_API_URL, headers=headers, json=data)
+            response.raise_for_status()
+            
+            result = response.json()
+            return result["choices"][0]["message"]["content"].strip()
+    except httpx.TimeoutException:
+        return "⏰ AI response timed out. Please try again."
+    except httpx.HTTPStatusError as e:
+        return f"❌ AI service error: {e.response.status_code}"
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
 
 @bot.event
 async def on_ready():
@@ -51,7 +93,7 @@ async def on_message(message):
         await message.channel.send(f'Hello {message.author.name}!')
 
     if message.content.startswith('!help'):
-        await message.channel.send("Available commands: !hello, !help, !dogsrole, !catsrole, !removedogsrole, !removecatsrole, !poll")
+        await message.channel.send("Available commands: !hello, !help, !dogsrole, !catsrole, !removedogsrole, !removecatsrole, !poll, !ask, !chat")
     
     await bot.process_commands(message)
 
@@ -107,6 +149,46 @@ async def poll(ctx, *, question):
     poll_message = await ctx.send(embed=embed)
     await poll_message.add_reaction("👍")
     await poll_message.add_reaction("👎")
+
+@bot.command()
+async def ask(ctx, *, question):
+    """Ask the Venice AI a question"""
+    if not venice_api_key:
+        await ctx.send("❌ AI features are disabled. Please contact the bot owner to set up Venice API key.")
+        return
+    
+    # Show typing indicator
+    async with ctx.typing():
+        response = await get_ai_response(question, max_tokens=800)
+    
+    # Split long responses if needed
+    if len(response) > 2000:
+        chunks = [response[i:i+2000] for i in range(0, len(response), 2000)]
+        for chunk in chunks:
+            await ctx.send(chunk)
+    else:
+        await ctx.send(response)
+
+@bot.command()
+async def chat(ctx, *, message):
+    """Have a casual chat with the Venice AI"""
+    if not venice_api_key:
+        await ctx.send("❌ AI features are disabled. Please contact the bot owner to set up Venice API key.")
+        return
+    
+    # Add some personality to the prompt
+    prompt = f"You are a friendly dog bot assistant in a Discord server. Respond naturally and helpfully to: {message}"
+    
+    async with ctx.typing():
+        response = await get_ai_response(prompt, max_tokens=600)
+    
+    # Split long responses if needed  
+    if len(response) > 2000:
+        chunks = [response[i:i+2000] for i in range(0, len(response), 2000)]
+        for chunk in chunks:
+            await ctx.send(chunk)
+    else:
+        await ctx.send(response)
 
 # Simple web server for Render
 async def health_check(request):
