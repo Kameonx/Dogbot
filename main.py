@@ -88,18 +88,26 @@ async def on_member_join(member):
 async def on_message(message):
     if message.author == bot.user:
         return
-
-    if message.content.startswith('!hello'):
-        await message.channel.send(f'Hello {message.author.name}!')
-
-    if message.content.startswith('!help'):
-        await message.channel.send("Available commands: !hello, !help, !dogsrole, !catsrole, !removedogsrole, !removecatsrole, !poll, !ask, !chat")
     
+    # Just process commands, don't handle them manually here
     await bot.process_commands(message)
 
 @bot.command()
 async def hello(ctx):
     await ctx.send(f'🐕 Woof woof! Hello {ctx.author.name}!')
+
+@bot.command()
+async def help(ctx):
+    embed = discord.Embed(
+        title="🐶 Dog Bot Commands", 
+        description="Here are all available commands:",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help", inline=False)
+    embed.add_field(name="🎭 Roles", value="`!dogsrole` - Get Dogs role\n`!catsrole` - Get Cats role\n`!removedogsrole` - Remove Dogs role\n`!removecatsrole` - Remove Cats role", inline=False)
+    embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll", inline=False)
+    embed.add_field(name="🤖 AI", value="`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI", inline=False)
+    await ctx.send(embed=embed)
 
 @bot.command()
 async def dogsrole(ctx):
