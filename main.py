@@ -33,6 +33,7 @@ dnd_role_name = "DND"
 dnd1_role_name = "DND1"
 dnd2_role_name = "DND2"
 dnd3_role_name = "DND3"
+pvp_role_name = "PVP"
 
 # Venice AI Configuration
 VENICE_API_URL = "https://api.venice.ai/api/v1/chat/completions"
@@ -454,7 +455,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help", inline=False)
-    embed.add_field(name="🎭 Roles", value="`!dogsrole` - Get Dogs role\n`!catsrole` - Get Cats role\n`!lizardsrole` - Get Lizards role\n`!dndrole` - Get DND role\n`!dnd1role` - Get DND1 role\n`!dnd2role` - Get DND2 role\n`!dnd3role` - Get DND3 role\n`!removedogsrole` - Remove Dogs role\n`!removecatsrole` - Remove Cats role\n`!removelizardsrole` - Remove Lizards role\n`!removedndrole` - Remove DND role\n`!removednd1role` - Remove DND1 role\n`!removednd2role` - Remove DND2 role\n`!removednd3role` - Remove DND3 role", inline=False)
+    embed.add_field(name="🎭 Roles", value="`!dogsrole` - Get Dogs role\n`!catsrole` - Get Cats role\n`!lizardsrole` - Get Lizards role\n`!dndrole` - Get DND role\n`!dnd1role` - Get DND1 role\n`!dnd2role` - Get DND2 role\n`!dnd3role` - Get DND3 role\n`!pvprole` - Get PVP role\n`!removedogsrole` - Remove Dogs role\n`!removecatsrole` - Remove Cats role\n`!removelizardsrole` - Remove Lizards role\n`!removedndrole` - Remove DND role\n`!removednd1role` - Remove DND1 role\n`!removednd2role` - Remove DND2 role\n`!removednd3role` - Remove DND3 role\n`!removepvprole` - Remove PVP role", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll", inline=False)
     embed.add_field(name="🤖 AI", value="`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!history` - View your recent chat history\n`!clearhistory` - Clear your chat history\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
     embed.add_field(name="🎲 D&D Campaign", value="`!dnd <action>` - Take action in campaign\n`!character <name>` - Set your character name\n`!campaign` - View campaign history\n`!clearcampaign` - Clear channel campaign\n`!roll` - Roll a d20", inline=False)
@@ -522,6 +523,15 @@ async def dnd3role(ctx):
         await ctx.send(f"🎲 Assigned {role.name} role to {ctx.author.name}!")
     else:
         await ctx.send("DND3 role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def pvprole(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+    if role:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"⚔️ Assigned {role.name} role to {ctx.author.name}!")
+    else:
+        await ctx.send("PVP role not found. Please ensure the role exists in this server.")
 
 @bot.command()
 async def removedogsrole(ctx):
@@ -606,6 +616,18 @@ async def removednd3role(ctx):
             await ctx.send(f"You don't have the {role.name} role to remove.")
     else:
         await ctx.send("DND3 role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def removepvprole(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+    if role:
+        if role in ctx.author.roles:
+            await ctx.author.remove_roles(role)
+            await ctx.send(f"⚔️ Removed {role.name} role from {ctx.author.name}!")
+        else:
+            await ctx.send(f"You don't have the {role.name} role to remove.")
+    else:
+        await ctx.send("PVP role not found. Please ensure the role exists in this server.")
 
 @bot.command()
 async def poll(ctx, *, question):
