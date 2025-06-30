@@ -1019,3 +1019,62 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
             await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
     else:
         await ctx.send("PVP role not found. Please ensure the role exists in this server.")
+
+# Web server for health checks and port binding (similar to Express.js example)
+async def health_check(request):
+    """Health check endpoint - equivalent to Express.js app.get('/')"""
+    return web.Response(text="Hello World! Dog Bot is running!", status=200)
+
+async def start_web_server():
+    """Start the web server to ensure proper port binding"""
+    app = web.Application()
+    
+    # Add routes - equivalent to Express.js app.get('/', ...)
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)  # Additional health endpoint
+    
+    # Get port from environment or default to 4000 (like Express.js example)
+    port = int(os.environ.get('PORT', 4000))
+    
+    # Create and start the web server
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    # Bind to all interfaces (0.0.0.0) and the specified port
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    
+    # Log like Express.js example: "Example app listening on port ${port}"
+    print(f"Dog Bot web server listening on port {port}")
+    print(f"Health check available at: http://localhost:{port}/")
+    
+    return runner
+
+async def main():
+    """Main function to start both the Discord bot and web server"""
+    web_runner = None
+    try:
+        # Initialize database first
+        await init_database()
+        print("✅ Chat history database initialized")
+        
+        # Start web server for port binding
+        web_runner = await start_web_server()
+        print("✅ Web server started successfully")
+        
+        # Start Discord bot
+        if token:
+            print("🤖 Starting Discord bot...")
+            await bot.start(token)
+        else:
+            print("❌ No Discord token provided")
+            
+    except Exception as e:
+        print(f"❌ Error starting services: {e}")
+        if web_runner is not None:
+            await web_runner.cleanup()
+        raise
+
+if __name__ == "__main__":
+    print("🚀 Starting Dog Bot services...")
+    asyncio.run(main())
