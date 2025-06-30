@@ -277,7 +277,7 @@ async def get_ai_response_with_history(user_id: str, prompt: str, max_tokens: in
     messages = []
     
     # Add system message for emoji usage
-    messages.append({"role": "system", "content": "You are a helpful AI assistant. Use emojis frequently in your responses to make them more engaging and fun! 😊🤖✨"})
+    messages.append({"role": "system", "content": "You are Dogbot, a helpful AI assistant with a friendly dog personality! 🐕 Use emojis frequently and Discord formatting to make your responses engaging and fun! Use **bold** for emphasis, *italics* for subtle emphasis, `code blocks` for technical terms, and > quotes for highlighting important information. Keep responses conversational and helpful! 😊✨"})
     
     # Add chat history for context if enabled
     if use_history:
@@ -329,7 +329,7 @@ async def get_ai_response(user_id: str, prompt: str, max_tokens: int = 500) -> s
     data = {
         "model": VENICE_MODEL,
         "messages": [
-            {"role": "system", "content": "You are a helpful AI assistant. Use emojis frequently in your responses to make them more engaging and fun! 😊🤖✨"},
+            {"role": "system", "content": "You are Dogbot, a helpful AI assistant with a friendly dog personality! 🐕 Use emojis frequently and Discord formatting to make your responses engaging and fun! Use **bold** for emphasis, *italics* for subtle emphasis, `code blocks` for technical terms, and > quotes for highlighting important information. Keep responses conversational and helpful! 😊✨"},
             {"role": "user", "content": prompt}
         ],
         "max_tokens": max_tokens,
@@ -358,7 +358,16 @@ async def get_ai_response_with_campaign_history(channel_id: str, user_name: str,
     messages = []
     
     # Add campaign context
-    campaign_context = f"""You are the Dungeon Master for a D&D campaign. Use emojis frequently to make the adventure more engaging! 🎲⚔️🏰🐉 Remember all characters, their actions, the story so far, and maintain consistency across the adventure.
+    campaign_context = f"""You are the Dungeon Master for a D&D campaign with a friendly, engaging personality! 🎲⚔️🏰🐉 
+
+Use Discord formatting to make the adventure more immersive:
+- **Bold** for important actions, names, and dramatic moments
+- *Italics* for descriptions, thoughts, and atmospheric details  
+- `Code blocks` for game mechanics, dice rolls, and stats
+- > Quotes for NPC dialogue and special narration
+- Emojis frequently to enhance the storytelling experience
+
+Remember all characters, their actions, the story so far, and maintain consistency across the adventure.
 
 When you need a player to make a roll (skill checks, saving throws, attack rolls, etc.), simply ask them to "roll a d20" and they will use the !roll command. You can then interpret their roll result based on the context and difficulty of the task.
 
@@ -1049,7 +1058,7 @@ async def ask(ctx, *, question):
     # Send typing indicator
     async with ctx.typing():
         response = await get_ai_response(str(ctx.author.id), question)
-        await ctx.send(f"🐕 **Dogbot:** {response}")
+        await ctx.send(response)
 
 @bot.command()
 async def chat(ctx, *, message):
@@ -1070,7 +1079,7 @@ async def chat(ctx, *, message):
         # Save to chat history
         await save_chat_history(user_id, user_name, channel_id, message, response)
         
-        await ctx.send(f" **Dogbot:** {response}")
+        await ctx.send(response)
 
 @bot.command()
 async def history(ctx):
