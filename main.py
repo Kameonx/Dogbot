@@ -1049,7 +1049,7 @@ async def ask(ctx, *, question):
     # Send typing indicator
     async with ctx.typing():
         response = await get_ai_response(str(ctx.author.id), question)
-        await ctx.send(f"🤖 **Question:** {question}\n\n**Answer:** {response}")
+        await ctx.send(f"🐕 **Question:** {question}\n\n**Dogbot:** {response}")
 
 @bot.command()
 async def chat(ctx, *, message):
@@ -1070,7 +1070,7 @@ async def chat(ctx, *, message):
         # Save to chat history
         await save_chat_history(user_id, user_name, channel_id, message, response)
         
-        await ctx.send(f"💬 **{ctx.author.display_name}:** {message}\n\n🤖 **AI:** {response}")
+        await ctx.send(f"💬 **{ctx.author.display_name}:** {message}\n\n🐕 **Dogbot:** {response}")
 
 @bot.command()
 async def history(ctx):
