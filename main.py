@@ -30,11 +30,12 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 dogs_role_name = "Dogs"
 cats_role_name = "Cats"
 lizards_role_name = "Lizards"
+pvp_role_name = "PVP"
 dnd_role_name = "DND"
 dnd1_role_name = "DND1"
 dnd2_role_name = "DND2"
 dnd3_role_name = "DND3"
-pvp_role_name = "PVP"
+
 
 # Venice AI Configuration
 VENICE_API_URL = "https://api.venice.ai/api/v1/chat/completions"
