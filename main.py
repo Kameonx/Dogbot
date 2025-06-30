@@ -1022,6 +1022,283 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
     else:
         await ctx.send("PVP role not found. Please ensure the role exists in this server.")
 
+# Missing Commands Implementation
+
+@bot.command()
+async def say(ctx, *, message):
+    """Make the bot say something"""
+    if not message:
+        await ctx.send("❌ Please provide a message for me to say!")
+        return
+    
+    # Delete the original command message
+    try:
+        await ctx.message.delete()
+    except:
+        pass  # Ignore if we can't delete (permissions)
+    
+    await ctx.send(message)
+
+@bot.command()
+async def ask(ctx, *, question):
+    """Ask AI a question without memory context"""
+    if not question:
+        await ctx.send("❌ Please provide a question to ask!")
+        return
+    
+    # Send typing indicator
+    async with ctx.typing():
+        response = await get_ai_response(str(ctx.author.id), question)
+        await ctx.send(f"🤖 **Question:** {question}\n\n**Answer:** {response}")
+
+@bot.command()
+async def chat(ctx, *, message):
+    """Chat with AI with memory context"""
+    if not message:
+        await ctx.send("❌ Please provide a message to chat about!")
+        return
+    
+    # Send typing indicator
+    async with ctx.typing():
+        user_id = str(ctx.author.id)
+        user_name = ctx.author.display_name
+        channel_id = str(ctx.channel.id)
+        
+        # Get AI response with history
+        response = await get_ai_response_with_history(user_id, message)
+        
+        # Save to chat history
+        await save_chat_history(user_id, user_name, channel_id, message, response)
+        
+        await ctx.send(f"💬 **{ctx.author.display_name}:** {message}\n\n🤖 **AI:** {response}")
+
+@bot.command()
+async def history(ctx):
+    """View your recent chat history"""
+    user_id = str(ctx.author.id)
+    
+    # Get user's chat history
+    history = await get_chat_history(user_id, limit=10)
+    
+    if not history:
+        await ctx.send("📝 You don't have any chat history yet! Use `!chat` to start chatting with AI.")
+        return
+    
+    embed = discord.Embed(
+        title=f"📝 Chat History for {ctx.author.display_name}",
+        color=discord.Color.green()
+    )
+    
+    for i, (user_msg, ai_response) in enumerate(history, 1):
+        # Truncate long messages
+        user_msg_short = user_msg[:100] + "..." if len(user_msg) > 100 else user_msg
+        ai_response_short = ai_response[:100] + "..." if len(ai_response) > 100 else ai_response
+        
+        embed.add_field(
+            name=f"Exchange {i}",
+            value=f"**You:** {user_msg_short}\n**AI:** {ai_response_short}",
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def clearhistory(ctx):
+    """Clear your chat history"""
+    user_id = str(ctx.author.id)
+    
+    async with aiosqlite.connect("chat_history.db") as db:
+        await db.execute("DELETE FROM chat_history WHERE user_id = ?", (user_id,))
+        await db.commit()
+    
+    await ctx.send(f"🗑️ Cleared chat history for {ctx.author.display_name}!")
+
+@bot.command()
+async def undo(ctx):
+    """Undo your last action"""
+    channel_id = str(ctx.channel.id)
+    user_id = str(ctx.author.id)
+    
+    success, message = await undo_last_action(channel_id, user_id)
+    
+    if success:
+        await ctx.send(f"↩️ {message}")
+    else:
+        await ctx.send(f"❌ {message}")
+
+@bot.command()
+async def redo(ctx):
+    """Redo your last undone action"""
+    channel_id = str(ctx.channel.id)
+    user_id = str(ctx.author.id)
+    
+    success, message = await redo_last_undo(channel_id, user_id)
+    
+    if success:
+        await ctx.send(f"↪️ {message}")
+    else:
+        await ctx.send(f"❌ {message}")
+
+@bot.command()
+async def dnd(ctx, *, action):
+    """Take an action in the D&D campaign"""
+    if not action:
+        await ctx.send("❌ Please describe your action!")
+        return
+    
+    # Send typing indicator
+    async with ctx.typing():
+        channel_id = str(ctx.channel.id)
+        user_id = str(ctx.author.id)
+        user_name = ctx.author.display_name
+        
+        # Get character name if set
+        character_name = None
+        # Check if user has set a character name (we'll store this in a simple way)
+        async with aiosqlite.connect("chat_history.db") as db:
+            cursor = await db.execute(
+                "SELECT character_name FROM campaign_history WHERE user_id = ? AND character_name IS NOT NULL ORDER BY timestamp DESC LIMIT 1",
+                (user_id,)
+            )
+            row = await cursor.fetchone()
+            if row:
+                character_name = row[0]
+        
+        # Get AI response with campaign history
+        response = await get_ai_response_with_campaign_history(
+            channel_id, user_name, character_name, action
+        )
+        
+        # Save to campaign history
+        await save_campaign_history(channel_id, user_id, user_name, character_name, action, response)
+        
+        player_display = user_name
+        if character_name:
+            player_display += f" ({character_name})"
+        
+        await ctx.send(f"🎲 **{player_display}:** {action}\n\n🏰 **DM:** {response}")
+
+@bot.command()
+async def character(ctx, *, name):
+    """Set your character name for D&D campaigns"""
+    if not name:
+        await ctx.send("❌ Please provide a character name!")
+        return
+    
+    # Limit character name length
+    if len(name) > 50:
+        await ctx.send("❌ Character name must be 50 characters or less!")
+        return
+    
+    user_id = str(ctx.author.id)
+    user_name = ctx.author.display_name
+    channel_id = str(ctx.channel.id)
+    
+    # Save a special entry to set the character name
+    await save_campaign_history(
+        channel_id, user_id, user_name, name, 
+        f"Set character name to: {name}", 
+        f"Character name set! You are now playing as {name}."
+    )
+    
+    await ctx.send(f"🎭 {ctx.author.display_name} is now playing as **{name}**!")
+
+@bot.command()
+async def campaign(ctx):
+    """View the campaign history for this channel"""
+    channel_id = str(ctx.channel.id)
+    
+    # Get campaign history
+    history = await get_campaign_history(channel_id, limit=10)
+    
+    if not history:
+        await ctx.send("📜 No campaign history in this channel yet! Use `!dnd` to start your adventure.")
+        return
+    
+    embed = discord.Embed(
+        title="📜 Campaign History",
+        description="Recent events in your adventure:",
+        color=discord.Color.purple()
+    )
+    
+    for i, (user_name, char_name, action, response) in enumerate(history, 1):
+        player_display = user_name
+        if char_name:
+            player_display += f" ({char_name})"
+        
+        # Truncate long messages
+        action_short = action[:150] + "..." if len(action) > 150 else action
+        response_short = response[:150] + "..." if len(response) > 150 else response
+        
+        embed.add_field(
+            name=f"Event {i}: {player_display}",
+            value=f"**Action:** {action_short}\n**Result:** {response_short}",
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def clearcampaign(ctx):
+    """Clear the campaign history for this channel (Admin/Moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to clear campaign history.")
+        return
+    
+    channel_id = str(ctx.channel.id)
+    
+    async with aiosqlite.connect("chat_history.db") as db:
+        await db.execute("DELETE FROM campaign_history WHERE channel_id = ?", (channel_id,))
+        await db.execute("DELETE FROM undo_stack WHERE channel_id = ?", (channel_id,))
+        await db.commit()
+    
+    await ctx.send("🗑️ Cleared campaign history for this channel!")
+
+@bot.command()
+async def roll(ctx):
+    """Roll a d20"""
+    roll_result = random.randint(1, 20)
+    
+    # Add some flair based on the roll
+    if roll_result == 20:
+        emoji = "🌟"
+        message = "CRITICAL SUCCESS!"
+    elif roll_result == 1:
+        emoji = "💥"
+        message = "Critical failure..."
+    elif roll_result >= 15:
+        emoji = "✨"
+        message = "Great roll!"
+    elif roll_result >= 10:
+        emoji = "🎲"
+        message = "Not bad!"
+    else:
+        emoji = "😅"
+        message = "Could be better..."
+    
+    await ctx.send(f"{emoji} {ctx.author.display_name} rolled a **{roll_result}**! {message}")
+
+@bot.command()
+async def poll(ctx, *, question):
+    """Create a poll with yes/no reactions"""
+    if not question:
+        await ctx.send("❌ Please provide a question for the poll!")
+        return
+    
+    embed = discord.Embed(
+        title="🗳️ Poll",
+        description=question,
+        color=discord.Color.blue()
+    )
+    embed.set_footer(text=f"Poll created by {ctx.author.display_name}")
+    
+    poll_message = await ctx.send(embed=embed)
+    
+    # Add reactions for voting
+    await poll_message.add_reaction("✅")  # Yes
+    await poll_message.add_reaction("❌")  # No
+    await poll_message.add_reaction("🤷")  # Maybe/Unsure
+
 # Web server for health checks and port binding (similar to Express.js example)
 async def health_check(request):
     """Health check endpoint - equivalent to Express.js app.get('/')"""
