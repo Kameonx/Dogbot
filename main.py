@@ -162,6 +162,18 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             
         except Exception as e:
             print(f"Error in YouTubeAudioSource.from_url: {e}")
+            # Check if this is likely a FFmpeg issue
+            error_str = str(e).lower()
+            if 'ffmpeg' in error_str or 'executable' in error_str:
+                raise ValueError(
+                    "❌ FFmpeg not found! Please install FFmpeg to use music features.\n"
+                    "💡 Install instructions:\n"
+                    "• Windows: Download from https://ffmpeg.org/download.html\n"
+                    "• Or use chocolatey: `choco install ffmpeg`\n"
+                    "• Or use winget: `winget install ffmpeg`\n"
+                    "• Make sure FFmpeg is in your system PATH"
+                )
+            
             # If yt-dlp fails, try fallback method
             try:
                 return await cls.from_url_fallback(url, loop=loop)
@@ -1153,7 +1165,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!history` - View your recent chat history\n`!clearhistory` - Clear your chat history\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play <youtube_link>` - Play specific song immediately\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!musicstatus` - Show music bot debug status\n`!ytsearch <query>` - Search YouTube (API)", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play <youtube_link>` - Play specific song immediately\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!musicstatus` - Show music bot debug status\n`!testyt <url>` - Test YouTube audio extraction\n`!ytsearch <query>` - Search YouTube (API)", inline=False)
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
