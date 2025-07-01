@@ -111,7 +111,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         
         ytdl_format_options = {
-            'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
+            'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio',  # Prefer m4a for better stability
             'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
             'restrictfilenames': True,
             'noplaylist': True,
@@ -126,11 +126,13 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'cookiefile': 'cookies.txt',  # Use cookies file for better access
             'prefer_ffmpeg': True,
             'keepvideo': False,
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',  # Better user agent
+            'http_chunk_size': 10485760,  # 10MB chunks for better streaming
         }
 
         ffmpeg_options = {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 200M -analyzeduration 0',
-            'options': '-vn -b:a 128k -bufsize 256k -maxrate 128k',
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 16M -analyzeduration 2000000',
+            'options': '-vn -ar 48000 -ac 2 -b:a 96k -bufsize 256k',  # Reduced buffer for faster start
         }
 
         ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
@@ -243,8 +245,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             # Use better FFmpeg options for fallback too
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 200M',
-                options='-vn -b:a 128k'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 16M',
+                options='-vn -ar 48000 -ac 2 -b:a 96k'
             )
             return cls(source, data=data)
             
@@ -565,7 +567,7 @@ class MusicBot:
             self.is_playing[guild_id] = False
             return
             
-        max_retries = len(MUSIC_PLAYLISTS)  # Try all songs once
+        max_retries = 3  # Reduce retries but add delays
         retries = 0
         current_pos = self.shuffle_positions.get(guild_id, 0)
         
@@ -578,6 +580,9 @@ class MusicBot:
                     break
                     
                 print(f"Attempting to play: {url}")
+                
+                # Add a small delay before extraction to avoid rate limiting
+                await asyncio.sleep(0.3)
                 
                 player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
                 
@@ -602,13 +607,18 @@ class MusicBot:
                         self.shuffle_positions[guild_id] = next_shuffle_pos
                         print(f"Auto-advancing to shuffle position {next_shuffle_pos + 1} (continuous play)")
                         
-                        # Schedule next song to play
+                        # Add a 1-second delay before playing next song for smoother transitions
+                        async def play_next_delayed():
+                            await asyncio.sleep(1)
+                            await self._play_current_song(guild_id)
+                        
+                        # Schedule next song to play with delay
                         future = asyncio.run_coroutine_threadsafe(
-                            self._play_current_song(guild_id), 
+                            play_next_delayed(), 
                             self.bot.loop
                         )
                         try:
-                            future.result(timeout=10)  # Wait up to 10 seconds
+                            future.result(timeout=15)  # Increased timeout
                         except Exception as e:
                             print(f"Error scheduling next song: {e}")
                 
@@ -636,8 +646,8 @@ class MusicBot:
                 
                 self.shuffle_positions[guild_id] = next_shuffle_pos
                 
-                # Add a small delay before retrying
-                await asyncio.sleep(1)
+                # Add a longer delay before retrying to avoid rate limiting
+                await asyncio.sleep(2)
         
         # If we exhausted all retries
         if self.is_playing.get(guild_id, False):
@@ -829,6 +839,9 @@ class MusicBot:
         await ctx.send(f"🎵 Playing: {title}")
         
         try:
+            # Add a small delay before extraction
+            await asyncio.sleep(0.3)
+            
             # Create audio source for the specific URL
             player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
             
@@ -841,12 +854,18 @@ class MusicBot:
                 # Always return to shuffle playlist after specific song finishes
                 if self.is_playing.get(ctx.guild.id, False):
                     print(f"Returning to shuffled playlist for guild {ctx.guild.id}")
+                    
+                    # Add shorter delay for smoother transitions
+                    async def resume_playlist_delayed():
+                        await asyncio.sleep(1)
+                        await self._play_current_song(ctx.guild.id)
+                    
                     future = asyncio.run_coroutine_threadsafe(
-                        self._play_current_song(ctx.guild.id), 
+                        resume_playlist_delayed(), 
                         self.bot.loop
                     )
                     try:
-                        future.result(timeout=10)
+                        future.result(timeout=15)
                     except Exception as e:
                         print(f"Error resuming playlist: {e}")
                 else:
