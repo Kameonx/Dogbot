@@ -40,12 +40,58 @@ dnd3_role_name = "DND3"
 
 # Music Bot Configuration
 MUSIC_PLAYLISTS = [
+    # Existing tracks
     "https://www.youtube.com/watch?v=dQw4w9WgXcQ",  # Rick Astley - Never Gonna Give You Up
     "https://www.youtube.com/watch?v=L_jWHffIx5E",  # Smash Mouth - All Star
-    "https://www.youtube.com/watch?v=ZZ5LpwO-An4",  # HEYYEYAAEYAAAEYAEYAA
-    # Add more YouTube URLs here for your playlist
-]
+    "https://www.youtube.com/watch?v=9bZkp7q19f0",  # PSY - Gangnam Style
+    "https://www.youtube.com/watch?v=fJ9rUzIMcZQ",  # Queen - Bohemian Rhapsody
+    "https://www.youtube.com/watch?v=hTWKbfoikeg",  # Smash Mouth - All Star (alternate upload)
+    "https://www.youtube.com/watch?v=60ItHLz5WEA",  # Alan Walker - Faded
+    "https://www.youtube.com/watch?v=Zi_XLOBDo_Y",  # Michael Jackson - Billie Jean
+    "https://www.youtube.com/watch?v=A_MjCqQoLLA",  # The Beatles - Hey Jude
 
+    # 2000/2010 hits
+
+    "https://www.youtube.com/watch?v=Zrdgz319vEE",  # Daft Punk - Harder, Better, Faster, Stronger (2001)
+    "https://www.youtube.com/watch?v=86XLajnnFJQ",  # Avicii - Levels (2011)
+    "https://www.youtube.com/watch?v=14eNXeF6y6M",  # David Guetta - Memories (2010)
+    "https://www.youtube.com/watch?v=q5Z9c12PUmE",  # Swedish House Mafia - Don't You Worry Child (2011)
+    "https://www.youtube.com/watch?v=st571DYYTR8",  # Deadmau5 - Strobe (2007)
+    "https://www.youtube.com/watch?v=kNQ9D30sHYo",  # Calvin Harris - Acceptable in the 80s (2007)
+    "https://www.youtube.com/watch?v=VxwWY47WtwY",  # Zedd - Clarity (2012)
+    "https://www.youtube.com/watch?v=6JCLY0Rgz4U",  # Martin Garrix - Used To Love (2016)
+    "https://www.youtube.com/watch?v=Oe_eKiEtvnU",  # Joel Corry & David Guetta - BED (Remix) (2020)
+    "https://www.youtube.com/watch?v=3MAxltiSJUE",  # Calvin Harris & Rag'n'Bone Man - Stay With Me (2017)
+    "https://www.youtube.com/watch?v=QeQys1p1rZQ",  # David Guetta & Bebe Rexha - I'm Good (Blue) (2022)
+    "https://www.youtube.com/watch?v=2OvyA5H8HgI",  # Doja Cat - Paint The Town Red (2023)
+    "https://www.youtube.com/watch?v=9bZkp7q19f0",  # PSY - Gangnam Style (2012)
+    "https://www.youtube.com/watch?v=Zi_XLOBDo_Y",  # Michael Jackson - Billie Jean (2009 reupload)
+    "https://www.youtube.com/watch?v=A_MjbdYsCqQ",  # OutKast - Hey Ya! (2003)
+    "https://www.youtube.com/watch?v=CrimexEriw",  # Rihanna - Umbrella (2007)
+    "https://www.youtube.com/watch?v=QJO3ROT-A4E",  # Katy Perry - Firework (2010)
+    "https://www.youtube.com/watch?v=rYEDA3J2QvQ",  # Adele - Rolling in the Deep (2010)
+    "https://www.youtube.com/watch?v=8KkKkvb1bHU",  # The Killers - Mr. Brightside (2004)
+    "https://www.youtube.com/watch?v=fWNaR-rxAic",  # Carly Rae Jepsen - Call Me Maybe (2012)
+    "https://www.youtube.com/watch?v=Zs6e0JBEv-w",  # Robin Thicke - Blurred Lines (2013)
+    "https://www.youtube.com/watch?v=4Tb5F3grUH4",  # The Weeknd - Can't Feel My Face (2015)
+    "https://www.youtube.com/watch?v=fJ9rUzIMcZQ",  # Justin Bieber - Sorry (2015)
+    "https://www.youtube.com/watch?v=6v_h_sjF5sM",  # Walk the Moon - Shut Up and Dance (2014)
+    "https://www.youtube.com/watch?v=5PDoq_PWWvE",  # Linkin Park - In The End (2000)
+    "https://www.youtube.com/watch?v=8UVNT4wvIGY",  # Kelly Clarkson - Since U Been Gone (2004)
+    "https://www.youtube.com/watch?v=2TGfQB-bv7w",  # Calvin Harris & Ellie Goulding - Miracle (2023)
+
+    # New additions (2023/2024 hits and electro house/dance)
+    "https://www.youtube.com/watch?v=2TGfQB-bv7w",  # Calvin Harris & Ellie Goulding - Miracle
+    "https://www.youtube.com/watch?v=0Qlbd9v2x5k",  # Tiësto & Karol G - 54321 (Remix)
+    "https://www.youtube.com/watch?v=QeQys1p1rZQ",  # David Guetta & Bebe Rexha - I'm Good (Blue)
+    "https://www.youtube.com/watch?v=1ZRb1we80kM",  # Swedish House Mafia & The Weeknd - Moth To A Flame
+    "https://www.youtube.com/watch?v=6JCLY0Rgz4U",  # Martin Garrix - Used To Love
+    "https://www.youtube.com/watch?v=2OvyA5H8HgI",  # Doja Cat - Paint The Town Red
+    "https://www.youtube.com/watch?v=X8URDnH9OiQ",  # Fred again.. & Swedish House Mafia - Turn On The Lights
+    "https://www.youtube.com/watch?v=Oe_eKiEtvnU",  # Joel Corry & David Guetta - BED (Remix)
+    "https://www.youtube.com/watch?v=9xMRx8IUWho",  # Tiësto & Tate McRae - Capital Letters
+    "https://www.youtube.com/watch?v=3MAxltiSJUE",  # Calvin Harris & Rag'n'Bone Man - Stay With Me
+]
 # FFmpeg Configuration for Cloud Deployment (Render.com)
 def get_ffmpeg_executable():
     """Find FFmpeg executable for cloud deployment"""
@@ -129,9 +175,20 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 options=FFMPEG_OPTIONS['options'],
                 executable=FFMPEG_OPTIONS['executable']
             ), data=data)
+        except yt_dlp.utils.DownloadError as e:
+            error_msg = str(e)
+            if "Sign in to confirm you're not a bot" in error_msg or "requires authentication" in error_msg:
+                print(f"Authentication error for {url}: {error_msg}")
+                raise ValueError(f"Video requires authentication: {url}")
+            elif "Video unavailable" in error_msg or "Private video" in error_msg:
+                print(f"Video unavailable for {url}: {error_msg}")
+                raise ValueError(f"Video unavailable: {url}")
+            else:
+                print(f"Download error for {url}: {error_msg}")
+                raise ValueError(f"Cannot download video: {error_msg}")
         except Exception as e:
-            print(f"Error creating audio source: {e}")
-            raise
+            print(f"Error creating audio source from {url}: {e}")
+            raise ValueError(f"Failed to create audio source: {str(e)}")
 
 class MusicBot:
     """Music bot functionality"""
@@ -142,7 +199,7 @@ class MusicBot:
         self.current_songs = {}  # guild_id -> current_song_index
         self.is_playing = {}  # guild_id -> bool
         
-    async def join_voice_channel(self, ctx):
+    async def join_voice_channel(self, ctx, auto_start=False):
         """Join the voice channel of the user who called the command"""
         if not ctx.author.voice:
             await ctx.send("❌ You need to be in a voice channel to use this command!")
@@ -155,11 +212,21 @@ class MusicBot:
             # Check if voice client is still connected
             if voice_client.is_connected():
                 if voice_client.channel == channel:
-                    await ctx.send("🎵 I'm already in your voice channel!")
+                    if auto_start:
+                        await ctx.send("🎵 I'm already in your voice channel! Starting music...")
+                        if not self.is_playing.get(ctx.guild.id, False):
+                            await self.play_music(ctx)
+                    else:
+                        await ctx.send("🎵 I'm already in your voice channel!")
                     return voice_client
                 else:
                     await voice_client.move_to(channel)
-                    await ctx.send(f"🎵 Moved to {channel.name}!")
+                    if auto_start:
+                        await ctx.send(f"🎵 Moved to {channel.name} and starting music!")
+                        if not self.is_playing.get(ctx.guild.id, False):
+                            await self.play_music(ctx)
+                    else:
+                        await ctx.send(f"🎵 Moved to {channel.name}!")
                     return voice_client
             else:
                 # Clean up disconnected voice client
@@ -170,7 +237,12 @@ class MusicBot:
             self.voice_clients[ctx.guild.id] = voice_client
             self.current_songs[ctx.guild.id] = 0
             self.is_playing[ctx.guild.id] = False
-            await ctx.send(f"🎵 Joined {channel.name}! Ready to play music!")
+            
+            if auto_start:
+                await ctx.send(f"🎵 Joined {channel.name} and starting music!")
+                await self.play_music(ctx)
+            else:
+                await ctx.send(f"🎵 Joined {channel.name}! Ready to play music!")
             return voice_client
         except Exception as e:
             await ctx.send(f"❌ Failed to join voice channel: {e}")
@@ -216,7 +288,12 @@ class MusicBot:
             voice_client.stop()
             
         self.is_playing[ctx.guild.id] = True
-        await ctx.send("🎵 Starting music stream...")
+        
+        # Get current song info for feedback
+        current_index = self.current_songs.get(ctx.guild.id, 0)
+        total_songs = len(MUSIC_PLAYLISTS)
+        
+        await ctx.send(f"🎵 Starting music stream... Playing song {current_index + 1} of {total_songs}")
         
         # Start playing the playlist
         await self._play_current_song(ctx.guild.id)
@@ -303,13 +380,27 @@ class MusicBot:
         total_songs = len(MUSIC_PLAYLISTS)
         current_url = MUSIC_PLAYLISTS[current_index]
         
-        # Extract video ID for display
-        video_id = current_url.split('v=')[-1].split('&')[0] if 'youtube.com' in current_url else "Unknown"
+        # Try to get the actual song title
+        try:
+            with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ytdl:
+                info = ytdl.extract_info(current_url, download=False)
+                title = info.get('title', 'Unknown Title') if info else 'Unknown Title'
+        except:
+            # Fallback to extracting from URL
+            if 'youtube.com/watch?v=' in current_url:
+                video_id = current_url.split('v=')[1].split('&')[0]
+                title = f"YouTube Video ({video_id})"
+            elif 'youtu.be/' in current_url:
+                video_id = current_url.split('youtu.be/')[1].split('?')[0]
+                title = f"YouTube Video ({video_id})"
+            else:
+                title = "Unknown Title"
         
         embed = discord.Embed(
             title="🎵 Current Song Info",
             color=discord.Color.blue()
         )
+        embed.add_field(name="Title", value=title, inline=False)
         embed.add_field(name="Position", value=f"{current_index + 1} of {total_songs}", inline=True)
         embed.add_field(name="Status", value="▶️ Playing" if self.is_playing.get(ctx.guild.id, False) else "⏸️ Stopped", inline=True)
         embed.add_field(name="URL", value=f"[Link]({current_url})", inline=False)
@@ -330,35 +421,63 @@ class MusicBot:
             return
             
         current_index = self.current_songs.get(guild_id, 0)
+        max_retries = len(MUSIC_PLAYLISTS)  # Try all songs once
+        retries = 0
         
-        try:
-            url = MUSIC_PLAYLISTS[current_index]
-            print(f"Attempting to play: {url}")
-            
-            player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=True)
-            
-            def after_playing(error):
-                if error:
-                    print(f'Player error: {error}')
-                else:
-                    print("Song finished playing normally")
+        while retries < max_retries and self.is_playing.get(guild_id, False):
+            try:
+                url = MUSIC_PLAYLISTS[current_index]
+                print(f"Attempting to play: {url}")
                 
-                # Only auto-advance if we're still supposed to be playing
-                # (not manually skipped)
-                if self.is_playing.get(guild_id, False) and not voice_client.is_playing():
-                    self.current_songs[guild_id] = (current_index + 1) % len(MUSIC_PLAYLISTS)
-                    asyncio.run_coroutine_threadsafe(self._play_current_song(guild_id), self.bot.loop)
-            
-            voice_client.play(player, after=after_playing)
-            print(f"Successfully started playing: {player.title}")
-            
-        except Exception as e:
-            print(f"Error playing music: {e}")
-            # Try next song after a delay
-            if self.is_playing.get(guild_id, False):
-                await asyncio.sleep(5)
-                self.current_songs[guild_id] = (current_index + 1) % len(MUSIC_PLAYLISTS)
-                await self._play_current_song(guild_id)
+                player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=True)
+                
+                def after_playing(error):
+                    if error:
+                        print(f'Player error: {error}')
+                    else:
+                        print("Song finished playing normally")
+                    
+                    # Auto-advance to next song if we're still supposed to be playing
+                    if self.is_playing.get(guild_id, False):
+                        # Move to next song
+                        next_index = (current_index + 1) % len(MUSIC_PLAYLISTS)
+                        self.current_songs[guild_id] = next_index
+                        print(f"Auto-advancing to song {next_index + 1}")
+                        
+                        # Schedule next song to play
+                        future = asyncio.run_coroutine_threadsafe(
+                            self._play_current_song(guild_id), 
+                            self.bot.loop
+                        )
+                        try:
+                            future.result(timeout=10)  # Wait up to 10 seconds
+                        except Exception as e:
+                            print(f"Error scheduling next song: {e}")
+                
+                # Stop any currently playing audio
+                if voice_client.is_playing():
+                    voice_client.stop()
+                
+                voice_client.play(player, after=after_playing)
+                print(f"Successfully started playing: {player.title}")
+                return  # Success! Exit the retry loop
+                
+            except Exception as e:
+                url = MUSIC_PLAYLISTS[current_index] if current_index < len(MUSIC_PLAYLISTS) else "unknown"
+                print(f"Error playing music from {url}: {e}")
+                retries += 1
+                
+                # Skip to next song and try again
+                current_index = (current_index + 1) % len(MUSIC_PLAYLISTS)
+                self.current_songs[guild_id] = current_index
+                
+                # Add a small delay before retrying
+                await asyncio.sleep(1)
+        
+        # If we exhausted all retries
+        if self.is_playing.get(guild_id, False):
+            print(f"Failed to play any songs after {max_retries} attempts")
+            self.is_playing[guild_id] = False
     
     async def add_song(self, ctx, url):
         """Add a song to the playlist"""
@@ -448,17 +567,26 @@ class MusicBot:
         
         for i in range(display_count):
             url = MUSIC_PLAYLISTS[i]
-            # Extract video ID for display
-            if 'youtube.com/watch?v=' in url:
-                video_id = url.split('v=')[1].split('&')[0]
-            elif 'youtu.be/' in url:
-                video_id = url.split('youtu.be/')[1].split('?')[0]
-            else:
-                video_id = "Unknown"
+            
+            # Try to get the actual song title
+            try:
+                with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ytdl:
+                    info = ytdl.extract_info(url, download=False)
+                    title = info.get('title', 'Unknown Title') if info else f"Song {i + 1}"
+            except:
+                # Fallback to extracting from URL or use generic name
+                if 'youtube.com/watch?v=' in url:
+                    video_id = url.split('v=')[1].split('&')[0]
+                    title = f"YouTube Video ({video_id})"
+                elif 'youtu.be/' in url:
+                    video_id = url.split('youtu.be/')[1].split('?')[0]
+                    title = f"YouTube Video ({video_id})"
+                else:
+                    title = f"Song {i + 1}"
             
             current_indicator = "▶️ " if i == self.current_songs.get(ctx.guild.id, 0) else ""
             embed.add_field(
-                name=f"{current_indicator}{i + 1}. Song {i + 1}",
+                name=f"{current_indicator}{i + 1}. {title}",
                 value=f"[Link]({url})",
                 inline=False
             )
@@ -910,7 +1038,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!dogbotmusic` - Join voice channel and start music\n`!removedogbotmusic` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!playlist` - Show current playlist\n`!nowplaying` - Show current song info", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!dogbotmusic` - Join voice channel and start music\n`!removedogbotmusic` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!playlist` - Show current playlist\n`!nowplaying` - Show current song info\n`!musicstatus` - Show music bot debug status", inline=False)
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!dnd1role` - Get DND1 role\n`!dnd2role` - Get DND2 role\n`!dnd3role` - Get DND3 role\n`!removecatsrole` - Remove Cats role\n`!removedogsrole` - Remove Dogs role\n`!removelizardsrole` - Remove Lizards role\n`!removepvprole` - Remove PVP role\n`!removedndrole` - Remove DND role\n`!removednd1role` - Remove DND1 role\n`!removednd2role` - Remove DND2 role\n`!removednd3role` - Remove DND3 role", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
@@ -1869,6 +1997,54 @@ async def musicstatus(ctx):
     
     await ctx.send(embed=embed)
 
+@bot.command()
+async def play(ctx, *, url: str):
+    """Play a requested YouTube song immediately (does not add to playlist)"""
+    global music_bot
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    # Join voice channel if not already
+    voice_client = await music_bot.join_voice_channel(ctx)
+    if not voice_client:
+        return
+    
+    # Stop current music
+    if voice_client.is_playing():
+        voice_client.stop()
+    
+    # Mark as playing
+    music_bot.is_playing[ctx.guild.id] = True
+    
+    # Try to play the requested song
+    try:
+        player = await YTDLSource.from_url(url, loop=bot.loop, stream=True)
+        title = player.title or "Requested Song"
+    except Exception as e:
+        await ctx.send(f"❌ Could not play requested song: {e}")
+        return
+    
+    await ctx.send(f"▶️ Now playing requested song: **{title}**")
+    
+    def after_playing(error):
+        if error:
+            print(f"Error after requested song: {error}")
+        # Resume playlist after requested song
+        if music_bot is not None:
+            future = asyncio.run_coroutine_threadsafe(
+                music_bot._play_current_song(ctx.guild.id),
+                bot.loop
+            )
+            try:
+                future.result(timeout=10)
+            except Exception as e:
+                print(f"Error resuming playlist: {e}")
+        else:
+            print("music_bot is None, cannot resume playlist.")
+    
+    voice_client.play(player, after=after_playing)
+    
 # HTTP Server for Render.com
 async def health_check(request):
     """Health check endpoint for Render.com"""
