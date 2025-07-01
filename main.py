@@ -1165,7 +1165,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!history` - View your recent chat history\n`!clearhistory` - Clear your chat history\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play <youtube_link>` - Play specific song immediately\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!musicstatus` - Show music bot debug status\n`!testyt <url>` - Test YouTube audio extraction\n`!ytsearch <query>` - Search YouTube (API)", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play <youtube_link>` - Play specific song immediately\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!musicstatus` - Show music bot debug status\n`!testyt <url>` - Test YouTube audio extraction\n`!checkffmpeg` - Check if FFmpeg is installed\n`!ytsearch <query>` - Search YouTube (API)", inline=False)
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
@@ -2060,6 +2060,65 @@ async def ytdlstatus(ctx):
             value="Add YOUTUBE_API_KEY environment variable",
             inline=True
         )
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def checkffmpeg(ctx):
+    """Check if FFmpeg is installed and accessible"""
+    import subprocess
+    
+    try:
+        # Try to run FFmpeg to check if it's available
+        result = subprocess.run(['ffmpeg', '-version'], 
+                               capture_output=True, text=True, timeout=5)
+        
+        if result.returncode == 0:
+            # Extract version info
+            version_lines = result.stdout.split('\n')
+            version_line = version_lines[0] if version_lines else "Unknown version"
+            
+            embed = discord.Embed(
+                title="✅ FFmpeg Status: Available",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="Version", value=version_line, inline=False)
+            embed.add_field(name="Status", value="Ready for music playback! 🎵", inline=False)
+        else:
+            embed = discord.Embed(
+                title="❌ FFmpeg Status: Error",
+                color=discord.Color.red()
+            )
+            embed.add_field(name="Error", value="FFmpeg found but returned error", inline=False)
+    
+    except subprocess.TimeoutExpired:
+        embed = discord.Embed(
+            title="⏰ FFmpeg Status: Timeout",
+            color=discord.Color.orange()
+        )
+        embed.add_field(name="Issue", value="FFmpeg command timed out", inline=False)
+    
+    except FileNotFoundError:
+        embed = discord.Embed(
+            title="❌ FFmpeg Status: Not Found",
+            color=discord.Color.red()
+        )
+        embed.add_field(
+            name="Solution", 
+            value="Install FFmpeg:\n"
+                  "• **Chocolatey**: `choco install ffmpeg`\n"
+                  "• **Winget**: `winget install ffmpeg`\n"
+                  "• **Manual**: Download from https://ffmpeg.org\n"
+                  "• Make sure it's in your system PATH", 
+            inline=False
+        )
+    
+    except Exception as e:
+        embed = discord.Embed(
+            title="❓ FFmpeg Status: Unknown Error",
+            color=discord.Color.red()
+        )
+        embed.add_field(name="Error", value=str(e)[:500], inline=False)
     
     await ctx.send(embed=embed)
 
