@@ -34,9 +34,6 @@ cats_role_name = "Cats"
 lizards_role_name = "Lizards"
 pvp_role_name = "PVP"
 dnd_role_name = "DND"
-dnd1_role_name = "DND1"
-dnd2_role_name = "DND2"
-dnd3_role_name = "DND3"
 
 # Music Bot Configuration
 MUSIC_PLAYLISTS = [
@@ -1065,7 +1062,7 @@ async def help(ctx):
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!history` - View your recent chat history\n`!clearhistory` - Clear your chat history\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
     embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play <youtube_link>` - Play specific song immediately\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!musicstatus` - Show music bot debug status", inline=False)
     
-    embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!dnd1role` - Get DND1 role\n`!dnd2role` - Get DND2 role\n`!dnd3role` - Get DND3 role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
+    embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
     embed.add_field(name="🎲 D&D Campaign", value="`!dnd <action>` - Take action in campaign\n`!character <n>` - Set your character name\n`!campaign` - View campaign history\n`!clearcampaign` - Clear channel campaign\n`!roll` - Roll a d20", inline=False)
 
@@ -1094,9 +1091,6 @@ async def modhelp(ctx):
               "`!assigncatsrole @user` - Assign Cats role\n"
               "`!assignlizardsrole @user` - Assign Lizards role\n"
               "`!assigndndrole @user` - Assign DND role\n"
-              "`!assigndnd1role @user` - Assign DND1 role\n"
-              "`!assigndnd2role @user` - Assign DND2 role\n"
-              "`!assigndnd3role @user` - Assign DND3 role\n"
               "`!assignpvprole @user` - Assign PVP role", 
         inline=False
     )
@@ -1107,9 +1101,6 @@ async def modhelp(ctx):
               "`!removecatsrolefrom @user` - Remove Cats role\n"
               "`!removelizardsrolefrom @user` - Remove Lizards role\n"
               "`!removedndrolefrom @user` - Remove DND role\n"
-              "`!removednd1rolefrom @user` - Remove DND1 role\n"
-              "`!removednd2rolefrom @user` - Remove DND2 role\n"
-              "`!removednd3rolefrom @user` - Remove DND3 role\n"
               "`!removepvprolefrom @user` - Remove PVP role", 
         inline=False
     )
@@ -1160,33 +1151,6 @@ async def dndrole(ctx):
         await ctx.send(f"🎲 Assigned {role.name} role to {ctx.author.name}!")
     else:
         await ctx.send("DND role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def dnd1role(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=dnd1_role_name)
-    if role:
-        await ctx.author.add_roles(role)
-        await ctx.send(f"🎲 Assigned {role.name} role to {ctx.author.name}!")
-    else:
-        await ctx.send("DND1 role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def dnd2role(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=dnd2_role_name)
-    if role:
-        await ctx.author.add_roles(role)
-        await ctx.send(f"🎲 Assigned {role.name} role to {ctx.author.name}!")
-    else:
-        await ctx.send("DND2 role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def dnd3role(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=dnd3_role_name)
-    if role:
-        await ctx.author.add_roles(role)
-        await ctx.send(f"🎲 Assigned {role.name} role to {ctx.author.name}!")
-    else:
-        await ctx.send("DND3 role not found. Please ensure the role exists in this server.")
 
 @bot.command()
 async def pvprole(ctx):
@@ -1244,42 +1208,6 @@ async def removedndrole(ctx):
             await ctx.send(f"You don't have the {role.name} role to remove.")
     else:
         await ctx.send("DND role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def removednd1role(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=dnd1_role_name)
-    if role:
-        if role in ctx.author.roles:
-            await ctx.author.remove_roles(role)
-            await ctx.send(f"🎲 Removed {role.name} role from {ctx.author.name}!")
-        else:
-            await ctx.send(f"You don't have the {role.name} role to remove.")
-    else:
-        await ctx.send("DND1 role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def removednd2role(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=dnd2_role_name)
-    if role:
-        if role in ctx.author.roles:
-            await ctx.author.remove_roles(role)
-            await ctx.send(f"🎲 Removed {role.name} role from {ctx.author.name}!")
-        else:
-            await ctx.send(f"You don't have the {role.name} role to remove.")
-    else:
-        await ctx.send("DND2 role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def removednd3role(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=dnd3_role_name)
-    if role:
-        if role in ctx.author.roles:
-            await ctx.author.remove_roles(role)
-            await ctx.send(f"🎲 Removed {role.name} role from {ctx.author.name}!")
-        else:
-            await ctx.send(f"You don't have the {role.name} role to remove.")
-    else:
-        await ctx.send("DND3 role not found. Please ensure the role exists in this server.")
 
 @bot.command()
 async def removepvprole(ctx):
@@ -1377,69 +1305,6 @@ async def assigndndrole(ctx, member: Optional[discord.Member] = None):
             await ctx.send(f"{member.mention} already has the {role.name} role.")
     else:
         await ctx.send("DND role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def assigndnd1role(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to assign DND1 role to a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to assign the role to. Usage: `!assigndnd1role @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=dnd1_role_name)
-    if role:
-        if role not in member.roles:
-            await member.add_roles(role)
-            await ctx.send(f"🎲 Assigned {role.name} role to {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} already has the {role.name} role.")
-    else:
-        await ctx.send("DND1 role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def assigndnd2role(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to assign DND2 role to a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to assign the role to. Usage: `!assigndnd2role @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=dnd2_role_name)
-    if role:
-        if role not in member.roles:
-            await member.add_roles(role)
-            await ctx.send(f"🎲 Assigned {role.name} role to {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} already has the {role.name} role.")
-    else:
-        await ctx.send("DND2 role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def assigndnd3role(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to assign DND3 role to a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to assign the role to. Usage: `!assigndnd3role @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=dnd3_role_name)
-    if role:
-        if role not in member.roles:
-            await member.add_roles(role)
-            await ctx.send(f"🎲 Assigned {role.name} role to {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} already has the {role.name} role.")
-    else:
-        await ctx.send("DND3 role not found. Please ensure the role exists in this server.")
 
 @bot.command()
 async def assignpvprole(ctx, member: Optional[discord.Member] = None):
@@ -1546,69 +1411,6 @@ async def removedndrolefrom(ctx, member: Optional[discord.Member] = None):
             await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
     else:
         await ctx.send("DND role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def removednd1rolefrom(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to remove DND1 role from a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to remove the role from. Usage: `!removednd1rolefrom @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=dnd1_role_name)
-    if role:
-        if role in member.roles:
-            await member.remove_roles(role)
-            await ctx.send(f"🎲 Removed {role.name} role from {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
-    else:
-        await ctx.send("DND1 role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def removednd2rolefrom(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to remove DND2 role from a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to remove the role from. Usage: `!removednd2rolefrom @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=dnd2_role_name)
-    if role:
-        if role in member.roles:
-            await member.remove_roles(role)
-            await ctx.send(f"🎲 Removed {role.name} role from {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
-    else:
-        await ctx.send("DND2 role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def removednd3rolefrom(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to remove DND3 role from a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to remove the role from. Usage: `!removednd3rolefrom @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=dnd3_role_name)
-    if role:
-        if role in member.roles:
-            await member.remove_roles(role)
-            await ctx.send(f"🎲 Removed {role.name} role from {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
-    else:
-        await ctx.send("DND3 role not found. Please ensure the role exists in this server.")
 
 @bot.command()
 async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
