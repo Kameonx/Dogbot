@@ -1,5 +1,7 @@
-discord
+discord[voice]
 python-dotenv
 aiohttp
 httpx
 aiosqlite
+yt-dlp
+PyNaCl
