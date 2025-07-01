@@ -118,7 +118,7 @@ def get_ffmpeg_executable():
 FFMPEG_EXECUTABLE = get_ffmpeg_executable()
 print(f"Using FFmpeg: {FFMPEG_EXECUTABLE}")
 
-# yt-dlp options for audio extraction
+# yt-dlp options for audio extraction with improved YouTube support
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
     'extractaudio': True,
@@ -133,7 +133,19 @@ YTDL_OPTIONS = {
     'no_warnings': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',
-    'extract_flat': False
+    'extract_flat': False,
+    # YouTube-specific options to avoid authentication issues
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['mweb', 'web'],  # Use mobile web and web clients
+            'player_skip': ['configs'],  # Skip some config requests
+        }
+    },
+    # Cookie handling (optional - can be enabled if needed)
+    # 'cookiesfrombrowser': ('chrome',),  # Uncomment to use browser cookies
+    # Rate limiting to avoid "This content isn't available" errors
+    'sleep_interval': 1,  # Sleep 1 second between requests
+    'max_sleep_interval': 5,  # Max sleep interval
 }
 
 FFMPEG_OPTIONS = {
@@ -177,12 +189,25 @@ class YTDLSource(discord.PCMVolumeTransformer):
             ), data=data)
         except yt_dlp.utils.DownloadError as e:
             error_msg = str(e)
-            if "Sign in to confirm you're not a bot" in error_msg or "requires authentication" in error_msg:
-                print(f"Authentication error for {url}: {error_msg}")
-                raise ValueError(f"Video requires authentication: {url}")
-            elif "Video unavailable" in error_msg or "Private video" in error_msg:
+            if any(phrase in error_msg.lower() for phrase in [
+                "sign in to confirm you're not a bot", 
+                "requires authentication",
+                "po token",
+                "this content isn't available"
+            ]):
+                print(f"YouTube authentication/rate limit error for {url}: {error_msg}")
+                raise ValueError(f"YouTube requires authentication or rate limited: {url}")
+            elif any(phrase in error_msg.lower() for phrase in [
+                "video unavailable", 
+                "private video",
+                "deleted video",
+                "not available"
+            ]):
                 print(f"Video unavailable for {url}: {error_msg}")
                 raise ValueError(f"Video unavailable: {url}")
+            elif "age-restricted" in error_msg.lower():
+                print(f"Age-restricted video for {url}: {error_msg}")
+                raise ValueError(f"Age-restricted video: {url}")
             else:
                 print(f"Download error for {url}: {error_msg}")
                 raise ValueError(f"Cannot download video: {error_msg}")
@@ -1038,7 +1063,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!playlist` - Show current playlist\n`!nowplaying` - Show current song info\n`!musicstatus` - Show music bot debug status", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play <youtube_url>` - Play specific song immediately\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!playlist` - Show current playlist\n`!nowplaying` - Show current song info\n`!musicstatus` - Show music bot debug status", inline=False)
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!dnd1role` - Get DND1 role\n`!dnd2role` - Get DND2 role\n`!dnd3role` - Get DND3 role\n`!removecatsrole` - Remove Cats role\n`!removedogsrole` - Remove Dogs role\n`!removelizardsrole` - Remove Lizards role\n`!removepvprole` - Remove PVP role\n`!removedndrole` - Remove DND role\n`!removednd1role` - Remove DND1 role\n`!removednd2role` - Remove DND2 role\n`!removednd3role` - Remove DND3 role", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
@@ -1087,6 +1112,14 @@ async def modhelp(ctx):
               "`!removednd2rolefrom @user` - Remove DND2 role\n"
               "`!removednd3rolefrom @user` - Remove DND3 role\n"
               "`!removepvprolefrom @user` - Remove PVP role", 
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🔧 YouTube Authentication", 
+        value="`!enablecookies [browser]` - Enable YouTube cookies\n"
+              "`!disablecookies` - Disable YouTube cookies\n"
+              "`!ytdlstatus` - Show yt-dlp configuration", 
         inline=False
     )
     
@@ -1599,451 +1632,98 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
     else:
         await ctx.send("PVP role not found. Please ensure the role exists in this server.")
 
-# Missing Commands Implementation
-
 @bot.command()
-async def say(ctx, *, message):
-    """Make the bot say something"""
-    if not message:
-        await ctx.send("❌ Please provide a message for me to say!")
-        return
-    
-    # Delete the original command message
-    try:
-        await ctx.message.delete()
-    except:
-        pass  # Ignore if we can't delete (permissions)
-    
-    await ctx.send(message)
-
-@bot.command()
-async def ask(ctx, *, question):
-    """Ask AI a question without memory context"""
-    if not question:
-        await ctx.send("❌ Please provide a question to ask!")
-        return
-    
-    # Send typing indicator
-    async with ctx.typing():
-        response = await get_ai_response(str(ctx.author.id), question)
-        await ctx.send(response)
-
-@bot.command()
-async def chat(ctx, *, message):
-    """Chat with AI with memory context"""
-    if not message:
-        await ctx.send("❌ Please provide a message to chat about!")
-        return
-    
-    # Send typing indicator
-    async with ctx.typing():
-        user_id = str(ctx.author.id)
-        user_name = ctx.author.display_name
-        channel_id = str(ctx.channel.id)
-        
-        # Get AI response with history
-        response = await get_ai_response_with_history(user_id, message)
-        
-        # Save to chat history
-        await save_chat_history(user_id, user_name, channel_id, message, response)
-        
-        await ctx.send(response)
-
-@bot.command()
-async def history(ctx):
-    """View your recent chat history"""
-    user_id = str(ctx.author.id)
-    
-    # Get user's chat history
-    history = await get_chat_history(user_id, limit=10)
-    
-    if not history:
-        await ctx.send("📝 You don't have any chat history yet! Use `!chat` to start chatting with AI.")
-        return
-    
-    embed = discord.Embed(
-        title=f"📝 Chat History for {ctx.author.display_name}",
-        color=discord.Color.green()
-    )
-    
-    for i, (user_msg, ai_response) in enumerate(history, 1):
-        # Truncate long messages
-        user_msg_short = user_msg[:100] + "..." if len(user_msg) > 100 else user_msg
-        ai_response_short = ai_response[:100] + "..." if len(ai_response) > 100 else ai_response
-        
-        embed.add_field(
-            name=f"Exchange {i}",
-            value=f"**You:** {user_msg_short}\n**AI:** {ai_response_short}",
-            inline=False
-        )
-    
-    await ctx.send(embed=embed)
-
-@bot.command()
-async def clearhistory(ctx):
-    """Clear your chat history"""
-    user_id = str(ctx.author.id)
-    
-    async with aiosqlite.connect("chat_history.db") as db:
-        await db.execute("DELETE FROM chat_history WHERE user_id = ?", (user_id,))
-        await db.commit()
-    
-    await ctx.send(f"🗑️ Cleared chat history for {ctx.author.display_name}!")
-
-@bot.command()
-async def undo(ctx):
-    """Undo your last action"""
-    channel_id = str(ctx.channel.id)
-    user_id = str(ctx.author.id)
-    
-    success, message = await undo_last_action(channel_id, user_id)
-    
-    if success:
-        await ctx.send(f"↩️ {message}")
-    else:
-        await ctx.send(f"❌ {message}")
-
-@bot.command()
-async def redo(ctx):
-    """Redo your last undone action"""
-    channel_id = str(ctx.channel.id)
-    user_id = str(ctx.author.id)
-    
-    success, message = await redo_last_undo(channel_id, user_id)
-    
-    if success:
-        await ctx.send(f"↪️ {message}")
-    else:
-        await ctx.send(f"❌ {message}")
-
-@bot.command()
-async def dnd(ctx, *, action):
-    """Take an action in the D&D campaign"""
-    if not action:
-        await ctx.send("❌ Please describe your action!")
-        return
-    
-    # Send typing indicator
-    async with ctx.typing():
-        channel_id = str(ctx.channel.id)
-        user_id = str(ctx.author.id)
-        user_name = ctx.author.display_name
-        
-        # Get character name if set
-        character_name = None
-        # Check if user has set a character name (we'll store this in a simple way)
-        async with aiosqlite.connect("chat_history.db") as db:
-            cursor = await db.execute(
-                "SELECT character_name FROM campaign_history WHERE user_id = ? AND character_name IS NOT NULL ORDER BY timestamp DESC LIMIT 1",
-                (user_id,)
-            )
-            row = await cursor.fetchone()
-            if row:
-                character_name = row[0]
-        
-        # Get AI response with campaign history
-        response = await get_ai_response_with_campaign_history(
-            channel_id, user_name, character_name, action
-        )
-        
-        # Save to campaign history
-        await save_campaign_history(channel_id, user_id, user_name, character_name, action, response)
-        
-        player_display = user_name
-        if character_name:
-            player_display += f" ({character_name})"
-        
-        await ctx.send(f"🎲 **{player_display}:** {action}\n\n🏰 **DM:** {response}")
-
-@bot.command()
-async def character(ctx, *, name):
-    """Set your character name for D&D campaigns"""
-    if not name:
-        await ctx.send("❌ Please provide a character name!")
-        return
-    
-    # Limit character name length
-    if len(name) > 50:
-        await ctx.send("❌ Character name must be 50 characters or less!")
-        return
-    
-    user_id = str(ctx.author.id)
-    user_name = ctx.author.display_name
-    channel_id = str(ctx.channel.id)
-    
-    # Save a special entry to set the character name
-    await save_campaign_history(
-        channel_id, user_id, user_name, name, 
-        f"Set character name to: {name}", 
-        f"Character name set! You are now playing as {name}."
-    )
-    
-    await ctx.send(f"🎭 {ctx.author.display_name} is now playing as **{name}**!")
-
-@bot.command()
-async def campaign(ctx):
-    """View the campaign history for this channel"""
-    channel_id = str(ctx.channel.id)
-    
-    # Get campaign history
-    history = await get_campaign_history(channel_id, limit=10)
-    
-    if not history:
-        await ctx.send("📜 No campaign history in this channel yet! Use `!dnd` to start your adventure.")
-        return
-    
-    embed = discord.Embed(
-        title="📜 Campaign History",
-        description="Recent events in your adventure:",
-        color=discord.Color.purple()
-    )
-    
-    for i, (user_name, char_name, action, response) in enumerate(history, 1):
-        player_display = user_name
-        if char_name:
-            player_display += f" ({char_name})"
-        
-        # Truncate long messages
-        action_short = action[:150] + "..." if len(action) > 150 else action
-        response_short = response[:150] + "..." if len(response) > 150 else response
-        
-        embed.add_field(
-            name=f"Event {i}: {player_display}",
-            value=f"**Action:** {action_short}\n**Result:** {response_short}",
-            inline=False
-        )
-    
-    await ctx.send(embed=embed)
-
-@bot.command()
-async def clearcampaign(ctx):
-    """Clear the campaign history for this channel (Admin/Moderator only)"""
+async def enablecookies(ctx, browser: str = 'chrome'):
+    """Enable YouTube cookies from browser (Admin/Mod only)"""
     if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to clear campaign history.")
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
         return
     
-    channel_id = str(ctx.channel.id)
+    valid_browsers = ['chrome', 'firefox', 'safari', 'edge']
+    if browser.lower() not in valid_browsers:
+        await ctx.send(f"❌ Invalid browser. Choose from: {', '.join(valid_browsers)}")
+        return
     
-    async with aiosqlite.connect("chat_history.db") as db:
-        await db.execute("DELETE FROM campaign_history WHERE channel_id = ?", (channel_id,))
-        await db.execute("DELETE FROM undo_stack WHERE channel_id = ?", (channel_id,))
-        await db.commit()
-    
-    await ctx.send("🗑️ Cleared campaign history for this channel!")
+    try:
+        enable_youtube_cookies(browser.lower())
+        await ctx.send(f"✅ YouTube cookies enabled from {browser} browser. This may help with authentication issues.")
+    except Exception as e:
+        await ctx.send(f"❌ Failed to enable cookies: {e}")
 
 @bot.command()
-async def roll(ctx):
-    """Roll a d20"""
-    roll_result = random.randint(1, 20)
+async def disablecookies(ctx):
+    """Disable YouTube cookies (Admin/Mod only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
+        return
     
-    # Add some flair based on the roll
-    if roll_result == 20:
-        emoji = "🌟"
-        message = "CRITICAL SUCCESS!"
-    elif roll_result == 1:
-        emoji = "💥"
-        message = "Critical failure..."
-    elif roll_result >= 15:
-        emoji = "✨"
-        message = "Great roll!"
-    elif roll_result >= 10:
-        emoji = "🎲"
-        message = "Not bad!"
-    else:
-        emoji = "😅"
-        message = "Could be better..."
-    
-    await ctx.send(f"{emoji} {ctx.author.display_name} rolled a **{roll_result}**! {message}")
+    try:
+        disable_youtube_cookies()
+        await ctx.send("✅ YouTube cookies disabled.")
+    except Exception as e:
+        await ctx.send(f"❌ Failed to disable cookies: {e}")
 
 @bot.command()
-async def poll(ctx, *, question):
-    """Create a poll with yes/no reactions"""
-    if not question:
-        await ctx.send("❌ Please provide a question for the poll!")
+async def ytdlstatus(ctx):
+    """Show yt-dlp configuration status"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
         return
     
     embed = discord.Embed(
-        title="🗳️ Poll",
-        description=question,
-        color=discord.Color.blue()
-    )
-    embed.set_footer(text=f"Poll created by {ctx.author.display_name}")
-    
-    poll_message = await ctx.send(embed=embed)
-    
-    # Add reactions for voting
-    await poll_message.add_reaction("✅")  # Yes
-    await poll_message.add_reaction("❌")  # No
-    await poll_message.add_reaction("🤷")  # Maybe/Unsure
-
-# Music Bot Commands (Admin/Moderator only)
-@bot.command()
-async def join(ctx):
-    """Join voice channel and start playing music automatically"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    # Join voice channel with auto-start enabled
-    await music_bot.join_voice_channel(ctx, auto_start=True)
-
-@bot.command()
-async def leave(ctx):
-    """Leave voice channel and stop music"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    # Stop music and leave
-    await music_bot.stop_music(ctx)
-    await music_bot.leave_voice_channel(ctx)
-    await music_bot.stop_music(ctx)
-    await music_bot.leave_voice_channel(ctx)
-
-@bot.command()
-async def stop(ctx):
-    """Stop music (but stay in channel)"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    await music_bot.stop_music(ctx)
-
-@bot.command()
-async def start(ctx):
-    """Start/resume music"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    await music_bot.play_music(ctx)
-
-@bot.command()
-async def add(ctx, *, url):
-    """Add a YouTube URL to the playlist"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    await music_bot.add_song(ctx, url)
-
-@bot.command()
-async def remove(ctx, *, url):
-    """Remove a YouTube URL from the playlist"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    await music_bot.remove_song(ctx, url)
-
-@bot.command()
-async def playlist(ctx):
-    """Show the current music playlist"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    await music_bot.show_playlist(ctx)
-
-
-@bot.command()
-async def nowplaying(ctx):
-    """Show information about the currently playing song"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    await music_bot.get_current_song_info(ctx)
-
-@bot.command()
-async def musicstatus(ctx):
-    """Show detailed music bot status for debugging"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    guild_id = ctx.guild.id
-    embed = discord.Embed(
-        title="🎵 Music Bot Status",
-        color=discord.Color.blue()
+        title="🔧 yt-dlp Configuration Status",
+        color=discord.Color.orange()
     )
     
-    # Voice client status
-    if guild_id in music_bot.voice_clients:
-        voice_client = music_bot.voice_clients[guild_id]
-        embed.add_field(
-            name="Voice Connection",
-            value=f"✅ Connected to {voice_client.channel.name}" if voice_client.is_connected() else "❌ Disconnected",
-            inline=False
-        )
-        embed.add_field(
-            name="Audio Status",
-            value="▶️ Playing" if voice_client.is_playing() else "⏸️ Not Playing",
-            inline=True
-        )
-    else:
-        embed.add_field(name="Voice Connection", value="❌ Not in any voice channel", inline=False)
+    # Check cookie status
+    cookies_enabled = 'cookiesfrombrowser' in YTDL_OPTIONS
+    embed.add_field(
+        name="Browser Cookies",
+        value=f"✅ Enabled ({YTDL_OPTIONS.get('cookiesfrombrowser', ['none'])[0]})" if cookies_enabled else "❌ Disabled",
+        inline=True
+    )
     
-    # Playlist status
-    embed.add_field(name="Playlist Size", value=f"{len(MUSIC_PLAYLISTS)} songs", inline=True)
+    # Show player clients
+    player_clients = YTDL_OPTIONS.get('extractor_args', {}).get('youtube', {}).get('player_client', ['default'])
+    embed.add_field(
+        name="Player Clients",
+        value=", ".join(player_clients),
+        inline=True
+    )
     
-    # Bot state
-    current_song = music_bot.current_songs.get(guild_id, 0)
-    is_playing = music_bot.is_playing.get(guild_id, False)
+    # Rate limiting
+    sleep_interval = YTDL_OPTIONS.get('sleep_interval', 0)
+    embed.add_field(
+        name="Rate Limiting",
+        value=f"{sleep_interval}s between requests" if sleep_interval > 0 else "Disabled",
+        inline=True
+    )
     
-    embed.add_field(name="Current Song Index", value=f"{current_song + 1}", inline=True)
-    embed.add_field(name="Bot Playing State", value="✅ Playing" if is_playing else "❌ Stopped", inline=True)
+    embed.add_field(
+        name="Recommendations",
+        value="• Use `!enablecookies chrome` if videos fail to play\n• Cookies help with age-restricted and some premium content\n• Disable cookies with `!disablecookies` if having issues",
+        inline=False
+    )
     
     await ctx.send(embed=embed)
 
-@bot.command()
-async def play(ctx, *, url: str):
-    """Play a requested YouTube song immediately (does not add to playlist)"""
-    global music_bot
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    # Join voice channel if not already
-    voice_client = await music_bot.join_voice_channel(ctx)
-    if not voice_client:
-        return
-    
-    # Stop current music
-    if voice_client.is_playing():
-        voice_client.stop()
-    
-    # Mark as playing
-    music_bot.is_playing[ctx.guild.id] = True
-    
-    # Try to play the requested song
-    try:
-        player = await YTDLSource.from_url(url, loop=bot.loop, stream=True)
-        title = player.title or "Requested Song"
-    except Exception as e:
-        await ctx.send(f"❌ Could not play requested song: {e}")
-        return
-    
-    await ctx.send(f"▶️ Now playing requested song: **{title}**")
-    
-    def after_playing(error):
-        if error:
-            print(f"Error after requested song: {error}")
-        # Resume playlist after requested song
-        if music_bot is not None:
-            future = asyncio.run_coroutine_threadsafe(
-                music_bot._play_current_song(ctx.guild.id),
-                bot.loop
-            )
-            try:
-                future.result(timeout=10)
-            except Exception as e:
-                print(f"Error resuming playlist: {e}")
-        else:
-            print("music_bot is None, cannot resume playlist.")
-    
-    voice_client.play(player, after=after_playing)
-    
+# Optional: Functions to manage YouTube cookie authentication
+def enable_youtube_cookies(browser='chrome'):
+    """
+    Enable browser cookie support for YouTube authentication.
+    Browsers: 'chrome', 'firefox', 'safari', 'edge'
+    """
+    global YTDL_OPTIONS
+    YTDL_OPTIONS['cookiesfrombrowser'] = (browser,)
+    print(f"YouTube cookies enabled from {browser} browser")
+
+def disable_youtube_cookies():
+    """Disable browser cookie support"""
+    global YTDL_OPTIONS
+    if 'cookiesfrombrowser' in YTDL_OPTIONS:
+        del YTDL_OPTIONS['cookiesfrombrowser']
+        print("YouTube cookies disabled")
+
 # HTTP Server for Render.com
 async def health_check(request):
     """Health check endpoint for Render.com"""
