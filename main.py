@@ -123,6 +123,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'default_search': 'auto',
             'source_address': '0.0.0.0',
             'extract_flat': False,
+            'cookiefile': 'cookies.txt',  # Use cookies file for better access
         }
 
         ffmpeg_options = {
@@ -173,6 +174,22 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                     "• Or use winget: `winget install ffmpeg`\n"
                     "• Make sure FFmpeg is in your system PATH"
                 )
+            elif 'cookies' in error_str or 'cookie' in error_str:
+                raise ValueError(
+                    "❌ Cookies file issue! Please check your cookies.txt file.\n"
+                    "💡 Tips:\n"
+                    "• Make sure cookies.txt is in the bot directory\n"
+                    "• Export fresh cookies from your browser\n"
+                    "• Use browser extension like 'Get cookies.txt' for Chrome/Firefox"
+                )
+            elif 'sign in' in error_str or 'login' in error_str or 'private' in error_str:
+                raise ValueError(
+                    "❌ Video requires sign-in or is private!\n"
+                    "💡 Try:\n"
+                    "• Update your cookies.txt file\n"
+                    "• Use a different video\n"
+                    "• Check if video is age-restricted"
+                )
             
             # If yt-dlp fails, try fallback method
             try:
@@ -203,6 +220,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 'format': 'worst',
                 'quiet': True,
                 'no_warnings': True,
+                'cookiefile': 'cookies.txt',  # Use cookies file for fallback too
             })
             
             def extract_simple():
@@ -1165,7 +1183,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play <youtube_link>` - Play specific song immediately\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!checkffmpeg` - Check if FFmpeg is installed", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play <youtube_link>` - Play specific song immediately\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!checkffmpeg` - Check if FFmpeg is installed\n`!checkcookies` - Check cookies.txt file status", inline=False)
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
@@ -2022,7 +2040,7 @@ async def ytdlstatus(ctx):
     )
     
     # Check YouTube API status
-    api_status = "✅ Configured" if youtube_api else "❌ Not configured (set YOUTUBE_API_KEY)"
+    api_status = "✅ Configured" if youtube_api and youtube_api.api_key else "❌ Not configured (set YOUTUBE_API_KEY)"
     embed.add_field(
         name="YouTube Data API v3",
         value=api_status,
@@ -2030,7 +2048,7 @@ async def ytdlstatus(ctx):
     )
     
     # Show API configuration
-    if youtube_api:
+    if youtube_api and youtube_api.api_key:
         embed.add_field(
             name="API Key",
             value="✅ Set" if youtube_api.api_key else "❌ Missing",
@@ -2116,6 +2134,93 @@ async def checkffmpeg(ctx):
     except Exception as e:
         embed = discord.Embed(
             title="❓ FFmpeg Status: Unknown Error",
+            color=discord.Color.red()
+        )
+        embed.add_field(name="Error", value=str(e)[:500], inline=False)
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def checkcookies(ctx):
+    """Check if cookies.txt file is present and accessible"""
+    import os
+    
+    try:
+        cookies_path = 'cookies.txt'
+        
+        if not os.path.exists(cookies_path):
+            embed = discord.Embed(
+                title="❌ Cookies File: Not Found",
+                color=discord.Color.red()
+            )
+            embed.add_field(
+                name="Missing File", 
+                value=f"cookies.txt not found in bot directory", 
+                inline=False
+            )
+            embed.add_field(
+                name="How to Fix", 
+                value="1. Export cookies from your browser\n"
+                      "2. Use browser extension like 'Get cookies.txt'\n"
+                      "3. Save as 'cookies.txt' in bot folder\n"
+                      "4. Make sure it's in Netscape format", 
+                inline=False
+            )
+        else:
+            # Check if file is readable and has content
+            try:
+                with open(cookies_path, 'r', encoding='utf-8') as f:
+                    content = f.read().strip()
+                    lines = content.split('\n')
+                    
+                if not content:
+                    embed = discord.Embed(
+                        title="⚠️ Cookies File: Empty",
+                        color=discord.Color.orange()
+                    )
+                    embed.add_field(
+                        name="Issue", 
+                        value="cookies.txt exists but is empty", 
+                        inline=False
+                    )
+                else:
+                    # Count valid cookie lines (not comments or empty)
+                    valid_lines = [line for line in lines if line.strip() and not line.startswith('#')]
+                    
+                    embed = discord.Embed(
+                        title="✅ Cookies File: Found",
+                        color=discord.Color.green()
+                    )
+                    embed.add_field(
+                        name="File Status", 
+                        value=f"cookies.txt exists and readable", 
+                        inline=False
+                    )
+                    embed.add_field(
+                        name="Content", 
+                        value=f"Total lines: {len(lines)}\nCookie entries: {len(valid_lines)}", 
+                        inline=True
+                    )
+                    embed.add_field(
+                        name="Status", 
+                        value="Ready for yt-dlp usage! 🍪", 
+                        inline=True
+                    )
+                    
+            except Exception as read_error:
+                embed = discord.Embed(
+                    title="❌ Cookies File: Read Error",
+                    color=discord.Color.red()
+                )
+                embed.add_field(
+                    name="Error", 
+                    value=f"Could not read cookies.txt: {str(read_error)}", 
+                    inline=False
+                )
+    
+    except Exception as e:
+        embed = discord.Embed(
+            title="❓ Cookies Check: Error",
             color=discord.Color.red()
         )
         embed.add_field(name="Error", value=str(e)[:500], inline=False)
