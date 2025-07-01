@@ -40,8 +40,9 @@ dnd3_role_name = "DND3"
 
 # Music Bot Configuration
 MUSIC_PLAYLISTS = [
-    "https://www.youtube.com/watch?v=dQw4w9WgXcQ",  # Example YouTube URL
-    "https://www.youtube.com/watch?v=L_jWHffIx5E",  # Another example
+    "https://www.youtube.com/watch?v=dQw4w9WgXcQ",  # Rick Astley - Never Gonna Give You Up
+    "https://www.youtube.com/watch?v=L_jWHffIx5E",  # Smash Mouth - All Star
+    "https://www.youtube.com/watch?v=ZZ5LpwO-An4",  # HEYYEYAAEYAAAEYAEYAA
     # Add more YouTube URLs here for your playlist
 ]
 
@@ -85,7 +86,8 @@ YTDL_OPTIONS = {
     'quiet': True,
     'no_warnings': True,
     'default_search': 'auto',
-    'source_address': '0.0.0.0'
+    'source_address': '0.0.0.0',
+    'extract_flat': False
 }
 
 FFMPEG_OPTIONS = {
@@ -149,13 +151,19 @@ class MusicBot:
         channel = ctx.author.voice.channel
         
         if ctx.guild.id in self.voice_clients:
-            if self.voice_clients[ctx.guild.id].channel == channel:
-                await ctx.send("🎵 I'm already in your voice channel!")
-                return self.voice_clients[ctx.guild.id]
+            voice_client = self.voice_clients[ctx.guild.id]
+            # Check if voice client is still connected
+            if voice_client.is_connected():
+                if voice_client.channel == channel:
+                    await ctx.send("🎵 I'm already in your voice channel!")
+                    return voice_client
+                else:
+                    await voice_client.move_to(channel)
+                    await ctx.send(f"🎵 Moved to {channel.name}!")
+                    return voice_client
             else:
-                await self.voice_clients[ctx.guild.id].move_to(channel)
-                await ctx.send(f"🎵 Moved to {channel.name}!")
-                return self.voice_clients[ctx.guild.id]
+                # Clean up disconnected voice client
+                del self.voice_clients[ctx.guild.id]
         
         try:
             voice_client = await channel.connect()
@@ -194,13 +202,18 @@ class MusicBot:
             
         voice_client = self.voice_clients[ctx.guild.id]
         
+        # Check if voice client is still connected
+        if not voice_client.is_connected():
+            await ctx.send("❌ Voice client is disconnected! Use `!dogbotmusic` to reconnect.")
+            return
+        
         if not MUSIC_PLAYLISTS:
             await ctx.send("❌ No music playlist configured!")
             return
             
-        if self.is_playing.get(ctx.guild.id, False):
-            await ctx.send("🎵 Music is already playing!")
-            return
+        # Stop current music if playing
+        if voice_client.is_playing():
+            voice_client.stop()
             
         self.is_playing[ctx.guild.id] = True
         await ctx.send("🎵 Starting music stream...")
@@ -247,7 +260,7 @@ class MusicBot:
             await ctx.send(f"⏭️ Skipping to next song...")
             await self._play_current_song(ctx.guild.id)
         else:
-            await ctx.send(f"⏭️ Next song queued. Use `!musicstart` to play.")
+            await ctx.send(f"⏭️ Next song queued. Use `!start` to play.")
     
     async def previous_song(self, ctx):
         """Go back to the previous song in the playlist"""
@@ -274,7 +287,7 @@ class MusicBot:
             await ctx.send(f"⏮️ Going back to previous song...")
             await self._play_current_song(ctx.guild.id)
         else:
-            await ctx.send(f"⏮️ Previous song queued. Use `!musicstart` to play.")
+            await ctx.send(f"⏮️ Previous song queued. Use `!start` to play.")
     
     async def get_current_song_info(self, ctx):
         """Get information about the current song"""
@@ -309,15 +322,26 @@ class MusicBot:
             return
             
         voice_client = self.voice_clients[guild_id]
+        
+        # Check if voice client is still connected
+        if not voice_client.is_connected():
+            print(f"Voice client disconnected for guild {guild_id}")
+            self.is_playing[guild_id] = False
+            return
+            
         current_index = self.current_songs.get(guild_id, 0)
         
         try:
             url = MUSIC_PLAYLISTS[current_index]
+            print(f"Attempting to play: {url}")
+            
             player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=True)
             
             def after_playing(error):
                 if error:
                     print(f'Player error: {error}')
+                else:
+                    print("Song finished playing normally")
                 
                 # Only auto-advance if we're still supposed to be playing
                 # (not manually skipped)
@@ -326,7 +350,7 @@ class MusicBot:
                     asyncio.run_coroutine_threadsafe(self._play_current_song(guild_id), self.bot.loop)
             
             voice_client.play(player, after=after_playing)
-            print(f"Now playing: {player.title}")
+            print(f"Successfully started playing: {player.title}")
             
         except Exception as e:
             print(f"Error playing music: {e}")
@@ -575,7 +599,6 @@ async def undo_last_action(channel_id: str, user_id: str) -> tuple[bool, str]:
                 'message': campaign_row[3],
                 'type': 'campaign'
             }
-        
         if chat_row:
             chat_action = {
                 'id': chat_row[0],
@@ -887,17 +910,17 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help", inline=False)
-    
-    # Add note about modhelp for admins/moderators
-    if has_admin_or_moderator_role(ctx):
-        embed.add_field(name="👑 Admin/Moderator", value="`!modhelp` - View admin/moderator commands", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!dogbotmusic` - Join voice channel and start music\n`!removedogbotmusic` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!playlist` - Show current playlist\n`!nowplaying` - Show current song info", inline=False)
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!dnd1role` - Get DND1 role\n`!dnd2role` - Get DND2 role\n`!dnd3role` - Get DND3 role\n`!removecatsrole` - Remove Cats role\n`!removedogsrole` - Remove Dogs role\n`!removelizardsrole` - Remove Lizards role\n`!removepvprole` - Remove PVP role\n`!removedndrole` - Remove DND role\n`!removednd1role` - Remove DND1 role\n`!removednd2role` - Remove DND2 role\n`!removednd3role` - Remove DND3 role", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!dogbotmusic` - Join voice channel and start music\n`!removedogbotmusic` - Leave voice channel\n`!musicstart` - Start/resume music\n`!musicstop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!playlist` - Show current playlist\n`!nowplaying` - Show current song info", inline=False)
     embed.add_field(name="🤖 AI", value="`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!history` - View your recent chat history\n`!clearhistory` - Clear your chat history\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
-    embed.add_field(name="🎲 D&D Campaign", value="`!dnd <action>` - Take action in campaign\n`!character <name>` - Set your character name\n`!campaign` - View campaign history\n`!clearcampaign` - Clear channel campaign\n`!roll` - Roll a d20", inline=False)
-    embed.add_field(name="🎶 Music", value="`!dogbotmusic` - Join your voice channel and play music\n`!dogbotleave` - Stop music and leave the voice channel", inline=False)
+    embed.add_field(name="🎲 D&D Campaign", value="`!dnd <action>` - Take action in campaign\n`!character <n>` - Set your character name\n`!campaign` - View campaign history\n`!clearcampaign` - Clear channel campaign\n`!roll` - Roll a d20", inline=False)
+
+    # Add note about modhelp for admins/moderators
+    if has_admin_or_moderator_role(ctx):
+        embed.add_field(name="👑 Admin/Moderator", value="`!modhelp` - View admin/moderator commands", inline=False)
+
     await ctx.send(embed=embed)
 
 @bot.command()
@@ -1751,7 +1774,7 @@ async def removedogbotmusic(ctx):
     await music_bot.leave_voice_channel(ctx)
 
 @bot.command()
-async def musicstop(ctx):
+async def stop(ctx):
     """Stop music (but stay in channel)"""
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
@@ -1760,7 +1783,7 @@ async def musicstop(ctx):
     await music_bot.stop_music(ctx)
 
 @bot.command()
-async def musicstart(ctx):
+async def start(ctx):
     """Start/resume music"""
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
@@ -1804,6 +1827,47 @@ async def nowplaying(ctx):
         return
     
     await music_bot.get_current_song_info(ctx)
+
+@bot.command()
+async def musicstatus(ctx):
+    """Show detailed music bot status for debugging"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    guild_id = ctx.guild.id
+    embed = discord.Embed(
+        title="🎵 Music Bot Status",
+        color=discord.Color.blue()
+    )
+    
+    # Voice client status
+    if guild_id in music_bot.voice_clients:
+        voice_client = music_bot.voice_clients[guild_id]
+        embed.add_field(
+            name="Voice Connection",
+            value=f"✅ Connected to {voice_client.channel.name}" if voice_client.is_connected() else "❌ Disconnected",
+            inline=False
+        )
+        embed.add_field(
+            name="Audio Status",
+            value="▶️ Playing" if voice_client.is_playing() else "⏸️ Not Playing",
+            inline=True
+        )
+    else:
+        embed.add_field(name="Voice Connection", value="❌ Not in any voice channel", inline=False)
+    
+    # Playlist status
+    embed.add_field(name="Playlist Size", value=f"{len(MUSIC_PLAYLISTS)} songs", inline=True)
+    
+    # Bot state
+    current_song = music_bot.current_songs.get(guild_id, 0)
+    is_playing = music_bot.is_playing.get(guild_id, False)
+    
+    embed.add_field(name="Current Song Index", value=f"{current_song + 1}", inline=True)
+    embed.add_field(name="Bot Playing State", value="✅ Playing" if is_playing else "❌ Stopped", inline=True)
+    
+    await ctx.send(embed=embed)
 
 # HTTP Server for Render.com
 async def health_check(request):
