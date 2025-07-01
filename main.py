@@ -11,6 +11,8 @@ import aiosqlite
 from datetime import datetime
 import random
 from typing import Optional
+import yt_dlp
+import shutil
 
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
@@ -36,6 +38,414 @@ dnd1_role_name = "DND1"
 dnd2_role_name = "DND2"
 dnd3_role_name = "DND3"
 
+# Music Bot Configuration
+MUSIC_PLAYLISTS = [
+    "https://www.youtube.com/watch?v=dQw4w9WgXcQ",  # Example YouTube URL
+    "https://www.youtube.com/watch?v=L_jWHffIx5E",  # Another example
+    # Add more YouTube URLs here for your playlist
+]
+
+# FFmpeg Configuration for Cloud Deployment (Render.com)
+def get_ffmpeg_executable():
+    """Find FFmpeg executable for cloud deployment"""
+    # Check if FFmpeg is in PATH (Render.com has it pre-installed)
+    ffmpeg_path = shutil.which('ffmpeg')
+    if ffmpeg_path:
+        return ffmpeg_path
+    
+    # Fallback paths for common cloud platforms
+    common_paths = [
+        '/usr/bin/ffmpeg',
+        '/usr/local/bin/ffmpeg', 
+        '/opt/bin/ffmpeg'
+    ]
+    
+    for path in common_paths:
+        if os.path.exists(path):
+            return path
+    
+    # If not found, return 'ffmpeg' and hope it's in PATH
+    return 'ffmpeg'
+
+# Get FFmpeg executable path
+FFMPEG_EXECUTABLE = get_ffmpeg_executable()
+print(f"Using FFmpeg: {FFMPEG_EXECUTABLE}")
+
+# yt-dlp options for audio extraction
+YTDL_OPTIONS = {
+    'format': 'bestaudio/best',
+    'extractaudio': True,
+    'audioformat': 'mp3',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
+    'noplaylist': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'auto',
+    'source_address': '0.0.0.0'
+}
+
+FFMPEG_OPTIONS = {
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    'options': '-vn',
+    'executable': FFMPEG_EXECUTABLE
+}
+
+class YTDLSource(discord.PCMVolumeTransformer):
+    """Audio source for YouTube/music streaming"""
+    
+    def __init__(self, source, *, data, volume=0.5):
+        super().__init__(source, volume)
+        self.data = data
+        self.title = data.get('title')
+        self.url = data.get('url')
+
+    @classmethod
+    async def from_url(cls, url, *, loop=None, stream=False):
+        """Create audio source from URL"""
+        loop = loop or asyncio.get_event_loop()
+        
+        try:
+            with yt_dlp.YoutubeDL(YTDL_OPTIONS) as ytdl:
+                data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+                
+                if data and 'entries' in data and data['entries']:
+                    # Take first item from a playlist
+                    data = data['entries'][0]
+                
+                if not data:
+                    raise ValueError("Could not extract video information")
+                
+                filename = data['url'] if stream else ytdl.prepare_filename(data)
+                
+            return cls(discord.FFmpegPCMAudio(
+                filename, 
+                before_options=FFMPEG_OPTIONS['before_options'], 
+                options=FFMPEG_OPTIONS['options'],
+                executable=FFMPEG_OPTIONS['executable']
+            ), data=data)
+        except Exception as e:
+            print(f"Error creating audio source: {e}")
+            raise
+
+class MusicBot:
+    """Music bot functionality"""
+    
+    def __init__(self, bot):
+        self.bot = bot
+        self.voice_clients = {}  # guild_id -> voice_client
+        self.current_songs = {}  # guild_id -> current_song_index
+        self.is_playing = {}  # guild_id -> bool
+        
+    async def join_voice_channel(self, ctx):
+        """Join the voice channel of the user who called the command"""
+        if not ctx.author.voice:
+            await ctx.send("❌ You need to be in a voice channel to use this command!")
+            return None
+            
+        channel = ctx.author.voice.channel
+        
+        if ctx.guild.id in self.voice_clients:
+            if self.voice_clients[ctx.guild.id].channel == channel:
+                await ctx.send("🎵 I'm already in your voice channel!")
+                return self.voice_clients[ctx.guild.id]
+            else:
+                await self.voice_clients[ctx.guild.id].move_to(channel)
+                await ctx.send(f"🎵 Moved to {channel.name}!")
+                return self.voice_clients[ctx.guild.id]
+        
+        try:
+            voice_client = await channel.connect()
+            self.voice_clients[ctx.guild.id] = voice_client
+            self.current_songs[ctx.guild.id] = 0
+            self.is_playing[ctx.guild.id] = False
+            await ctx.send(f"🎵 Joined {channel.name}! Ready to play music!")
+            return voice_client
+        except Exception as e:
+            await ctx.send(f"❌ Failed to join voice channel: {e}")
+            return None
+    
+    async def leave_voice_channel(self, ctx):
+        """Leave the current voice channel"""
+        if ctx.guild.id not in self.voice_clients:
+            await ctx.send("❌ I'm not in a voice channel!")
+            return
+            
+        voice_client = self.voice_clients[ctx.guild.id]
+        await voice_client.disconnect()
+        
+        # Clean up
+        del self.voice_clients[ctx.guild.id]
+        if ctx.guild.id in self.current_songs:
+            del self.current_songs[ctx.guild.id]
+        if ctx.guild.id in self.is_playing:
+            del self.is_playing[ctx.guild.id]
+            
+        await ctx.send("🎵 Left the voice channel!")
+    
+    async def play_music(self, ctx):
+        """Start playing music from the playlist"""
+        if ctx.guild.id not in self.voice_clients:
+            await ctx.send("❌ I'm not in a voice channel! Use `!dogbotmusic` first.")
+            return
+            
+        voice_client = self.voice_clients[ctx.guild.id]
+        
+        if not MUSIC_PLAYLISTS:
+            await ctx.send("❌ No music playlist configured!")
+            return
+            
+        if self.is_playing.get(ctx.guild.id, False):
+            await ctx.send("🎵 Music is already playing!")
+            return
+            
+        self.is_playing[ctx.guild.id] = True
+        await ctx.send("🎵 Starting music stream...")
+        
+        # Start playing the playlist
+        await self._play_current_song(ctx.guild.id)
+    
+    async def stop_music(self, ctx):
+        """Stop playing music"""
+        if ctx.guild.id not in self.voice_clients:
+            await ctx.send("❌ I'm not in a voice channel!")
+            return
+            
+        voice_client = self.voice_clients[ctx.guild.id]
+        
+        if voice_client.is_playing():
+            voice_client.stop()
+            
+        self.is_playing[ctx.guild.id] = False
+        await ctx.send("🎵 Music stopped!")
+    
+    async def next_song(self, ctx):
+        """Skip to the next song in the playlist"""
+        if ctx.guild.id not in self.voice_clients:
+            await ctx.send("❌ I'm not in a voice channel!")
+            return
+            
+        if not MUSIC_PLAYLISTS:
+            await ctx.send("❌ No music playlist configured!")
+            return
+            
+        voice_client = self.voice_clients[ctx.guild.id]
+        
+        # Stop current song if playing
+        if voice_client.is_playing():
+            voice_client.stop()
+        
+        # Move to next song
+        current_index = self.current_songs.get(ctx.guild.id, 0)
+        next_index = (current_index + 1) % len(MUSIC_PLAYLISTS)
+        self.current_songs[ctx.guild.id] = next_index
+        
+        if self.is_playing.get(ctx.guild.id, False):
+            await ctx.send(f"⏭️ Skipping to next song...")
+            await self._play_current_song(ctx.guild.id)
+        else:
+            await ctx.send(f"⏭️ Next song queued. Use `!musicstart` to play.")
+    
+    async def previous_song(self, ctx):
+        """Go back to the previous song in the playlist"""
+        if ctx.guild.id not in self.voice_clients:
+            await ctx.send("❌ I'm not in a voice channel!")
+            return
+            
+        if not MUSIC_PLAYLISTS:
+            await ctx.send("❌ No music playlist configured!")
+            return
+            
+        voice_client = self.voice_clients[ctx.guild.id]
+        
+        # Stop current song if playing
+        if voice_client.is_playing():
+            voice_client.stop()
+        
+        # Move to previous song
+        current_index = self.current_songs.get(ctx.guild.id, 0)
+        previous_index = (current_index - 1) % len(MUSIC_PLAYLISTS)
+        self.current_songs[ctx.guild.id] = previous_index
+        
+        if self.is_playing.get(ctx.guild.id, False):
+            await ctx.send(f"⏮️ Going back to previous song...")
+            await self._play_current_song(ctx.guild.id)
+        else:
+            await ctx.send(f"⏮️ Previous song queued. Use `!musicstart` to play.")
+    
+    async def get_current_song_info(self, ctx):
+        """Get information about the current song"""
+        if ctx.guild.id not in self.voice_clients:
+            await ctx.send("❌ I'm not in a voice channel!")
+            return
+            
+        if not MUSIC_PLAYLISTS:
+            await ctx.send("❌ No music playlist configured!")
+            return
+        
+        current_index = self.current_songs.get(ctx.guild.id, 0)
+        total_songs = len(MUSIC_PLAYLISTS)
+        current_url = MUSIC_PLAYLISTS[current_index]
+        
+        # Extract video ID for display
+        video_id = current_url.split('v=')[-1].split('&')[0] if 'youtube.com' in current_url else "Unknown"
+        
+        embed = discord.Embed(
+            title="🎵 Current Song Info",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Position", value=f"{current_index + 1} of {total_songs}", inline=True)
+        embed.add_field(name="Status", value="▶️ Playing" if self.is_playing.get(ctx.guild.id, False) else "⏸️ Stopped", inline=True)
+        embed.add_field(name="URL", value=f"[Link]({current_url})", inline=False)
+        
+        await ctx.send(embed=embed)
+    
+    async def _play_current_song(self, guild_id):
+        """Play the current song (helper method for next/previous)"""
+        if guild_id not in self.voice_clients or not self.is_playing.get(guild_id, False):
+            return
+            
+        voice_client = self.voice_clients[guild_id]
+        current_index = self.current_songs.get(guild_id, 0)
+        
+        try:
+            url = MUSIC_PLAYLISTS[current_index]
+            player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=True)
+            
+            def after_playing(error):
+                if error:
+                    print(f'Player error: {error}')
+                
+                # Only auto-advance if we're still supposed to be playing
+                # (not manually skipped)
+                if self.is_playing.get(guild_id, False) and not voice_client.is_playing():
+                    self.current_songs[guild_id] = (current_index + 1) % len(MUSIC_PLAYLISTS)
+                    asyncio.run_coroutine_threadsafe(self._play_current_song(guild_id), self.bot.loop)
+            
+            voice_client.play(player, after=after_playing)
+            print(f"Now playing: {player.title}")
+            
+        except Exception as e:
+            print(f"Error playing music: {e}")
+            # Try next song after a delay
+            if self.is_playing.get(guild_id, False):
+                await asyncio.sleep(5)
+                self.current_songs[guild_id] = (current_index + 1) % len(MUSIC_PLAYLISTS)
+                await self._play_current_song(guild_id)
+    
+    async def add_song(self, ctx, url):
+        """Add a song to the playlist"""
+        if not url:
+            await ctx.send("❌ Please provide a YouTube URL!")
+            return
+        
+        # Validate URL format
+        if not url.startswith(('http://', 'https://')):
+            await ctx.send("❌ Please provide a valid HTTP/HTTPS URL!")
+            return
+        
+        # Check if it's a YouTube URL (basic validation)
+        if 'youtube.com' not in url and 'youtu.be' not in url:
+            await ctx.send("❌ Please provide a YouTube URL! Other platforms may not work reliably.")
+            return
+        
+        # Test if the URL is valid by trying to extract info
+        try:
+            with yt_dlp.YoutubeDL({'quiet': True}) as ytdl:
+                info = ytdl.extract_info(url, download=False)
+                title = info.get('title', 'Unknown Title') if info else 'Unknown Title'
+        except Exception as e:
+            await ctx.send(f"❌ Failed to validate URL: {str(e)[:100]}...")
+            return
+        
+        # Add to playlist
+        MUSIC_PLAYLISTS.append(url)
+        
+        embed = discord.Embed(
+            title="🎵 Song Added to Playlist",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Title", value=title, inline=False)
+        embed.add_field(name="URL", value=f"[Link]({url})", inline=False)
+        embed.add_field(name="Position", value=f"{len(MUSIC_PLAYLISTS)} of {len(MUSIC_PLAYLISTS)}", inline=True)
+        embed.set_footer(text=f"Added by {ctx.author.display_name}")
+        
+        await ctx.send(embed=embed)
+    
+    async def remove_song(self, ctx, url):
+        """Remove a song from the playlist"""
+        if not url:
+            await ctx.send("❌ Please provide a YouTube URL to remove!")
+            return
+        
+        # Find and remove the URL
+        try:
+            index = MUSIC_PLAYLISTS.index(url)
+            removed_url = MUSIC_PLAYLISTS.pop(index)
+            
+            # Adjust current song index if needed
+            for guild_id in self.current_songs:
+                if self.current_songs[guild_id] > index:
+                    self.current_songs[guild_id] -= 1
+                elif self.current_songs[guild_id] == index:
+                    # If we removed the currently playing song, reset to beginning
+                    self.current_songs[guild_id] = 0
+            
+            embed = discord.Embed(
+                title="🗑️ Song Removed from Playlist",
+                color=discord.Color.red()
+            )
+            embed.add_field(name="Removed URL", value=f"[Link]({removed_url})", inline=False)
+            embed.add_field(name="New Playlist Size", value=f"{len(MUSIC_PLAYLISTS)} songs", inline=True)
+            embed.set_footer(text=f"Removed by {ctx.author.display_name}")
+            
+            await ctx.send(embed=embed)
+            
+        except ValueError:
+            await ctx.send("❌ That URL is not in the playlist! Use `!playlist` to see current songs.")
+    
+    async def show_playlist(self, ctx):
+        """Show the current playlist"""
+        if not MUSIC_PLAYLISTS:
+            await ctx.send("📝 Playlist is empty! Use `!add <youtube_url>` to add songs.")
+            return
+        
+        embed = discord.Embed(
+            title="🎵 Current Playlist",
+            description=f"Total songs: {len(MUSIC_PLAYLISTS)}",
+            color=discord.Color.blue()
+        )
+        
+        # Show up to 10 songs to avoid embed limits
+        display_count = min(len(MUSIC_PLAYLISTS), 10)
+        
+        for i in range(display_count):
+            url = MUSIC_PLAYLISTS[i]
+            # Extract video ID for display
+            if 'youtube.com/watch?v=' in url:
+                video_id = url.split('v=')[1].split('&')[0]
+            elif 'youtu.be/' in url:
+                video_id = url.split('youtu.be/')[1].split('?')[0]
+            else:
+                video_id = "Unknown"
+            
+            current_indicator = "▶️ " if i == self.current_songs.get(ctx.guild.id, 0) else ""
+            embed.add_field(
+                name=f"{current_indicator}{i + 1}. Song {i + 1}",
+                value=f"[Link]({url})",
+                inline=False
+            )
+        
+        if len(MUSIC_PLAYLISTS) > 10:
+            embed.set_footer(text=f"Showing first 10 of {len(MUSIC_PLAYLISTS)} songs")
+        
+        await ctx.send(embed=embed)
+
+# Initialize music bot
+music_bot = None
 
 # Venice AI Configuration
 VENICE_API_URL = "https://api.venice.ai/api/v1/chat/completions"
@@ -423,6 +833,7 @@ Current player: {user_name}"""
 
 @bot.event
 async def on_ready():
+    global music_bot
     if bot.user is not None:
         print(f"We are ready to go in, {bot.user.name}")
     else:
@@ -431,6 +842,10 @@ async def on_ready():
     # Initialize database
     await init_database()
     print("Chat history database initialized")
+    
+    # Initialize music bot
+    music_bot = MusicBot(bot)
+    print("Music bot initialized")
 
 @bot.event
 async def on_member_join(member):
@@ -479,8 +894,10 @@ async def help(ctx):
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!dnd1role` - Get DND1 role\n`!dnd2role` - Get DND2 role\n`!dnd3role` - Get DND3 role\n`!removecatsrole` - Remove Cats role\n`!removedogsrole` - Remove Dogs role\n`!removelizardsrole` - Remove Lizards role\n`!removepvprole` - Remove PVP role\n`!removedndrole` - Remove DND role\n`!removednd1role` - Remove DND1 role\n`!removednd2role` - Remove DND2 role\n`!removednd3role` - Remove DND3 role", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!dogbotmusic` - Join voice channel and start music\n`!removedogbotmusic` - Leave voice channel\n`!musicstart` - Start/resume music\n`!musicstop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!playlist` - Show current playlist\n`!nowplaying` - Show current song info", inline=False)
     embed.add_field(name="🤖 AI", value="`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!history` - View your recent chat history\n`!clearhistory` - Clear your chat history\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
     embed.add_field(name="🎲 D&D Campaign", value="`!dnd <action>` - Take action in campaign\n`!character <name>` - Set your character name\n`!campaign` - View campaign history\n`!clearcampaign` - Clear channel campaign\n`!roll` - Roll a d20", inline=False)
+    embed.add_field(name="🎶 Music", value="`!dogbotmusic` - Join your voice channel and play music\n`!dogbotleave` - Stop music and leave the voice channel", inline=False)
     await ctx.send(embed=embed)
 
 @bot.command()
@@ -522,7 +939,7 @@ async def modhelp(ctx):
         inline=False
     )
     
-    embed.set_footer(text="💡 Tip: Use @username or user mentions to specify the target user")
+    embed.set_footer(text="💡 Tip: Use @username or user mentions to specify the target user\n🎵 Music commands are now available to everyone!")
     await ctx.send(embed=embed)
 
 @bot.command()
@@ -1308,61 +1725,82 @@ async def poll(ctx, *, question):
     await poll_message.add_reaction("❌")  # No
     await poll_message.add_reaction("🤷")  # Maybe/Unsure
 
-# Web server for health checks and port binding (similar to Express.js example)
-async def health_check(request):
-    """Health check endpoint - equivalent to Express.js app.get('/')"""
-    return web.Response(text="Hello World! Dog Bot is running!", status=200)
+# Music Bot Commands (Admin/Moderator only)
+@bot.command()
+async def dogbotmusic(ctx):
+    """Make Dogbot join voice channel and start playing music"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    # Join voice channel
+    voice_client = await music_bot.join_voice_channel(ctx)
+    if voice_client:
+        # Start playing music automatically
+        await music_bot.play_music(ctx)
 
-async def start_web_server():
-    """Start the web server to ensure proper port binding"""
-    app = web.Application()
+@bot.command()
+async def removedogbotmusic(ctx):
+    """Make Dogbot leave voice channel"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
     
-    # Add routes - equivalent to Express.js app.get('/', ...)
-    app.router.add_get('/', health_check)
-    app.router.add_get('/health', health_check)  # Additional health endpoint
-    
-    # Get port from environment or default to 4000 (like Express.js example)
-    port = int(os.environ.get('PORT', 4000))
-    
-    # Create and start the web server
-    runner = web.AppRunner(app)
-    await runner.setup()
-    
-    # Bind to all interfaces (0.0.0.0) and the specified port
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    
-    # Log like Express.js example: "Example app listening on port ${port}"
-    print(f"Dog Bot web server listening on port {port}")
-    print(f"Health check available at: http://localhost:{port}/")
-    
-    return runner
+    # Stop music and leave
+    await music_bot.stop_music(ctx)
+    await music_bot.leave_voice_channel(ctx)
 
-async def main():
-    """Main function to start both the Discord bot and web server"""
-    web_runner = None
-    try:
-        # Initialize database first
-        await init_database()
-        print("✅ Chat history database initialized")
-        
-        # Start web server for port binding
-        web_runner = await start_web_server()
-        print("✅ Web server started successfully")
-        
-        # Start Discord bot
-        if token:
-            print("🤖 Starting Discord bot...")
-            await bot.start(token)
-        else:
-            print("❌ No Discord token provided")
-            
-    except Exception as e:
-        print(f"❌ Error starting services: {e}")
-        if web_runner is not None:
-            await web_runner.cleanup()
-        raise
+@bot.command()
+async def musicstop(ctx):
+    """Stop music (but stay in channel)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.stop_music(ctx)
 
-if __name__ == "__main__":
-    print("🚀 Starting Dog Bot services...")
-    asyncio.run(main())
+@bot.command()
+async def musicstart(ctx):
+    """Start/resume music"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.play_music(ctx)
+
+@bot.command()
+async def add(ctx, *, url):
+    """Add a YouTube URL to the playlist"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.add_song(ctx, url)
+
+@bot.command()
+async def remove(ctx, *, url):
+    """Remove a YouTube URL from the playlist"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.remove_song(ctx, url)
+
+@bot.command()
+async def playlist(ctx):
+    """Show the current music playlist"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.show_playlist(ctx)
+
+
+@bot.command()
+async def nowplaying(ctx):
+    """Show information about the currently playing song"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.get_current_song_info(ctx)
