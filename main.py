@@ -130,7 +130,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
 
         ffmpeg_options = {
             'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 200M -analyzeduration 0',
-            'options': '-vn -ar 48000 -ac 2 -b:a 192k -af "dynaudnorm=f=75:g=25:n=0:p=0.95,loudnorm=I=-16:TP=-1.5:LRA=11" -f opus',
+            'options': '-vn -b:a 128k -bufsize 256k -maxrate 128k',
         }
 
         ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
