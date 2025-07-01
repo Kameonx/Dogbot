@@ -159,9 +159,8 @@ YTDL_OPTIONS = {
     'default_search': 'auto',
     'source_address': '0.0.0.0',
     'extract_flat': False,
-    # Cloud deployment compatible settings (no browser cookies available)
-    # Use cookies.txt file if available (upload to project root)
-    'cookiefile': 'cookies.txt',  # Will be ignored if file doesn't exist
+    # Cloud deployment compatible settings - Use cookies.txt file for authentication
+    'cookiefile': 'cookies.txt',  # Use the uploaded cookies.txt file
     # YouTube-specific options to avoid authentication issues
     'extractor_args': {
         'youtube': {
@@ -1097,6 +1096,10 @@ async def on_ready():
     # Initialize music bot
     music_bot = MusicBot(bot)
     print("Music bot initialized")
+    
+    # Enable cookies.txt by default for cloud deployment
+    enable_youtube_cookies()
+    print("YouTube cookies enabled using cookies.txt file")
 
 @bot.event
 async def on_member_join(member):
@@ -1185,7 +1188,7 @@ async def modhelp(ctx):
     
     embed.add_field(
         name="🔧 YouTube Authentication", 
-        value="`!enablecookies [browser]` - Enable YouTube cookies\n"
+        value="`!enablecookies` - Enable YouTube cookies (cookies.txt)\n"
               "`!disablecookies` - Disable YouTube cookies\n"
               "`!ytdlstatus` - Show yt-dlp configuration", 
         inline=False
@@ -1512,20 +1515,32 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
         await ctx.send("PVP role not found. Please ensure the role exists in this server.")
 
 @bot.command()
-async def enablecookies(ctx, browser: str = 'chrome'):
-    """Enable YouTube cookies from browser (Admin/Mod only)"""
+async def enablecookies(ctx, browser: str = 'auto'):
+    """Enable YouTube cookies from cookies.txt file (Admin/Mod only)"""
     if not has_admin_or_moderator_role(ctx):
         await ctx.send("❌ You need Admin or Moderator role to use this command.")
         return
     
-    valid_browsers = ['chrome', 'firefox', 'safari', 'edge']
-    if browser.lower() not in valid_browsers:
-        await ctx.send(f"❌ Invalid browser. Choose from: {', '.join(valid_browsers)}")
-        return
-    
     try:
-        enable_youtube_cookies(browser.lower())
-        await ctx.send(f"✅ YouTube cookies enabled from {browser} browser. This may help with authentication issues.")
+        enable_youtube_cookies()  # Always uses cookies.txt now
+        
+        embed = discord.Embed(
+            title="🍪 YouTube Cookies Enabled",
+            description="Cookies are now enabled using cookies.txt file (cloud deployment compatible)",
+            color=discord.Color.green()
+        )
+        embed.add_field(
+            name="📋 How it works",
+            value="• Uses cookies.txt file in project root\n• Compatible with Render.com cloud deployment\n• No browser required",
+            inline=False
+        )
+        embed.add_field(
+            name="ℹ️ Note",
+            value="Browser cookies don't work on cloud platforms like Render.com.\nThe bot automatically uses your uploaded cookies.txt file.",
+            inline=False
+        )
+        
+        await ctx.send(embed=embed)
     except Exception as e:
         await ctx.send(f"❌ Failed to enable cookies: {e}")
 
@@ -1555,10 +1570,19 @@ async def ytdlstatus(ctx):
     )
     
     # Check cookie status
-    cookies_enabled = 'cookiesfrombrowser' in YTDL_OPTIONS
+    cookies_file_enabled = 'cookiefile' in YTDL_OPTIONS
+    cookies_browser_enabled = 'cookiesfrombrowser' in YTDL_OPTIONS
+    
+    if cookies_file_enabled:
+        cookie_status = "✅ Enabled (cookies.txt file)"
+    elif cookies_browser_enabled:
+        cookie_status = f"⚠️ Browser cookies enabled but won't work on Render.com ({YTDL_OPTIONS.get('cookiesfrombrowser', ['none'])[0]})"
+    else:
+        cookie_status = "❌ Disabled"
+    
     embed.add_field(
-        name="Browser Cookies",
-        value=f"✅ Enabled ({YTDL_OPTIONS.get('cookiesfrombrowser', ['none'])[0]})" if cookies_enabled else "❌ Disabled",
+        name="YouTube Cookies",
+        value=cookie_status,
         inline=True
     )
     
@@ -1580,7 +1604,7 @@ async def ytdlstatus(ctx):
     
     embed.add_field(
         name="Recommendations",
-        value="• Use `!enablecookies chrome` if videos fail to play\n• Cookies help with age-restricted and some premium content\n• Disable cookies with `!disablecookies` if having issues",
+        value="• Use `!enablecookies` to enable cookies.txt file support\n• Make sure cookies.txt is uploaded to project root\n• Cookies help with age-restricted and premium content\n• Disable cookies with `!disablecookies` if having issues",
         inline=False
     )
     
@@ -2026,46 +2050,35 @@ async def musicstatus(ctx):
 # Functions to manage YouTube cookie authentication
 def enable_youtube_cookies(browser='auto'):
     """
-    Enable browser cookie support for YouTube authentication.
-    Browsers: 'auto', 'chrome', 'firefox', 'safari', 'edge'
+    Enable cookies.txt file support for YouTube authentication (cloud deployment compatible).
+    Note: Browser cookies don't work on Render.com, only cookies.txt files.
     """
     global YTDL_OPTIONS
     
-    if browser.lower() == 'auto':
-        # Try browsers in order of likelihood
-        browsers_to_try = ['chrome', 'firefox', 'edge', 'safari']
-        for br in browsers_to_try:
-            try:
-                YTDL_OPTIONS['cookiesfrombrowser'] = (br,)
-                print(f"YouTube cookies enabled from {br} browser")
-                return
-            except Exception as e:
-                print(f"Failed to use {br} cookies: {e}")
-                continue
-        print("Warning: Could not enable cookies from any browser")
-    else:
-        YTDL_OPTIONS['cookiesfrombrowser'] = (browser,)
-        print(f"YouTube cookies enabled from {browser} browser")
-
-def disable_youtube_cookies():
-    """Disable browser cookie support"""
-    global YTDL_OPTIONS
+    # Always use cookies.txt file for cloud deployment
+    YTDL_OPTIONS['cookiefile'] = 'cookies.txt'
+    print("YouTube cookies enabled from cookies.txt file (cloud deployment)")
+    
+    # Remove any browser cookie attempts that won't work on Render.com
     if 'cookiesfrombrowser' in YTDL_OPTIONS:
         del YTDL_OPTIONS['cookiesfrombrowser']
+
+def disable_youtube_cookies():
+    """Disable cookie file support"""
+    global YTDL_OPTIONS
+    if 'cookiefile' in YTDL_OPTIONS:
+        del YTDL_OPTIONS['cookiefile']
         print("YouTube cookies disabled")
+    if 'cookiesfrombrowser' in YTDL_OPTIONS:
+        del YTDL_OPTIONS['cookiesfrombrowser']
+        print("Browser cookies disabled")
 
 def try_fallback_cookies():
-    """Try different browser cookies if current one fails"""
-    browsers = ['chrome', 'firefox', 'edge', 'safari']
-    for browser in browsers:
-        try:
-            global YTDL_OPTIONS
-            YTDL_OPTIONS['cookiesfrombrowser'] = (browser,)
-            print(f"Trying fallback cookies from {browser}")
-            return browser
-        except:
-            continue
-    return None
+    """Use cookies.txt file as fallback (cloud deployment compatible)"""
+    global YTDL_OPTIONS
+    YTDL_OPTIONS['cookiefile'] = 'cookies.txt'
+    print("Using cookies.txt file as fallback")
+    return 'cookies.txt'
 
 # HTTP Server for Render.com
 async def health_check(request):
