@@ -1,3 +1,31 @@
+"""
+Dogbot - A Discord bot with AI, utility, and music features
+
+YOUTUBE AUTHENTICATION FOR CLOUD DEPLOYMENT (Render.com):
+To fix "Sign in to confirm you're not a bot" errors on Render.com:
+
+1. Export cookies from your browser (recommended):
+   - Install browser extension like "Get cookies.txt" for Chrome/Firefox
+   - Go to youtube.com and login to your account
+   - Export cookies to cookies.txt file
+   - Upload cookies.txt to your project root on Render.com
+
+2. Alternative approaches if cookies don't work:
+   - Use YouTube API key (limited but more reliable)
+   - Focus on non-age-restricted, public videos
+   - Implement fallback to other music sources
+
+3. Current configuration:
+   - Optimized for cloud deployment without browser
+   - Uses multiple YouTube client types for better compatibility
+   - Includes rate limiting and user agent spoofing
+   - Falls back gracefully when authentication fails
+
+Note: YouTube's bot detection is aggressive. For production use,
+consider implementing a YouTube Data API v3 integration or 
+alternative music sources like SoundCloud.
+"""
+
 import discord
 from discord.ext import commands
 import logging
@@ -131,18 +159,28 @@ YTDL_OPTIONS = {
     'default_search': 'auto',
     'source_address': '0.0.0.0',
     'extract_flat': False,
+    # Cloud deployment compatible settings (no browser cookies available)
+    # Use cookies.txt file if available (upload to project root)
+    'cookiefile': 'cookies.txt',  # Will be ignored if file doesn't exist
     # YouTube-specific options to avoid authentication issues
     'extractor_args': {
         'youtube': {
-            'player_client': ['mweb', 'web'],  # Use mobile web and web clients
+            'player_client': ['mweb', 'web', 'android'],  # Use multiple clients
             'player_skip': ['configs'],  # Skip some config requests
+            'skip': ['dash', 'hls'],  # Skip some problematic formats
         }
     },
-    # Cookie handling (optional - can be enabled if needed)
-    # 'cookiesfrombrowser': ('chrome',),  # Uncomment to use browser cookies
-    # Rate limiting to avoid "This content isn't available" errors
+    # Rate limiting to avoid being flagged as bot
     'sleep_interval': 1,  # Sleep 1 second between requests
     'max_sleep_interval': 5,  # Max sleep interval
+    'sleep_interval_subtitles': 1,
+    # User agent rotation to appear more like a regular browser
+    'http_headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    },
+    # Additional anti-bot detection measures
+    'geo_bypass': True,
+    'age_limit': None,
 }
 
 FFMPEG_OPTIONS = {
@@ -162,9 +200,10 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
-        """Create audio source from URL"""
+        """Create audio source from URL with fallback options for cloud deployment"""
         loop = loop or asyncio.get_event_loop()
         
+        # Try primary configuration first
         try:
             with yt_dlp.YoutubeDL(YTDL_OPTIONS) as ytdl:
                 data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
@@ -184,16 +223,55 @@ class YTDLSource(discord.PCMVolumeTransformer):
                 options=FFMPEG_OPTIONS['options'],
                 executable=FFMPEG_OPTIONS['executable']
             ), data=data)
+            
         except yt_dlp.utils.DownloadError as e:
             error_msg = str(e)
+            
+            # Try fallback configuration for cloud deployment
             if any(phrase in error_msg.lower() for phrase in [
                 "sign in to confirm you're not a bot", 
                 "requires authentication",
-                "po token",
-                "this content isn't available"
+                "po token"
             ]):
-                print(f"YouTube authentication/rate limit error for {url}: {error_msg}")
-                raise ValueError(f"YouTube requires authentication or rate limited: {url}")
+                print(f"Primary extraction failed, trying fallback method for {url}")
+                
+                # Fallback YTDL options without cookies, more conservative
+                fallback_options = YTDL_OPTIONS.copy()
+                fallback_options.pop('cookiefile', None)  # Remove cookie requirement
+                fallback_options['extractor_args'] = {
+                    'youtube': {
+                        'player_client': ['web'],  # Use only web client
+                        'bypass_age_gate': False,
+                    }
+                }
+                
+                try:
+                    with yt_dlp.YoutubeDL(fallback_options) as ytdl:
+                        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+                        
+                        if data and 'entries' in data and data['entries']:
+                            data = data['entries'][0]
+                        
+                        if data:
+                            filename = data['url'] if stream else ytdl.prepare_filename(data)
+                            return cls(discord.FFmpegPCMAudio(
+                                filename, 
+                                before_options=FFMPEG_OPTIONS['before_options'], 
+                                options=FFMPEG_OPTIONS['options'],
+                                executable=FFMPEG_OPTIONS['executable']
+                            ), data=data)
+                except:
+                    pass  # Fall through to error handling
+                
+                # If fallback also fails, provide helpful error message
+                helpful_msg = (
+                    f"YouTube authentication required for: {url}\n"
+                    "💡 **Cloud Deployment Fix**: Upload a cookies.txt file to fix this!\n"
+                    "1. Export cookies from YouTube using browser extension\n"
+                    "2. Upload cookies.txt to your Render.com project root\n"
+                    "3. Redeploy your bot"
+                )
+                raise ValueError(helpful_msg)
             elif any(phrase in error_msg.lower() for phrase in [
                 "video unavailable", 
                 "private video",
@@ -1945,15 +2023,29 @@ async def musicstatus(ctx):
     
     await ctx.send(embed=embed)
 
-# Optional: Functions to manage YouTube cookie authentication
-def enable_youtube_cookies(browser='chrome'):
+# Functions to manage YouTube cookie authentication
+def enable_youtube_cookies(browser='auto'):
     """
     Enable browser cookie support for YouTube authentication.
-    Browsers: 'chrome', 'firefox', 'safari', 'edge'
+    Browsers: 'auto', 'chrome', 'firefox', 'safari', 'edge'
     """
     global YTDL_OPTIONS
-    YTDL_OPTIONS['cookiesfrombrowser'] = (browser,)
-    print(f"YouTube cookies enabled from {browser} browser")
+    
+    if browser.lower() == 'auto':
+        # Try browsers in order of likelihood
+        browsers_to_try = ['chrome', 'firefox', 'edge', 'safari']
+        for br in browsers_to_try:
+            try:
+                YTDL_OPTIONS['cookiesfrombrowser'] = (br,)
+                print(f"YouTube cookies enabled from {br} browser")
+                return
+            except Exception as e:
+                print(f"Failed to use {br} cookies: {e}")
+                continue
+        print("Warning: Could not enable cookies from any browser")
+    else:
+        YTDL_OPTIONS['cookiesfrombrowser'] = (browser,)
+        print(f"YouTube cookies enabled from {browser} browser")
 
 def disable_youtube_cookies():
     """Disable browser cookie support"""
@@ -1961,6 +2053,19 @@ def disable_youtube_cookies():
     if 'cookiesfrombrowser' in YTDL_OPTIONS:
         del YTDL_OPTIONS['cookiesfrombrowser']
         print("YouTube cookies disabled")
+
+def try_fallback_cookies():
+    """Try different browser cookies if current one fails"""
+    browsers = ['chrome', 'firefox', 'edge', 'safari']
+    for browser in browsers:
+        try:
+            global YTDL_OPTIONS
+            YTDL_OPTIONS['cookiesfrombrowser'] = (browser,)
+            print(f"Trying fallback cookies from {browser}")
+            return browser
+        except:
+            continue
+    return None
 
 # HTTP Server for Render.com
 async def health_check(request):
