@@ -1804,3 +1804,58 @@ async def nowplaying(ctx):
         return
     
     await music_bot.get_current_song_info(ctx)
+
+# HTTP Server for Render.com
+async def health_check(request):
+    """Health check endpoint for Render.com"""
+    return web.Response(text="🐶 Dogbot is running! Woof woof!")
+
+async def create_app():
+    """Create the web application for health checks"""
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    return app
+
+async def start_web_server():
+    """Start the HTTP server for Render.com"""
+    app = await create_app()
+    port = int(os.getenv('PORT', 4000))
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    
+    print(f"🌐 Web server running on port {port}")
+    return runner
+
+# Main startup function
+async def main():
+    """Main function to start both the bot and web server"""
+    web_runner = None
+    try:
+        # Start the web server for Render.com
+        web_runner = await start_web_server()
+        
+        # Start the Discord bot
+        print("🐕 Starting Dogbot...")
+        if token is None:
+            raise ValueError("DISCORD_TOKEN environment variable not set")
+        await bot.start(token)
+        
+    except KeyboardInterrupt:
+        print("🛑 Bot stopped by user")
+    except Exception as e:
+        print(f"❌ Error starting bot: {e}")
+    finally:
+        if web_runner is not None:
+            await web_runner.cleanup()
+
+if __name__ == "__main__":
+    # Run the main function
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("🛑 Bot shutdown complete")
