@@ -49,48 +49,48 @@ MUSIC_PLAYLISTS = [
     "https://www.youtube.com/watch?v=60ItHLz5WEA",  # Alan Walker - Faded
     "https://www.youtube.com/watch?v=Zi_XLOBDo_Y",  # Michael Jackson - Billie Jean
     "https://www.youtube.com/watch?v=A_MjCqQoLLA",  # The Beatles - Hey Jude
-
-    # 2000/2010 hits
-
-    "https://www.youtube.com/watch?v=Zrdgz319vEE",  # Daft Punk - Harder, Better, Faster, Stronger (2001)
-    "https://www.youtube.com/watch?v=86XLajnnFJQ",  # Avicii - Levels (2011)
-    "https://www.youtube.com/watch?v=14eNXeF6y6M",  # David Guetta - Memories (2010)
-    "https://www.youtube.com/watch?v=q5Z9c12PUmE",  # Swedish House Mafia - Don't You Worry Child (2011)
-    "https://www.youtube.com/watch?v=st571DYYTR8",  # Deadmau5 - Strobe (2007)
-    "https://www.youtube.com/watch?v=kNQ9D30sHYo",  # Calvin Harris - Acceptable in the 80s (2007)
-    "https://www.youtube.com/watch?v=VxwWY47WtwY",  # Zedd - Clarity (2012)
-    "https://www.youtube.com/watch?v=6JCLY0Rgz4U",  # Martin Garrix - Used To Love (2016)
-    "https://www.youtube.com/watch?v=Oe_eKiEtvnU",  # Joel Corry & David Guetta - BED (Remix) (2020)
-    "https://www.youtube.com/watch?v=3MAxltiSJUE",  # Calvin Harris & Rag'n'Bone Man - Stay With Me (2017)
-    "https://www.youtube.com/watch?v=QeQys1p1rZQ",  # David Guetta & Bebe Rexha - I'm Good (Blue) (2022)
-    "https://www.youtube.com/watch?v=2OvyA5H8HgI",  # Doja Cat - Paint The Town Red (2023)
-    "https://www.youtube.com/watch?v=9bZkp7q19f0",  # PSY - Gangnam Style (2012)
-    "https://www.youtube.com/watch?v=Zi_XLOBDo_Y",  # Michael Jackson - Billie Jean (2009 reupload)
-    "https://www.youtube.com/watch?v=A_MjbdYsCqQ",  # OutKast - Hey Ya! (2003)
-    "https://www.youtube.com/watch?v=CrimexEriw",  # Rihanna - Umbrella (2007)
-    "https://www.youtube.com/watch?v=QJO3ROT-A4E",  # Katy Perry - Firework (2010)
-    "https://www.youtube.com/watch?v=rYEDA3J2QvQ",  # Adele - Rolling in the Deep (2010)
-    "https://www.youtube.com/watch?v=8KkKkvb1bHU",  # The Killers - Mr. Brightside (2004)
-    "https://www.youtube.com/watch?v=fWNaR-rxAic",  # Carly Rae Jepsen - Call Me Maybe (2012)
-    "https://www.youtube.com/watch?v=Zs6e0JBEv-w",  # Robin Thicke - Blurred Lines (2013)
-    "https://www.youtube.com/watch?v=4Tb5F3grUH4",  # The Weeknd - Can't Feel My Face (2015)
-    "https://www.youtube.com/watch?v=fJ9rUzIMcZQ",  # Justin Bieber - Sorry (2015)
-    "https://www.youtube.com/watch?v=6v_h_sjF5sM",  # Walk the Moon - Shut Up and Dance (2014)
-    "https://www.youtube.com/watch?v=5PDoq_PWWvE",  # Linkin Park - In The End (2000)
-    "https://www.youtube.com/watch?v=8UVNT4wvIGY",  # Kelly Clarkson - Since U Been Gone (2004)
-    "https://www.youtube.com/watch?v=2TGfQB-bv7w",  # Calvin Harris & Ellie Goulding - Miracle (2023)
-
-    # New additions (2023/2024 hits and electro house/dance)
-    "https://www.youtube.com/watch?v=2TGfQB-bv7w",  # Calvin Harris & Ellie Goulding - Miracle
-    "https://www.youtube.com/watch?v=0Qlbd9v2x5k",  # Tiësto & Karol G - 54321 (Remix)
-    "https://www.youtube.com/watch?v=QeQys1p1rZQ",  # David Guetta & Bebe Rexha - I'm Good (Blue)
-    "https://www.youtube.com/watch?v=1ZRb1we80kM",  # Swedish House Mafia & The Weeknd - Moth To A Flame
-    "https://www.youtube.com/watch?v=6JCLY0Rgz4U",  # Martin Garrix - Used To Love
-    "https://www.youtube.com/watch?v=2OvyA5H8HgI",  # Doja Cat - Paint The Town Red
-    "https://www.youtube.com/watch?v=X8URDnH9OiQ",  # Fred again.. & Swedish House Mafia - Turn On The Lights
-    "https://www.youtube.com/watch?v=Oe_eKiEtvnU",  # Joel Corry & David Guetta - BED (Remix)
-    "https://www.youtube.com/watch?v=9xMRx8IUWho",  # Tiësto & Tate McRae - Capital Letters
+    "https://youtu.be/96ZzJP1psKg?si=dwMnHI4FuBILY60s", # Ella baila sola Ángel Aispuro - Ver. Extendida
     "https://www.youtube.com/watch?v=3MAxltiSJUE",  # Calvin Harris & Rag'n'Bone Man - Stay With Me
+    "https://youtu.be/P3cffdsEXXw?si=P_QyVqHDivCvOCw4", # Harry Styles - Golden (Official Video)
+    "https://youtu.be/bd-MRcTbx7k?si=AvvPPqRO3ECaoJY3", # Cannons – Golden (Harry Styles Cover) 
+    "https://youtu.be/1VGfW2n01nM?si=08Bk2WydIGVGyiM9", # Daddy - Devin Townsend · Ché Aimee Dorval
+    "https://youtu.be/AGM8BMqBcTo?si=AnnJ2NFWJo80V3bx", # Gorillaz - Plastic Beach - Plastic Beach
+    "https://youtu.be/VCkFSe3voRc?si=mppyaq3Mdm1aEEWf", # Gorillaz - Kids With Guns (Official Video)
+    "https://youtu.be/H5v3kku4y6Q?si=w2vLtWtCJdA7Fx7n", # Harry Styles - As It Was (Official Video)
+    "https://youtu.be/bzZjG9B9_Ug?si=ylFYFUc3SYOdY2qS", # Cannons - Purple Sun (Living Room Sessions)
+    "https://youtu.be/CMWLX0KXwF4?si=N2emMk8cv9z-f5_q", # Tove Lo - No One Dies From Love (Official Music Video)
+    "https://youtu.be/yIQui6Y9Ho4?si=_13S-ic6M-kkvZYg", # Chris Isaak - Wicked Game (Lyrics)
+    "https://youtu.be/2yHGUoozvLI?si=G7jrGwPpKvneYOpA", # DVBBS - GOMF feat. BRIDGE (Lyric Video) [Ultra Music]
+    "https://youtu.be/kPa7bsKwL-c?si=8_BAoMayMDgtYKNv", # Lady Gaga, Bruno Mars - Die With A Smile (Official Music Video)
+    "https://youtu.be/9tC-FOXioDo?si=mhBVtIeTPjf-w5a5", # Sunbeam Sound Machine - In Your Arms (Music Video)
+    "https://youtu.be/gxmILdU2O6U?si=Uz-p4d9oT2T4jdru", # Daya - Left Me Yet
+    "https://youtu.be/qod03PVTLqk?si=cuCu6-u2TA3Of7IS", # Elton John, Dua Lipa - Cold Heart (PNAU Remix) (Official Video)
+    "https://youtu.be/vuzkn8nQfqY?si=Gs_TvWoV1K7H_SB_", # internetBoi - Jet Plane
+    "https://youtu.be/SXF-Eu8XwC8?si=8rv44tSF6xTwJ9_b", # Cannons - Talk Talk (Official Video)
+    "https://youtu.be/E07s5ZYygMg?si=kmp-wu410nLhGnR9", # Harry Styles - Watermelon Sugar (Official Video)
+    "https://youtu.be/0WxDrVUrSvI?si=_EXWUaTWwIljM2gc", # Lily Allen | Smile (Official Video)
+    "https://youtu.be/7IK_safV6pc?si=13dH__vqQgEjw_Tl", # Gus Dapperton - Ditch
+    "https://youtu.be/egni6PAGEUM?si=W6FYseFrW17NbbJU", # Lost At Sea - Dawg Yawp
+    "https://youtu.be/wGsSAVz1BBQ?si=E20h1MtVD6zSiI1q", # Steve Monite - Only You
+    "https://youtu.be/28tZ-S1LFok?si=-BhvmPEGWMscg7cN", # Phantogram "When I'm Small" [Official Video]
+    "https://youtu.be/TJAfLE39ZZ8?si=2k22gunJGd8z7Vm2", # Amy Winehouse - Back To Black
+    "https://youtu.be/MS67xk4LKK8?si=DLRbzXoxvWFQF4ZC", # ROYA - CRUISE | INSTAGRAM EDIT | NOT OFFICIAL
+    "https://youtu.be/n5yZNu0ATjk?si=I9FEmJ-f-hj-MZK2", # Cheat Codes - Be The One (with Kaskade) [Official Music Video]
+    "https://youtu.be/y8SD-TsgHOI?si=2ZmV5hH3D4DIkV6E", # Hippie Sabotage - "Straight To My Head" [Official Audio]
+    "https://youtu.be/zXbky7eU3qg?si=6UJHn_7ZtafgQ5Sm", # Kaskade, Rebecca & Fiona - Turn it Down (Official Music Video)
+    "https://youtu.be/HPc8QMycGno?si=mcYRJz2j2AteDlWJ", # Virtual Self - Ghost Voices (Official Music Video)
+    "https://youtu.be/mIMMZQJ1H6E?si=jVi39E9PfifBfZaJ", # Santigold - Disparate Youth (Official Music Video)
+    "https://youtu.be/nSQXH8otFGQ?si=IGaA8M9D4gFPWqCP", # Just A Gent - Open Spaces (feat. Nevve) [Monstercat Lyric Video]
+    "https://youtu.be/bmitvsoXgaI?si=SlWPwMSvbx1Cnuxt", # Cannons - Tunnel of You (Official Video)
+    "https://youtu.be/jdxMcKI2_Gw?si=R9X2kBQjidMwj5ex", # Chase & Status and Bou - Baddadan ft. IRAH, Flowdan, Trigga, Takura (Lyrics)
+    "https://youtu.be/m4_9TFeMfJE?si=pPPKw9B87votYrkn", # Doja Cat - Paint The Town Red (Official Video)
+    "https://youtu.be/TLiGA_wrNp0?si=7YGfdVHKOUEh4P6X", # Doja Cat - Go To Town (Official Video)
+    "https://youtu.be/pQsF3pzOc54?si=n9hn2BSoQdHjq-gV", # Chamber Of Reflection - Mac DeMarco
+    "https://youtu.be/B9FzVhw8_bY?si=B9SN4y0_K2F9iLar", # The Dead South - In Hell I'll Be In Good Company [Official Music Video]
+    "https://youtu.be/wOwblaKmyVw?si=RhjLaWK0u59fmHWU", # Miley Cyrus - The Backyard Sessions - "Jolene"
+    "https://youtu.be/f2JuxM-snGc?si=XDqGTrN9gS25QwIV", # Lorde - Team
+    "https://youtu.be/9gWIIIr2Asw?si=SGei3f_24XnweXPX", # Teddy Swims - Lose Control (The Village Sessions)
+    
 ]
 # FFmpeg Configuration for Cloud Deployment (Render.com)
 def get_ffmpeg_executable():
