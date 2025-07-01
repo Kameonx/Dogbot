@@ -111,7 +111,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         
         ytdl_format_options = {
-            'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio',  # Prefer m4a for better stability
+            'format': 'bestaudio[ext=webm][abr<=128]/bestaudio[ext=m4a]/bestaudio',  # Better format selection
             'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
             'restrictfilenames': True,
             'noplaylist': True,
@@ -128,11 +128,12 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'keepvideo': False,
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',  # Better user agent
             'http_chunk_size': 10485760,  # 10MB chunks for better streaming
+            'socket_timeout': 30,  # Increase timeout
         }
 
         ffmpeg_options = {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 16M -analyzeduration 2000000',
-            'options': '-vn -ar 48000 -ac 2 -b:a 96k -bufsize 256k',  # Reduced buffer for faster start
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M -analyzeduration 10000000',
+            'options': '-vn -ar 48000 -ac 2 -b:a 128k -bufsize 1024k -maxrate 128k',  # Better buffering
         }
 
         ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
@@ -245,8 +246,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             # Use better FFmpeg options for fallback too
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 16M',
-                options='-vn -ar 48000 -ac 2 -b:a 96k'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M',
+                options='-vn -ar 48000 -ac 2 -b:a 128k -bufsize 1024k'
             )
             return cls(source, data=data)
             
@@ -581,8 +582,8 @@ class MusicBot:
                     
                 print(f"Attempting to play: {url}")
                 
-                # Add a small delay before extraction to avoid rate limiting
-                await asyncio.sleep(0.3)
+                # Add delay before extraction for proper buffering
+                await asyncio.sleep(1)
                 
                 player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
                 
@@ -607,9 +608,9 @@ class MusicBot:
                         self.shuffle_positions[guild_id] = next_shuffle_pos
                         print(f"Auto-advancing to shuffle position {next_shuffle_pos + 1} (continuous play)")
                         
-                        # Add a 1-second delay before playing next song for smoother transitions
+                        # Add a 3-second delay to ensure song finishes and next buffers properly
                         async def play_next_delayed():
-                            await asyncio.sleep(1)
+                            await asyncio.sleep(3)
                             await self._play_current_song(guild_id)
                         
                         # Schedule next song to play with delay
@@ -622,12 +623,20 @@ class MusicBot:
                         except Exception as e:
                             print(f"Error scheduling next song: {e}")
                 
-                # Stop any currently playing audio
+                # Stop any currently playing audio and wait a moment
                 if voice_client.is_playing():
                     voice_client.stop()
+                    await asyncio.sleep(0.5)  # Give time for cleanup
                 
                 voice_client.play(player, after=after_playing)
                 print(f"Successfully started playing: {player.title}")
+                
+                # Wait a moment to ensure playback started properly
+                await asyncio.sleep(0.5)
+                if not voice_client.is_playing():
+                    print("Warning: Player didn't start properly, retrying...")
+                    raise Exception("Player failed to start")
+                    
                 return  # Success! Exit the retry loop
                 
             except Exception as e:
@@ -839,8 +848,8 @@ class MusicBot:
         await ctx.send(f"🎵 Playing: {title}")
         
         try:
-            # Add a small delay before extraction
-            await asyncio.sleep(0.3)
+            # Add delay before extraction for proper buffering
+            await asyncio.sleep(1)
             
             # Create audio source for the specific URL
             player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
@@ -855,9 +864,9 @@ class MusicBot:
                 if self.is_playing.get(ctx.guild.id, False):
                     print(f"Returning to shuffled playlist for guild {ctx.guild.id}")
                     
-                    # Add shorter delay for smoother transitions
+                    # Add proper delay for buffering
                     async def resume_playlist_delayed():
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(3)
                         await self._play_current_song(ctx.guild.id)
                     
                     future = asyncio.run_coroutine_threadsafe(
@@ -871,7 +880,18 @@ class MusicBot:
                 else:
                     print(f"Playlist not active for guild {ctx.guild.id}, not resuming")
             
+            # Stop current music if playing and wait for cleanup
+            if voice_client.is_playing():
+                voice_client.stop()
+                await asyncio.sleep(0.5)
+            
             voice_client.play(player, after=after_playing)
+            
+            # Verify playback started
+            await asyncio.sleep(0.5)
+            if not voice_client.is_playing():
+                await ctx.send("⚠️ Audio may not have started properly - trying again...")
+                raise Exception("Player failed to start")
             
         except Exception as e:
             await ctx.send(f"❌ Failed to play URL: {str(e)}")
