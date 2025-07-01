@@ -12,6 +12,7 @@ from datetime import datetime
 import random
 from typing import Optional
 import re
+import yt_dlp
 
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
@@ -96,7 +97,7 @@ MUSIC_PLAYLISTS = [
 YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3"
 
 class YouTubeAudioSource(discord.PCMVolumeTransformer):
-    """Audio source for YouTube streaming using API-only approach"""
+    """Audio source for YouTube streaming using yt-dlp"""
     
     def __init__(self, source, *, data, volume=0.5):
         super().__init__(source, volume)
@@ -106,53 +107,111 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
 
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=True):
-        """Create audio source from YouTube URL using API validation only"""
+        """Create audio source from YouTube URL using yt-dlp"""
         loop = loop or asyncio.get_event_loop()
         
-        if not youtube_api:
-            raise ValueError("YouTube API not configured. Please set YOUTUBE_API_KEY environment variable.")
-        
-        # Extract video ID and validate with API
-        video_id = youtube_api.extract_video_id(url)
-        if not video_id:
-            raise ValueError("Invalid YouTube URL format")
-        
-        # Get video details from API
+        ytdl_format_options = {
+            'format': 'bestaudio/best',
+            'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+            'restrictfilenames': True,
+            'noplaylist': True,
+            'nocheckcertificate': True,
+            'ignoreerrors': False,
+            'logtostderr': False,
+            'quiet': True,
+            'no_warnings': True,
+            'default_search': 'auto',
+            'source_address': '0.0.0.0',
+            'extract_flat': False,
+        }
+
+        ffmpeg_options = {
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+            'options': '-vn',
+        }
+
+        ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
+
+        def extract_info():
+            return ytdl.extract_info(url, download=False)
+
         try:
-            video_details = await youtube_api.get_video_details(video_id)
-            if not video_details:
-                raise ValueError("Video not found or not available")
+            # Extract video info in a thread to avoid blocking
+            data = await loop.run_in_executor(None, extract_info)
             
-            # Create audio data from API response
-            api_data = {
-                'id': video_id,
-                'title': video_details['snippet']['title'],
-                'url': youtube_api.get_youtube_url(video_id),
-                'description': video_details['snippet'].get('description', ''),
-                'uploader': video_details['snippet']['channelTitle'],
-                'duration': video_details.get('contentDetails', {}).get('duration', ''),
-                'thumbnail': video_details['snippet']['thumbnails'].get('default', {}).get('url', ''),
-            }
+            if data is None:
+                raise ValueError("No data extracted from URL")
+                
+            if 'entries' in data and data['entries']:
+                # Take first item from a playlist
+                data = data['entries'][0]
+
+            if not data or 'url' not in data:
+                raise ValueError("No playable URL found in extracted data")
+
+            filename = data['url'] if stream else ytdl.prepare_filename(data)
             
-            # Note: This implementation focuses on YouTube API integration
-            # Direct audio streaming would require additional audio service integration
-            raise ValueError(
-                f"✅ Video validated: {api_data['title']} by {api_data['uploader']}\n"
-                "❌ Direct audio streaming not implemented in API-only mode.\n"
-                "💡 Consider implementing audio through:\n"
-                "• Alternative streaming services\n"
-                "• Pre-downloaded audio files\n"
-                "• Different audio extraction solution\n"
-                "• Integration with music streaming APIs"
+            # Create the audio source
+            source = discord.FFmpegPCMAudio(
+                filename, 
+                before_options=ffmpeg_options['before_options'],
+                options=ffmpeg_options['options']
             )
             
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 403:
-                raise ValueError("YouTube API quota exceeded or invalid API key")
-            else:
-                raise ValueError(f"YouTube API error: {e.response.status_code}")
+            return cls(source, data=data)
+            
         except Exception as e:
-            raise ValueError(f"Failed to validate YouTube video: {str(e)}")
+            print(f"Error in YouTubeAudioSource.from_url: {e}")
+            # If yt-dlp fails, try fallback method
+            try:
+                return await cls.from_url_fallback(url, loop=loop)
+            except Exception as fallback_error:
+                print(f"Fallback also failed: {fallback_error}")
+                # Final fallback - get metadata from YouTube API if available
+                if youtube_api:
+                    try:
+                        video_id = youtube_api.extract_video_id(url)
+                        if video_id:
+                            video_details = await youtube_api.get_video_details(video_id)
+                            title = video_details['snippet']['title'] if video_details else 'Unknown Title'
+                            raise ValueError(f"Failed to extract audio from: {title}")
+                    except:
+                        pass
+                raise ValueError(f"Failed to extract audio from YouTube URL: {str(e)}")
+
+    @classmethod
+    async def from_url_fallback(cls, url, *, loop=None):
+        """Fallback method when primary extraction fails"""
+        if loop is None:
+            loop = asyncio.get_event_loop()
+            
+        # Simple fallback - just try basic extraction
+        try:
+            ytdl_simple = yt_dlp.YoutubeDL({
+                'format': 'worst',
+                'quiet': True,
+                'no_warnings': True,
+            })
+            
+            def extract_simple():
+                return ytdl_simple.extract_info(url, download=False)
+            
+            data = await loop.run_in_executor(None, extract_simple)
+            
+            if data is None:
+                raise ValueError("No data from fallback extraction")
+                
+            if 'entries' in data and data['entries']:
+                data = data['entries'][0]
+            
+            if not data or 'url' not in data:
+                raise ValueError("No playable URL in fallback data")
+                
+            source = discord.FFmpegPCMAudio(data['url'])
+            return cls(source, data=data)
+            
+        except Exception as e:
+            raise ValueError(f"All extraction methods failed: {str(e)}")
 
 class MusicBot:
     """Music bot functionality"""
