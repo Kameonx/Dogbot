@@ -4,3 +4,4 @@ aiohttp
 httpx
 aiosqlite
 PyNaCl
+yt-dlp
