@@ -1,31 +1,3 @@
-"""
-Dogbot - A Discord bot with AI, utility, and music features
-
-YOUTUBE AUTHENTICATION FOR CLOUD DEPLOYMENT (Render.com):
-To fix "Sign in to confirm you're not a bot" errors on Render.com:
-
-1. Export cookies from your browser (recommended):
-   - Install browser extension like "Get cookies.txt" for Chrome/Firefox
-   - Go to youtube.com and login to your account
-   - Export cookies to cookies.txt file
-   - Upload cookies.txt to your project root on Render.com
-
-2. Alternative approaches if cookies don't work:
-   - Use YouTube API key (limited but more reliable)
-   - Focus on non-age-restricted, public videos
-   - Implement fallback to other music sources
-
-3. Current configuration:
-   - Optimized for cloud deployment without browser
-   - Uses multiple YouTube client types for better compatibility
-   - Includes rate limiting and user agent spoofing
-   - Falls back gracefully when authentication fails
-
-Note: YouTube's bot detection is aggressive. For production use,
-consider implementing a YouTube Data API v3 integration or 
-alternative music sources like SoundCloud.
-"""
-
 import discord
 from discord.ext import commands
 import logging
@@ -39,8 +11,6 @@ import aiosqlite
 from datetime import datetime
 import random
 from typing import Optional
-import yt_dlp
-import shutil
 
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
@@ -52,7 +22,7 @@ if token is None:
 if venice_api_key is None:
     print("Warning: VENICE_API_KEY not set. AI features will be disabled.")
 if youtube_api_key is None:
-    print("Warning: YOUTUBE_API_KEY not set. YouTube API features will be disabled, falling back to yt-dlp.")
+    print("Warning: YOUTUBE_API_KEY not set. YouTube API features will be disabled.")
 
 handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
 intents = discord.Intents.default()
@@ -121,79 +91,11 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/9gWIIIr2Asw?si=SGei3f_24XnweXPX", # Teddy Swims - Lose Control (The Village Sessions)
     
 ]
-# FFmpeg Configuration for Cloud Deployment (Render.com)
-def get_ffmpeg_executable():
-    """Find FFmpeg executable for cloud deployment"""
-    # Check if FFmpeg is in PATH (Render.com has it pre-installed)
-    ffmpeg_path = shutil.which('ffmpeg')
-    if ffmpeg_path:
-        return ffmpeg_path
-    
-    # Fallback paths for common cloud platforms
-    common_paths = [
-        '/usr/bin/ffmpeg',
-        '/usr/local/bin/ffmpeg', 
-        '/opt/bin/ffmpeg'
-    ]
-    
-    for path in common_paths:
-        if os.path.exists(path):
-            return path
-    
-    # If not found, return 'ffmpeg' and hope it's in PATH
-    return 'ffmpeg'
+# YouTube Data API v3 Configuration
+YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3"
 
-# Get FFmpeg executable path
-FFMPEG_EXECUTABLE = get_ffmpeg_executable()
-print(f"Using FFmpeg: {FFMPEG_EXECUTABLE}")
-
-# yt-dlp options for audio extraction with improved YouTube support
-YTDL_OPTIONS = {
-    'format': 'bestaudio/best',
-    'extractaudio': True,
-    'audioformat': 'mp3',
-    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
-    'restrictfilenames': True,
-    'noplaylist': True,
-    'nocheckcertificate': True,
-    'ignoreerrors': False,
-    'logtostderr': False,
-    'quiet': True,
-    'no_warnings': True,
-    'default_search': 'auto',
-    'source_address': '0.0.0.0',
-    'extract_flat': False,
-    # Cloud deployment compatible settings - Use cookies.txt file for authentication
-    'cookiefile': 'cookies.txt',  # Use the uploaded cookies.txt file
-    # YouTube-specific options to avoid authentication issues
-    'extractor_args': {
-        'youtube': {
-            'player_client': ['mweb', 'web', 'android'],  # Use multiple clients
-            'player_skip': ['configs'],  # Skip some config requests
-            'skip': ['dash', 'hls'],  # Skip some problematic formats
-        }
-    },
-    # Rate limiting to avoid being flagged as bot
-    'sleep_interval': 1,  # Sleep 1 second between requests
-    'max_sleep_interval': 5,  # Max sleep interval
-    'sleep_interval_subtitles': 1,
-    # User agent rotation to appear more like a regular browser
-    'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    },
-    # Additional anti-bot detection measures
-    'geo_bypass': True,
-    'age_limit': None,
-}
-
-FFMPEG_OPTIONS = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn',
-    'executable': FFMPEG_EXECUTABLE
-}
-
-class YTDLSource(discord.PCMVolumeTransformer):
-    """Audio source for YouTube/music streaming"""
+class YouTubeAudioSource(discord.PCMVolumeTransformer):
+    """Audio source for YouTube streaming using API-only approach"""
     
     def __init__(self, source, *, data, volume=0.5):
         super().__init__(source, volume)
@@ -202,152 +104,54 @@ class YTDLSource(discord.PCMVolumeTransformer):
         self.url = data.get('url')
 
     @classmethod
-    async def from_url(cls, url, *, loop=None, stream=False):
-        """Create audio source from URL with YouTube API and yt-dlp fallback"""
+    async def from_url(cls, url, *, loop=None, stream=True):
+        """Create audio source from YouTube URL using API validation only"""
         loop = loop or asyncio.get_event_loop()
         
-        # Try YouTube API first if available and it's a YouTube URL
-        if youtube_api and ('youtube.com' in url or 'youtu.be' in url):
-            try:
-                video_id = youtube_api.extract_video_id(url)
-                if video_id:
-                    video_details = await youtube_api.get_video_details(video_id)
-                    if video_details and video_details.get('status', {}).get('embeddable', False):
-                        print(f"Using YouTube API for video: {video_details['snippet']['title']}")
-                        
-                        # Create mock data similar to yt-dlp format for compatibility
-                        api_data = {
-                            'id': video_id,
-                            'title': video_details['snippet']['title'],
-                            'url': youtube_api.get_youtube_url(video_id),
-                            'description': video_details['snippet'].get('description', ''),
-                            'uploader': video_details['snippet']['channelTitle'],
-                            'duration': video_details.get('contentDetails', {}).get('duration', ''),
-                        }
-                        
-                        # Still use yt-dlp for actual audio extraction but with API-verified URL
-                        try:
-                            with yt_dlp.YoutubeDL(YTDL_OPTIONS) as ytdl:
-                                # Extract only the audio URL, don't re-fetch metadata
-                                ytdl_data = await loop.run_in_executor(
-                                    None, 
-                                    lambda: ytdl.extract_info(url, download=not stream)
-                                )
-                                
-                                if ytdl_data and 'entries' in ytdl_data:
-                                    ytdl_data = ytdl_data['entries'][0]
-                                
-                                if ytdl_data:
-                                    # Merge API data with yt-dlp audio data
-                                    merged_data = {**api_data, **ytdl_data}
-                                    filename = ytdl_data['url'] if stream else ytdl.prepare_filename(ytdl_data)
-                                    
-                                    return cls(discord.FFmpegPCMAudio(
-                                        filename,
-                                        before_options=FFMPEG_OPTIONS['before_options'],
-                                        options=FFMPEG_OPTIONS['options'],
-                                        executable=FFMPEG_OPTIONS['executable']
-                                    ), data=merged_data)
-                        except Exception as ytdl_error:
-                            print(f"yt-dlp failed with API-verified video, falling back: {ytdl_error}")
-                            # Continue to regular yt-dlp fallback
-            except Exception as api_error:
-                print(f"YouTube API failed, falling back to yt-dlp: {api_error}")
-                # Continue to regular yt-dlp extraction
+        if not youtube_api:
+            raise ValueError("YouTube API not configured. Please set YOUTUBE_API_KEY environment variable.")
         
-        # Original yt-dlp extraction with fallback
+        # Extract video ID and validate with API
+        video_id = youtube_api.extract_video_id(url)
+        if not video_id:
+            raise ValueError("Invalid YouTube URL format")
+        
+        # Get video details from API
         try:
-            with yt_dlp.YoutubeDL(YTDL_OPTIONS) as ytdl:
-                data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
-                
-                if data and 'entries' in data and data['entries']:
-                    # Take first item from a playlist
-                    data = data['entries'][0]
-                
-                if not data:
-                    raise ValueError("Could not extract video information")
-                
-                filename = data['url'] if stream else ytdl.prepare_filename(data)
-                
-            return cls(discord.FFmpegPCMAudio(
-                filename, 
-                before_options=FFMPEG_OPTIONS['before_options'], 
-                options=FFMPEG_OPTIONS['options'],
-                executable=FFMPEG_OPTIONS['executable']
-            ), data=data)
+            video_details = await youtube_api.get_video_details(video_id)
+            if not video_details:
+                raise ValueError("Video not found or not available")
             
-        except yt_dlp.utils.DownloadError as e:
-            error_msg = str(e)
+            # Create audio data from API response
+            api_data = {
+                'id': video_id,
+                'title': video_details['snippet']['title'],
+                'url': youtube_api.get_youtube_url(video_id),
+                'description': video_details['snippet'].get('description', ''),
+                'uploader': video_details['snippet']['channelTitle'],
+                'duration': video_details.get('contentDetails', {}).get('duration', ''),
+                'thumbnail': video_details['snippet']['thumbnails'].get('default', {}).get('url', ''),
+            }
             
-            # Try fallback configuration for cloud deployment
-            if any(phrase in error_msg.lower() for phrase in [
-                "sign in to confirm you're not a bot", 
-                "requires authentication",
-                "po token"
-            ]):
-                print(f"Primary extraction failed, trying fallback method for {url}")
-                
-                # Fallback YTDL options without cookies, more conservative
-                fallback_options = YTDL_OPTIONS.copy()
-                fallback_options.pop('cookiefile', None)  # Remove cookie requirement
-                fallback_options['extractor_args'] = {
-                    'youtube': {
-                        'player_client': ['web'],  # Use only web client
-                        'bypass_age_gate': False,
-                    }
-                }
-                
-                try:
-                    with yt_dlp.YoutubeDL(fallback_options) as ytdl:
-                        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
-                        
-                        if data and 'entries' in data and data['entries']:
-                            data = data['entries'][0]
-                        
-                        if data:
-                            filename = data['url'] if stream else ytdl.prepare_filename(data)
-                            return cls(discord.FFmpegPCMAudio(
-                                filename, 
-                                before_options=FFMPEG_OPTIONS['before_options'], 
-                                options=FFMPEG_OPTIONS['options'],
-                                executable=FFMPEG_OPTIONS['executable']
-                            ), data=data)
-                except:
-                    pass  # Fall through to error handling
-                
-                # If YouTube API is available, suggest using it
-                if youtube_api:
-                    helpful_msg = (
-                        f"YouTube authentication required for: {url}\n"
-                        "💡 **Using YouTube API**: This bot now supports YouTube Data API v3!\n"
-                        "Add YOUTUBE_API_KEY to your environment variables for better reliability."
-                    )
-                else:
-                    helpful_msg = (
-                        f"YouTube authentication required for: {url}\n"
-                        "💡 **Cloud Deployment Fix**: Upload a cookies.txt file or add YOUTUBE_API_KEY!\n"
-                        "1. Get YouTube Data API v3 key from Google Cloud Console\n"
-                        "2. Add YOUTUBE_API_KEY environment variable to Render.com\n"
-                        "3. OR upload cookies.txt to your project root"
-                    )
-                raise ValueError(helpful_msg)
-            elif any(phrase in error_msg.lower() for phrase in [
-                "video unavailable", 
-                "private video",
-                "deleted video",
-                "not available"
-            ]):
-                print(f"Video unavailable for {url}: {error_msg}")
-                raise ValueError(f"Video unavailable: {url}")
-            elif "age-restricted" in error_msg.lower():
-                print(f"Age-restricted video for {url}: {error_msg}")
-                raise ValueError(f"Age-restricted video: {url}")
+            # Note: This implementation focuses on YouTube API integration
+            # Direct audio streaming would require additional audio service integration
+            raise ValueError(
+                f"✅ Video validated: {api_data['title']} by {api_data['uploader']}\n"
+                "❌ Direct audio streaming not implemented in API-only mode.\n"
+                "💡 Consider implementing audio through:\n"
+                "• Alternative streaming services\n"
+                "• Pre-downloaded audio files\n"
+                "• Different audio extraction solution\n"
+                "• Integration with music streaming APIs"
+            )
+            
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 403:
+                raise ValueError("YouTube API quota exceeded or invalid API key")
             else:
-                print(f"Download error for {url}: {error_msg}")
-                raise ValueError(f"Cannot download video: {error_msg}")
+                raise ValueError(f"YouTube API error: {e.response.status_code}")
         except Exception as e:
-            print(f"Error creating audio source from {url}: {e}")
-            raise ValueError(f"Failed to create audio source: {str(e)}")
+            raise ValueError(f"Failed to validate YouTube video: {str(e)}")
 
 class MusicBot:
     """Music bot functionality"""
@@ -539,11 +343,17 @@ class MusicBot:
         total_songs = len(MUSIC_PLAYLISTS)
         current_url = MUSIC_PLAYLISTS[current_index]
         
-        # Try to get the actual song title
+        # Try to get the actual song title using YouTube API
         try:
-            with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ytdl:
-                info = ytdl.extract_info(current_url, download=False)
-                title = info.get('title', 'Unknown Title') if info else 'Unknown Title'
+            if youtube_api:
+                video_id = youtube_api.extract_video_id(current_url)
+                if video_id:
+                    video_details = await youtube_api.get_video_details(video_id)
+                    title = video_details['snippet']['title'] if video_details else 'Unknown Title'
+                else:
+                    title = 'Unknown Title'
+            else:
+                title = 'Unknown Title (YouTube API not configured)'
         except:
             # Fallback to extracting from URL
             if 'youtube.com/watch?v=' in current_url:
@@ -588,7 +398,7 @@ class MusicBot:
                 url = MUSIC_PLAYLISTS[current_index]
                 print(f"Attempting to play: {url}")
                 
-                player = await YTDLSource.from_url(url, loop=self.bot.loop, stream=True)
+                player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
                 
                 def after_playing(error):
                     if error:
@@ -654,11 +464,17 @@ class MusicBot:
             await ctx.send("❌ Please provide a YouTube URL! Other platforms may not work reliably.")
             return
         
-        # Test if the URL is valid by trying to extract info
+        # Test if the URL is valid using YouTube API
         try:
-            with yt_dlp.YoutubeDL({'quiet': True}) as ytdl:
-                info = ytdl.extract_info(url, download=False)
-                title = info.get('title', 'Unknown Title') if info else 'Unknown Title'
+            if youtube_api:
+                video_id = youtube_api.extract_video_id(url)
+                if video_id:
+                    video_details = await youtube_api.get_video_details(video_id)
+                    title = video_details['snippet']['title'] if video_details else 'Unknown Title'
+                else:
+                    title = 'Unknown Title'
+            else:
+                title = 'Unknown Title (YouTube API not configured)'
         except Exception as e:
             await ctx.send(f"❌ Failed to validate URL: {str(e)[:100]}...")
             return
@@ -727,11 +543,17 @@ class MusicBot:
         for i in range(display_count):
             url = MUSIC_PLAYLISTS[i]
             
-            # Try to get the actual song title
+            # Try to get the actual song title using YouTube API
             try:
-                with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ytdl:
-                    info = ytdl.extract_info(url, download=False)
-                    title = info.get('title', 'Unknown Title') if info else f"Song {i + 1}"
+                if youtube_api:
+                    video_id = youtube_api.extract_video_id(url)
+                    if video_id:
+                        video_details = await youtube_api.get_video_details(video_id)
+                        title = video_details['snippet']['title'] if video_details else f"Song {i + 1}"
+                    else:
+                        title = f"Song {i + 1}"
+                else:
+                    title = f"Song {i + 1} (YouTube API not configured)"
             except:
                 # Fallback to extracting from URL or use generic name
                 if 'youtube.com/watch?v=' in url:
@@ -1231,10 +1053,6 @@ async def on_ready():
     # Initialize music bot
     music_bot = MusicBot(bot)
     print("Music bot initialized")
-    
-    # Enable cookies.txt by default for cloud deployment
-    enable_youtube_cookies()
-    print("YouTube cookies enabled using cookies.txt file")
 
 @bot.event
 async def on_member_join(member):
@@ -1322,10 +1140,8 @@ async def modhelp(ctx):
     )
     
     embed.add_field(
-        name="🔧 YouTube Authentication", 
-        value="`!enablecookies` - Enable YouTube cookies (cookies.txt)\n"
-              "`!disablecookies` - Disable YouTube cookies\n"
-              "`!ytdlstatus` - Show yt-dlp configuration", 
+        name="🔧 YouTube Configuration", 
+        value="`!ytdlstatus` - Show YouTube API configuration", 
         inline=False
     )
     
@@ -1650,135 +1466,75 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
         await ctx.send("PVP role not found. Please ensure the role exists in this server.")
 
 @bot.command()
-async def enablecookies(ctx, browser: str = 'auto'):
-    """Enable YouTube cookies from cookies.txt file (Admin/Mod only)"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-
-    
-    try:
-        enable_youtube_cookies()  # Always uses cookies.txt now
-        
-        embed = discord.Embed(
-            title="🍪 YouTube Cookies Enabled",
-            description="Cookies are now enabled using cookies.txt file (cloud deployment compatible)",
-            color=discord.Color.green()
-        )
-        embed.add_field(
-            name="📋 How it works",
-            value="• Uses cookies.txt file in project root\n• Compatible with Render.com cloud deployment\n• No browser required",
-            inline=False
-        )
-        embed.add_field(
-            name="ℹ️ Note",
-            value="Browser cookies don't work on cloud platforms like Render.com.\nThe bot automatically uses your uploaded cookies.txt file.",
-            inline=False
-        )
-        
-        await ctx.send(embed=embed)
-    except Exception as e:
-        await ctx.send(f"❌ Failed to enable cookies: {e}")
-
-@bot.command()
-async def disablecookies(ctx):
-    """Disable YouTube cookies (Admin/Mod only)"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    try:
-        disable_youtube_cookies()
-        await ctx.send("✅ YouTube cookies disabled.")
-    except Exception as e:
-        await ctx.send(f"❌ Failed to disable cookies: {e}")
-
-@bot.command()
 async def ytdlstatus(ctx):
-    """Show yt-dlp configuration status"""
+    """Show YouTube API configuration status"""
     if not has_admin_or_moderator_role(ctx):
         await ctx.send("❌ You need Admin or Moderator role to use this command.")
         return
     
     embed = discord.Embed(
-        title="🔧 yt-dlp Configuration Status",
+        title="🔧 YouTube API Configuration Status",
         color=discord.Color.orange()
     )
     
-    # Check cookie status
-    cookies_file_enabled = 'cookiefile' in YTDL_OPTIONS
-    cookies_browser_enabled = 'cookiesfrombrowser' in YTDL_OPTIONS
+    # Check YouTube API status
+    api_status = "✅ Configured" if youtube_api else "❌ Not configured (set YOUTUBE_API_KEY)"
+    embed.add_field(
+        name="YouTube Data API v3",
+        value=api_status,
+        inline=True
+    )
     
-    if cookies_file_enabled:
-        cookie_status = "✅ Enabled (cookies.txt file)"
-    elif cookies_browser_enabled:
-        cookie_status = f"⚠️ Browser cookies enabled but won't work on Render.com ({YTDL_OPTIONS.get('cookiesfrombrowser', ['none'])[0]})"
+    # Show API configuration
+    if youtube_api:
+        embed.add_field(
+            name="API Key",
+            value="✅ Set" if youtube_api.api_key else "❌ Missing",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Status",
+            value="🚀 Ready for API-only mode",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Features Available",
+            value="• YouTube video metadata\n• Search functionality\n• Video validation\n• No audio streaming (API-only)",
+            inline=False
+        )
     else:
-        cookie_status = "❌ Disabled"
-    
-    embed.add_field(
-        name="YouTube Cookies",
-        value=cookie_status,
-        inline=True
-    )
-    
-    # Show player clients
-    player_clients = YTDL_OPTIONS.get('extractor_args', {}).get('youtube', {}).get('player_client', ['default'])
-    embed.add_field(
-        name="Player Clients",
-        value=", ".join(player_clients),
-        inline=True
-    )
-    
-    # Rate limiting
-    sleep_interval = YTDL_OPTIONS.get('sleep_interval', 0)
-    embed.add_field(
-        name="Rate Limiting",
-        value=f"{sleep_interval}s between requests" if sleep_interval > 0 else "Disabled",
-        inline=True
-    )
-    
-    embed.add_field(
-        name="Recommendations",
-        value="• Use `!enablecookies` to enable cookies.txt file support\n• Make sure cookies.txt is uploaded to project root\n• Cookies help with age-restricted and premium content\n• Disable cookies with `!disablecookies` if having issues",
-        inline=False
-    )
+        embed.add_field(
+            name="Limited Mode",
+            value="❌ No YouTube features available without API",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Setup Required",
+            value="Add YOUTUBE_API_KEY environment variable",
+            inline=True
+        )
     
     await ctx.send(embed=embed)
 
-# Functions to manage YouTube cookie authentication
-def enable_youtube_cookies(browser='auto'):
-    """
-    Enable cookies.txt file support for YouTube authentication (cloud deployment compatible).
-    Note: Browser cookies don't work on Render.com, only cookies.txt files.
-    """
-    global YTDL_OPTIONS
-    
-    # Always use cookies.txt file for cloud deployment
-    YTDL_OPTIONS['cookiefile'] = 'cookies.txt'
-    print("YouTube cookies enabled from cookies.txt file (cloud deployment)")
-    
-    # Remove any browser cookie attempts that won't work on Render.com
-    if 'cookiesfrombrowser' in YTDL_OPTIONS:
-        del YTDL_OPTIONS['cookiesfrombrowser']
+# YouTube API Management Functions
+def enable_youtube_api():
+    """Check if YouTube API is configured and ready"""
+    if youtube_api and youtube_api.api_key:
+        print("YouTube API is configured and ready")
+        return True
+    else:
+        print("YouTube API not configured - set YOUTUBE_API_KEY environment variable")
+        return False
 
-def disable_youtube_cookies():
-    """Disable cookie file support"""
-    global YTDL_OPTIONS
-    if 'cookiefile' in YTDL_OPTIONS:
-        del YTDL_OPTIONS['cookiefile']
-        print("YouTube cookies disabled")
-    if 'cookiesfrombrowser' in YTDL_OPTIONS:
-        del YTDL_OPTIONS['cookiesfrombrowser']
-        print("Browser cookies disabled")
-
-def try_fallback_cookies():
-    """Use cookies.txt file as fallback (cloud deployment compatible)"""
-    global YTDL_OPTIONS
-    YTDL_OPTIONS['cookiefile'] = 'cookies.txt'
-    print("Using cookies.txt file as fallback")
-    return 'cookies.txt'
+def get_youtube_api_status():
+    """Get the current status of YouTube API"""
+    if youtube_api and youtube_api.api_key:
+        return "✅ YouTube API v3 configured and ready"
+    else:
+        return "❌ YouTube API not configured - set YOUTUBE_API_KEY environment variable"
 
 # HTTP Server for Render.com
 async def health_check(request):
