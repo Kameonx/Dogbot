@@ -269,14 +269,14 @@ class MusicBot:
     async def play_music(self, ctx):
         """Start playing music from the playlist"""
         if ctx.guild.id not in self.voice_clients:
-            await ctx.send("❌ I'm not in a voice channel! Use `!dogbotmusic` first.")
+            await ctx.send("❌ I'm not in a voice channel! Use `!join` first.")
             return
             
         voice_client = self.voice_clients[ctx.guild.id]
         
         # Check if voice client is still connected
         if not voice_client.is_connected():
-            await ctx.send("❌ Voice client is disconnected! Use `!dogbotmusic` to reconnect.")
+            await ctx.send("❌ Voice client is disconnected! Use `!join` to reconnect.")
             return
         
         if not MUSIC_PLAYLISTS:
@@ -1038,7 +1038,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!dogbotmusic` - Join voice channel and start music\n`!removedogbotmusic` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!playlist` - Show current playlist\n`!nowplaying` - Show current song info\n`!musicstatus` - Show music bot debug status", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!playlist` - Show current playlist\n`!nowplaying` - Show current song info\n`!musicstatus` - Show music bot debug status", inline=False)
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!dnd1role` - Get DND1 role\n`!dnd2role` - Get DND2 role\n`!dnd3role` - Get DND3 role\n`!removecatsrole` - Remove Cats role\n`!removedogsrole` - Remove Dogs role\n`!removelizardsrole` - Remove Lizards role\n`!removepvprole` - Remove PVP role\n`!removedndrole` - Remove DND role\n`!removednd1role` - Remove DND1 role\n`!removednd2role` - Remove DND2 role\n`!removednd3role` - Remove DND3 role", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
@@ -1878,26 +1878,25 @@ async def poll(ctx, *, question):
 
 # Music Bot Commands (Admin/Moderator only)
 @bot.command()
-async def dogbotmusic(ctx):
-    """Make Dogbot join voice channel and start playing music"""
+async def join(ctx):
+    """Join voice channel and start playing music automatically"""
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
     
-    # Join voice channel
-    voice_client = await music_bot.join_voice_channel(ctx)
-    if voice_client:
-        # Start playing music automatically
-        await music_bot.play_music(ctx)
+    # Join voice channel with auto-start enabled
+    await music_bot.join_voice_channel(ctx, auto_start=True)
 
 @bot.command()
-async def removedogbotmusic(ctx):
-    """Make Dogbot leave voice channel"""
+async def leave(ctx):
+    """Leave voice channel and stop music"""
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
     
     # Stop music and leave
+    await music_bot.stop_music(ctx)
+    await music_bot.leave_voice_channel(ctx)
     await music_bot.stop_music(ctx)
     await music_bot.leave_voice_channel(ctx)
 
