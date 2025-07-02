@@ -1,0 +1,54 @@
+# Music Bot Configuration
+MUSIC_PLAYLISTS = [
+    # Existing tracks
+    "https://www.youtube.com/watch?v=dQw4w9WgXcQ",  # Rick Astley - Never Gonna Give You Up
+    "https://www.youtube.com/watch?v=L_jWHffIx5E",  # Smash Mouth - All Star
+    "https://www.youtube.com/watch?v=9bZkp7q19f0",  # PSY - Gangnam Style
+    "https://www.youtube.com/watch?v=fJ9rUzIMcZQ",  # Queen - Bohemian Rhapsody
+    "https://www.youtube.com/watch?v=hTWKbfoikeg",  # Smash Mouth - All Star (alternate upload)
+    "https://www.youtube.com/watch?v=60ItHLz5WEA",  # Alan Walker - Faded
+    "https://www.youtube.com/watch?v=Zi_XLOBDo_Y",  # Michael Jackson - Billie Jean
+    "https://www.youtube.com/watch?v=A_MjCqQoLLA",  # The Beatles - Hey Jude
+    "https://youtu.be/96ZzJP1psKg?si=dwMnHI4FuBILY60s", # Ella baila sola Ángel Aispuro - Ver. Extendida
+    "https://www.youtube.com/watch?v=3MAxltiSJUE",  # Calvin Harris & Rag'n'Bone Man - Stay With Me
+    "https://youtu.be/P3cffdsEXXw?si=P_QyVqHDivCvOCw4", # Harry Styles - Golden (Official Video)
+    "https://youtu.be/bd-MRcTbx7k?si=AvvPPqRO3ECaoJY3", # Cannons – Golden (Harry Styles Cover) 
+    "https://youtu.be/1VGfW2n01nM?si=08Bk2WydIGVGyiM9", # Daddy - Devin Townsend · Ché Aimee Dorval
+    "https://youtu.be/AGM8BMqBcTo?si=AnnJ2NFWJo80V3bx", # Gorillaz - Plastic Beach - Plastic Beach
+    "https://youtu.be/VCkFSe3voRc?si=mppyaq3Mdm1aEEWf", # Gorillaz - Kids With Guns (Official Video)
+    "https://youtu.be/H5v3kku4y6Q?si=w2vLtWtCJdA7Fx7n", # Harry Styles - As It Was (Official Video)
+    "https://youtu.be/bzZjG9B9_Ug?si=ylFYFUc3SYOdY2qS", # Cannons - Purple Sun (Living Room Sessions)
+    "https://youtu.be/CMWLX0KXwF4?si=N2emMk8cv9z-f5_q", # Tove Lo - No One Dies From Love (Official Music Video)
+    "https://youtu.be/yIQui6Y9Ho4?si=_13S-ic6M-kkvZYg", # Chris Isaak - Wicked Game (Lyrics)
+    "https://youtu.be/2yHGUoozvLI?si=G7jrGwPpKvneYOpA", # DVBBS - GOMF feat. BRIDGE (Lyric Video) [Ultra Music]
+    "https://youtu.be/kPa7bsKwL-c?si=8_BAoMayMDgtYKNv", # Lady Gaga, Bruno Mars - Die With A Smile (Official Music Video)
+    "https://youtu.be/9tC-FOXioDo?si=mhBVtIeTPjf-w5a5", # Sunbeam Sound Machine - In Your Arms (Music Video)
+    "https://youtu.be/gxmILdU2O6U?si=Uz-p4d9oT2T4jdru", # Daya - Left Me Yet
+    "https://youtu.be/qod03PVTLqk?si=cuCu6-u2TA3Of7IS", # Elton John, Dua Lipa - Cold Heart (PNAU Remix) (Official Video)
+    "https://youtu.be/vuzkn8nQfqY?si=Gs_TvWoV1K7H_SB_", # internetBoi - Jet Plane
+    "https://youtu.be/SXF-Eu8XwC8?si=8rv44tSF6xTwJ9_b", # Cannons - Talk Talk (Official Video)
+    "https://youtu.be/E07s5ZYygMg?si=kmp-wu410nLhGnR9", # Harry Styles - Watermelon Sugar (Official Video)
+    "https://youtu.be/0WxDrVUrSvI?si=_EXWUaTWwIljM2gc", # Lily Allen | Smile (Official Video)
+    "https://youtu.be/7IK_safV6pc?si=13dH__vqQgEjw_Tl", # Gus Dapperton - Ditch
+    "https://youtu.be/egni6PAGEUM?si=W6FYseFrW17NbbJU", # Lost At Sea - Dawg Yawp
+    "https://youtu.be/wGsSAVz1BBQ?si=E20h1MtVD6zSiI1q", # Steve Monite - Only You
+    "https://youtu.be/28tZ-S1LFok?si=-BhvmPEGWMscg7cN", # Phantogram "When I'm Small" [Official Video]
+    "https://youtu.be/TJAfLE39ZZ8?si=2k22gunJGd8z7Vm2", # Amy Winehouse - Back To Black
+    "https://youtu.be/MS67xk4LKK8?si=DLRbzXoxvWFQF4ZC", # ROYA - CRUISE | INSTAGRAM EDIT | NOT OFFICIAL
+    "https://youtu.be/n5yZNu0ATjk?si=I9FEmJ-f-hj-MZK2", # Cheat Codes - Be The One (with Kaskade) [Official Music Video]
+    "https://youtu.be/y8SD-TsgHOI?si=2ZmV5hH3D4DIkV6E", # Hippie Sabotage - "Straight To My Head" [Official Audio]
+    "https://youtu.be/zXbky7eU3qg?si=6UJHn_7ZtafgQ5Sm", # Kaskade, Rebecca & Fiona - Turn it Down (Official Music Video)
+    "https://youtu.be/HPc8QMycGno?si=mcYRJz2j2AteDlWJ", # Virtual Self - Ghost Voices (Official Music Video)
+    "https://youtu.be/mIMMZQJ1H6E?si=jVi39E9PfifBfZaJ", # Santigold - Disparate Youth (Official Music Video)
+    "https://youtu.be/nSQXH8otFGQ?si=IGaA8M9D4gFPWqCP", # Just A Gent - Open Spaces (feat. Nevve) [Monstercat Lyric Video]
+    "https://youtu.be/bmitvsoXgaI?si=SlWPwMSvbx1Cnuxt", # Cannons - Tunnel of You (Official Video)
+    "https://youtu.be/jdxMcKI2_Gw?si=R9X2kBQjidMwj5ex", # Chase & Status and Bou - Baddadan ft. IRAH, Flowdan, Trigga, Takura (Lyrics)
+    "https://youtu.be/m4_9TFeMfJE?si=pPPKw9B87votYrkn", # Doja Cat - Paint The Town Red (Official Video)
+    "https://youtu.be/TLiGA_wrNp0?si=7YGfdVHKOUEh4P6X", # Doja Cat - Go To Town (Official Video)
+    "https://youtu.be/pQsF3pzOc54?si=n9hn2BSoQdHjq-gV", # Chamber Of Reflection - Mac DeMarco
+    "https://youtu.be/B9FzVhw8_bY?si=B9SN4y0_K2F9iLar", # The Dead South - In Hell I'll Be In Good Company [Official Music Video]
+    "https://youtu.be/wOwblaKmyVw?si=RhjLaWK0u59fmHWU", # Miley Cyrus - The Backyard Sessions - "Jolene"
+    "https://youtu.be/f2JuxM-snGc?si=XDqGTrN9gS25QwIV", # Lorde - Team
+    "https://youtu.be/9gWIIIr2Asw?si=SGei3f_24XnweXPX", # Teddy Swims - Lose Control (The Village Sessions)
+    
+]
