@@ -127,13 +127,15 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'prefer_ffmpeg': True,
             'keepvideo': False,
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'http_chunk_size': 1048576,  # 1MB chunks for more stable streaming
-            'socket_timeout': 30,
+            'http_chunk_size': 524288,  # 512KB chunks for better stability
+            'socket_timeout': 60,  # Increased timeout
+            'retries': 3,  # Add retries
+            'fragment_retries': 3,  # Add fragment retries
         }
 
         ffmpeg_options = {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 200M -analyzeduration 30000000 -thread_queue_size 1024',
-            'options': '-vn -ar 48000 -ac 2 -b:a 96k -bufsize 4096k',  # Removed thread_queue_size from output options
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M -analyzeduration 10000000 -thread_queue_size 512 -fflags +discardcorrupt',
+            'options': '-vn -ar 48000 -ac 2 -b:a 128k -bufsize 2048k -avoid_negative_ts make_zero',
         }
 
         ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
@@ -246,8 +248,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             # Use conservative FFmpeg options for fallback
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 200M -thread_queue_size 1024',
-                options='-vn -ar 48000 -ac 2 -b:a 96k -bufsize 4096k'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M -thread_queue_size 512 -fflags +discardcorrupt',
+                options='-vn -ar 48000 -ac 2 -b:a 128k -bufsize 2048k -avoid_negative_ts make_zero'
             )
             return cls(source, data=data)
             
@@ -609,9 +611,18 @@ class MusicBot:
                         self.shuffle_positions[guild_id] = next_shuffle_pos
                         print(f"Auto-advancing to shuffle position {next_shuffle_pos + 1} (continuous play)")
                         
-                        # Use a more robust async task scheduling
-                        task = asyncio.create_task(self._schedule_next_song(guild_id))
-                        # Don't wait for the task result to avoid blocking
+                        # Use asyncio.ensure_future for better compatibility
+                        def schedule_next():
+                            try:
+                                loop = asyncio.get_event_loop()
+                                if loop.is_running():
+                                    asyncio.ensure_future(self._schedule_next_song(guild_id))
+                                else:
+                                    print(f"Event loop not running for guild {guild_id}")
+                            except Exception as e:
+                                print(f"Error scheduling next song for guild {guild_id}: {e}")
+                        
+                        schedule_next()
                     else:
                         print(f"Auto-repeat disabled for guild {guild_id}, stopping playback")
                 
@@ -883,8 +894,17 @@ class MusicBot:
                     print(f"Returning to shuffled playlist for guild {ctx.guild.id}")
                     
                     # Use the same robust scheduling method
-                    task = asyncio.create_task(self._schedule_next_song(ctx.guild.id))
-                    # Don't wait for task result to avoid blocking
+                    def schedule_next():
+                        try:
+                            loop = asyncio.get_event_loop()
+                            if loop.is_running():
+                                asyncio.ensure_future(self._schedule_next_song(ctx.guild.id))
+                            else:
+                                print(f"Event loop not running for guild {ctx.guild.id}")
+                        except Exception as e:
+                            print(f"Error scheduling next song for guild {ctx.guild.id}: {e}")
+                    
+                    schedule_next()
                 else:
                     print(f"Playlist not active for guild {ctx.guild.id}, not resuming")
             
