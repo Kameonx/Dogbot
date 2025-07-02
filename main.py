@@ -127,7 +127,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         
         ytdl_format_options = {
-            'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',  # Simpler format selection
+            'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio[acodec=opus]/bestaudio',  # Prefer opus/webm for stability
             'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
             'restrictfilenames': True,
             'noplaylist': True,
@@ -142,11 +142,11 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'cookiefile': 'cookies.txt',
             'prefer_ffmpeg': True,
             'keepvideo': False,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'http_chunk_size': 524288,  # 512KB chunks for better stability
-            'socket_timeout': 60,  # Increased timeout
-            'retries': 3,  # Add retries
-            'fragment_retries': 3,  # Add fragment retries
+            'user_agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',  # Cloud-friendly user agent
+            'http_chunk_size': 1048576,  # 1MB chunks for better cloud stability
+            'socket_timeout': 30,  # Reduced timeout for cloud environment
+            'retries': 5,  # More retries for cloud reliability
+            'fragment_retries': 5,  # More fragment retries
         }
 
         # For cloud deployment (Render.com), use minimal FFmpeg options
@@ -174,11 +174,11 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             print(f"Creating audio source from: {filename}")
             print(f"Stream mode: {stream}")
             
-            # Create the audio source with minimal options for cloud deployment
+            # Create the audio source with improved buffering for cloud deployment
             source = discord.FFmpegPCMAudio(
                 filename, 
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-                options='-vn'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 16M -analyzeduration 3M',
+                options='-vn -bufsize 512k'
             )
             print(f"FFmpegPCMAudio source created successfully")
             
@@ -261,11 +261,11 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in fallback data")
                 
-            # Use minimal FFmpeg options for cloud deployment fallback
+            # Use improved FFmpeg options for cloud deployment fallback
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-                options='-vn'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 16M -analyzeduration 3M',
+                options='-vn -bufsize 512k'
             )
             return cls(source, data=data)
             
@@ -913,41 +913,69 @@ class MusicBot:
             
             def after_playing(error):
                 guild_id = ctx.guild.id  # Capture guild_id
-                if error:
-                    print(f'Specific song player error: {error}')
-                else:
-                    print("Specific song finished playing normally")
                 
-                # Always return to shuffle playlist after specific song finishes
-                if self.is_playing.get(guild_id, False):
-                    print(f"Returning to shuffled playlist for guild {guild_id}")
-                    
-                    # Schedule playlist resume without blocking
-                    async def resume_playlist_smoothly():
-                        try:
-                            # Longer delay for audio cleanup to prevent overlap
-                            await asyncio.sleep(1.5)
-                            
-                            # Verify voice client state and ensure nothing is playing
-                            voice_client = self.voice_clients.get(guild_id)
-                            if (voice_client and voice_client.is_connected() and 
-                                self.is_playing.get(guild_id, False) and
-                                not voice_client.is_playing()):
-                                
-                                print(f"Resuming shuffle playlist for guild {guild_id}")
-                                await self._play_current_song(guild_id)
-                            else:
-                                print(f"Voice client busy, disconnected, or already playing for guild {guild_id}")
-                        except Exception as e:
-                            print(f"Error resuming playlist: {e}")
-                    
-                    # Schedule non-blocking resume
-                    asyncio.run_coroutine_threadsafe(
-                        resume_playlist_smoothly(), 
-                        self.bot.loop
-                    )
+                if error:
+                    print(f'[RENDER.COM] Specific song player error: {error}')
+                    print(f'[RENDER.COM] Error type: {type(error).__name__}')
                 else:
-                    print(f"Playlist not active for guild {guild_id}, not resuming")
+                    print(f"[RENDER.COM] Specific song finished playing normally")
+                
+                # Add delay before checking if we should resume playlist
+                async def handle_song_end():
+                    try:
+                        # Wait a moment to ensure the song actually finished
+                        await asyncio.sleep(0.5)
+                        
+                        # Check if the voice client is still connected and not playing anything
+                        voice_client = self.voice_clients.get(guild_id)
+                        if not voice_client or not voice_client.is_connected():
+                            print(f"[RENDER.COM] Voice client disconnected, not resuming playlist")
+                            return
+                            
+                        # Only resume if we're not currently playing something else
+                        if voice_client.is_playing():
+                            print(f"[RENDER.COM] Audio still playing, not resuming playlist yet")
+                            return
+                        
+                        # Always return to shuffle playlist after specific song finishes
+                        if self.is_playing.get(guild_id, False):
+                            print(f"[RENDER.COM] Returning to shuffled playlist for guild {guild_id}")
+                            
+                            # Schedule playlist resume without blocking
+                            async def resume_playlist_smoothly():
+                                try:
+                                    # Longer delay for audio cleanup to prevent overlap
+                                    await asyncio.sleep(2.0)  # Increased delay for cloud stability
+                                    
+                                    # Verify voice client state and ensure nothing is playing
+                                    voice_client = self.voice_clients.get(guild_id)
+                                    if (voice_client and voice_client.is_connected() and 
+                                        self.is_playing.get(guild_id, False) and
+                                        not voice_client.is_playing()):
+                                        
+                                        print(f"[RENDER.COM] Resuming shuffle playlist for guild {guild_id}")
+                                        await self._play_current_song(guild_id)
+                                    else:
+                                        print(f"[RENDER.COM] Voice client busy, disconnected, or already playing for guild {guild_id}")
+                                        print(f"[RENDER.COM] - Connected: {voice_client.is_connected() if voice_client else False}")
+                                        print(f"[RENDER.COM] - Playing: {voice_client.is_playing() if voice_client else False}")
+                                        print(f"[RENDER.COM] - Auto-play enabled: {self.is_playing.get(guild_id, False)}")
+                                except Exception as e:
+                                    print(f"[RENDER.COM] Error resuming playlist: {e}")
+                            
+                            # Schedule non-blocking resume
+                            asyncio.run_coroutine_threadsafe(
+                                resume_playlist_smoothly(), 
+                                self.bot.loop
+                            )
+                        else:
+                            print(f"[RENDER.COM] Playlist not active for guild {guild_id}, not resuming")
+                    
+                    except Exception as e:
+                        print(f"[RENDER.COM] Error in after_playing handler: {e}")
+                
+                # Schedule the handler
+                asyncio.run_coroutine_threadsafe(handle_song_end(), self.bot.loop)
             
             # Attempt to play with error handling for "Already playing" errors
             try:
@@ -997,6 +1025,27 @@ class MusicBot:
             else:
                 print(f"[RENDER.COM] Audio playback started immediately")
                 await ctx.send("✅ Audio is playing!")
+                
+                # Add a progress check after 10 seconds to ensure it's still playing
+                async def check_progress():
+                    await asyncio.sleep(10.0)
+                    if voice_client.is_connected() and voice_client.is_playing():
+                        print(f"[RENDER.COM] Audio still playing after 10 seconds - good!")
+                        
+                        # Check again after 30 seconds
+                        await asyncio.sleep(20.0)  # Total 30 seconds
+                        if voice_client.is_connected() and voice_client.is_playing():
+                            print(f"[RENDER.COM] Audio still playing after 30 seconds - excellent!")
+                        elif voice_client.is_connected():
+                            print(f"[RENDER.COM] Audio stopped between 10-30 seconds - may have finished naturally")
+                        
+                    else:
+                        print(f"[RENDER.COM] WARNING: Audio stopped playing after 10 seconds")
+                        if voice_client.is_connected():
+                            await ctx.send("⚠️ Audio stopped early - this might indicate a buffering issue")
+                
+                # Schedule progress check
+                asyncio.create_task(check_progress())
             
         except Exception as e:
             error_msg = str(e)
@@ -1063,6 +1112,61 @@ class MusicBot:
         embed.set_footer(text="🔀 Shuffle enabled • Auto-repeat keeps music playing continuously")
         
         await ctx.send(embed=embed)
+
+@bot.command()
+async def playback(ctx):
+    """Check current playback status and duration"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    if ctx.guild.id not in music_bot.voice_clients:
+        await ctx.send("❌ I'm not in a voice channel!")
+        return
+    
+    voice_client = music_bot.voice_clients[ctx.guild.id]
+    
+    embed = discord.Embed(
+        title="🎵 [RENDER.COM] Playback Status",
+        color=discord.Color.blue()
+    )
+    
+    # Connection status
+    embed.add_field(
+        name="Connection",
+        value=f"{'✅ Connected' if voice_client.is_connected() else '❌ Disconnected'}",
+        inline=True
+    )
+    
+    # Audio status
+    if voice_client.is_playing():
+        status = "▶️ Playing"
+    elif voice_client.is_paused():
+        status = "⏸️ Paused"
+    else:
+        status = "⏹️ Stopped"
+    
+    embed.add_field(name="Audio State", value=status, inline=True)
+    
+    # Channel info
+    if voice_client.is_connected():
+        embed.add_field(
+            name="Voice Channel",
+            value=voice_client.channel.name,
+            inline=True
+        )
+    
+    # Auto-play status
+    auto_play = music_bot.is_playing.get(ctx.guild.id, False)
+    embed.add_field(
+        name="Auto-Play",
+        value=f"{'🔄 Enabled' if auto_play else '❌ Disabled'}",
+        inline=True
+    )
+    
+    embed.set_footer(text="Use this to debug audio issues on Render.com")
+    
+    await ctx.send(embed=embed)
 
 # Initialize music bot
 music_bot = None
@@ -1581,6 +1685,7 @@ async def on_ready():
 async def on_member_join(member):
     # Get the system channel (default channel) or the first text channel
     channel = member.guild.system_channel
+
     if channel is None:
         # If no system channel, find the first text channel
         for ch in member.guild.text_channels:
