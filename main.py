@@ -123,9 +123,9 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             
             # Create the audio source with improved buffering for cloud deployment
             source = discord.FFmpegPCMAudio(
-                filename, 
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 16M -analyzeduration 3M',
-                options='-vn -bufsize 512k'
+                filename,
+                before_options='-re -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 10 -probesize 64M -analyzeduration 32M',
+                options='-vn -bufsize 1024k'
             )
             print(f"FFmpegPCMAudio source created successfully")
             
@@ -211,8 +211,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             # Use improved FFmpeg options for cloud deployment fallback
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 16M -analyzeduration 3M',
-                options='-vn -bufsize 512k'
+                before_options='-re -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 10 -probesize 64M -analyzeduration 32M',
+                options='-vn -bufsize 1024k'
             )
             return cls(source, data=data)
             
@@ -831,9 +831,8 @@ class MusicBot:
             if error:
                 print(f"Error playing specific URL: {error}")
             elif was_playing:
-                # Resume shuffled playlist after a short delay
+                # Resume shuffled playlist immediately
                 async def resume_playlist():
-                    await asyncio.sleep(1)
                     self.is_playing[ctx.guild.id] = True
                     await self._play_current_song(ctx.guild.id)
                 asyncio.run_coroutine_threadsafe(resume_playlist(), self.bot.loop)
