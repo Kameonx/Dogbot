@@ -234,6 +234,7 @@ class MusicBot:
     def _generate_shuffle_playlist(self, guild_id):
         """Generate a new shuffled playlist for the guild"""
         if not MUSIC_PLAYLISTS:
+            print(f"⚠️ No songs in MUSIC_PLAYLISTS for guild {guild_id}")
             return
             
         # Create a shuffled copy of the playlist
@@ -242,7 +243,11 @@ class MusicBot:
         
         self.shuffle_playlists[guild_id] = shuffled
         self.shuffle_positions[guild_id] = 0
-        print(f"Generated new shuffle playlist for guild {guild_id} with {len(shuffled)} songs")
+        print(f"🔀 Generated new shuffle playlist for guild {guild_id} with {len(shuffled)} songs")
+        
+        # Ensure continuous playback - if we're currently playing, this is a regeneration
+        if self.is_playing.get(guild_id, False):
+            print(f"🔄 Playlist regenerated during playback - continuous music ensured")
     
     def _get_current_song_url(self, guild_id):
         """Get the current song URL from the shuffled playlist"""
@@ -250,13 +255,15 @@ class MusicBot:
             self._generate_shuffle_playlist(guild_id)
         
         if guild_id not in self.shuffle_playlists or not self.shuffle_playlists[guild_id]:
+            print(f"⚠️ No songs available for guild {guild_id} - playlist may be empty")
             return None
             
         position = self.shuffle_positions.get(guild_id, 0)
         playlist = self.shuffle_playlists[guild_id]
         
         if position >= len(playlist):
-            # Regenerate shuffle when we reach the end
+            # Regenerate shuffle when we reach the end (infinite loop)
+            print(f"🔄 Reached end of playlist, regenerating for infinite loop (guild {guild_id})")
             self._generate_shuffle_playlist(guild_id)
             position = 0
             playlist = self.shuffle_playlists[guild_id]
@@ -552,9 +559,9 @@ class MusicBot:
                 
                 def after_playing(error):
                     if error:
-                        print(f'Player error: {error}')
+                        print(f'🎵 Player error: {error}')
                     else:
-                        print("Song finished playing normally")
+                        print(f"🎵 Song finished playing normally for guild {guild_id}")
                     
                     # Auto-advance to next song if we're still supposed to be playing
                     if self.is_playing.get(guild_id, False):
@@ -562,27 +569,34 @@ class MusicBot:
                         current_shuffle_pos = self.shuffle_positions.get(guild_id, 0)
                         next_shuffle_pos = current_shuffle_pos + 1
                         
-                        # Check if we need to regenerate shuffle
+                        # Check if we need to regenerate shuffle (infinite loop)
                         if guild_id not in self.shuffle_playlists or next_shuffle_pos >= len(self.shuffle_playlists[guild_id]):
-                            print(f"End of shuffle reached for guild {guild_id}, regenerating...")
+                            print(f"🔄 End of shuffle reached for guild {guild_id}, regenerating for infinite playback...")
                             self._generate_shuffle_playlist(guild_id)
                             next_shuffle_pos = 0
                         
                         self.shuffle_positions[guild_id] = next_shuffle_pos
-                        print(f"Auto-advancing to shuffle position {next_shuffle_pos + 1}")
+                        print(f"⏭️ Auto-advancing to shuffle position {next_shuffle_pos + 1} for continuous playback")
                         
-                        # Schedule next song to play without blocking
+                        # Schedule next song to play without blocking (ensures infinite loop)
                         async def play_next_song():
                             try:
                                 await asyncio.sleep(0.5)  # Brief pause for smooth transition
                                 await self._play_current_song(guild_id)
                             except Exception as e:
-                                print(f"Error playing next song: {e}")
+                                print(f"❌ Error playing next song for infinite loop: {e}")
+                                # Try to recover from playback errors
+                                await asyncio.sleep(2)
+                                if self.is_playing.get(guild_id, False):
+                                    print(f"🔄 Attempting to recover infinite playback for guild {guild_id}")
+                                    await self._play_current_song(guild_id)
                         
                         asyncio.run_coroutine_threadsafe(
                             play_next_song(), 
                             self.bot.loop
                         )
+                    else:
+                        print(f"⏹️ Playback stopped for guild {guild_id} - not auto-advancing")
                 
                 # Enhanced audio cleanup for playlist transitions (cloud-friendly)
                 if voice_client.is_playing() or voice_client.is_paused():
@@ -631,10 +645,26 @@ class MusicBot:
                 # Add a small delay before retrying
                 await asyncio.sleep(1)
         
-        # If we exhausted all retries
+        # If we exhausted all retries, try to recover instead of stopping
         if self.is_playing.get(guild_id, False):
-            print(f"Failed to play any songs after {max_retries} attempts")
-            self.is_playing[guild_id] = False
+            print(f"Failed to play any songs after {max_retries} attempts, attempting recovery...")
+            
+            # Wait a bit and try to recover by regenerating shuffle and retrying
+            await asyncio.sleep(3)
+            
+            # Regenerate shuffle playlist
+            self._generate_shuffle_playlist(guild_id)
+            
+            # Try one more time with the new shuffle
+            try:
+                print(f"Attempting recovery playback for guild {guild_id}")
+                await asyncio.sleep(1)  # Brief delay before retry
+                await self._play_current_song(guild_id)
+            except Exception as recovery_error:
+                print(f"Recovery attempt failed for guild {guild_id}: {recovery_error}")
+                # Only disable playing if recovery also fails
+                self.is_playing[guild_id] = False
+                print(f"❌ Music playback stopped for guild {guild_id} - all recovery attempts failed")
     
     async def add_song(self, ctx, url):
         """Add a song to the playlist"""
@@ -890,7 +920,7 @@ class MusicBot:
             inline=True
         )
         
-        embed.set_footer(text="🔀 Shuffle enabled • Auto-repeat keeps music playing continuously")
+        embed.set_footer(text="� Infinite loop enabled • Music plays forever • Auto-shuffle on playlist end")
         
         await ctx.send(embed=embed)
 
@@ -1600,6 +1630,69 @@ async def status(ctx):
     await music_bot.get_playback_status(ctx)
 
 @bot.command()
+async def loop(ctx):
+    """Show infinite loop status and statistics"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    guild_id = ctx.guild.id
+    
+    embed = discord.Embed(
+        title="🔄 Infinite Loop Status",
+        color=discord.Color.green()
+    )
+    
+    # Playing status
+    is_playing = music_bot.is_playing.get(guild_id, False)
+    embed.add_field(
+        name="🎵 Current Status", 
+        value="🔄 **INFINITE LOOP ACTIVE**" if is_playing else "⏹️ Stopped", 
+        inline=False
+    )
+    
+    # Playlist info
+    total_songs = len(MUSIC_PLAYLISTS)
+    embed.add_field(name="📚 Total Songs", value=f"{total_songs} songs available", inline=True)
+    
+    if guild_id in music_bot.shuffle_playlists:
+        current_pos = music_bot.shuffle_positions.get(guild_id, 0)
+        shuffle_total = len(music_bot.shuffle_playlists[guild_id])
+        embed.add_field(
+            name="🔀 Current Shuffle",
+            value=f"Position {current_pos + 1} of {shuffle_total}",
+            inline=True
+        )
+        
+        # Calculate how many times the playlist has looped
+        if guild_id in music_bot.current_songs:
+            # This is a rough estimate based on position
+            loops_completed = current_pos // total_songs if total_songs > 0 else 0
+            embed.add_field(
+                name="♾️ Loops Completed",
+                value=f"~{loops_completed} full loops",
+                inline=True
+            )
+    
+    # Voice status
+    if guild_id in music_bot.voice_clients:
+        voice_client = music_bot.voice_clients[guild_id]
+        if voice_client.is_connected():
+            embed.add_field(
+                name="🔊 Voice Status",
+                value=f"Connected to {voice_client.channel.name}",
+                inline=False
+            )
+        else:
+            embed.add_field(name="🔊 Voice Status", value="❌ Disconnected", inline=False)
+    else:
+        embed.add_field(name="🔊 Voice Status", value="❌ Not in voice channel", inline=False)
+    
+    embed.set_footer(text="🔄 Music will automatically loop forever when playing • Use !stop to disable")
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
 async def reshuffle(ctx):
     """Generate new shuffle order"""
     if not music_bot:
@@ -1812,7 +1905,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!status` - Show playback and auto-repeat status\n`!reshuffle` - Generate new shuffle order", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!status` - Show playback and auto-repeat status\n`!loop` - Show infinite loop status\n`!reshuffle` - Generate new shuffle order", inline=False)
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
