@@ -1,4 +1,3 @@
-
 import discord
 from discord.ext import commands
 import logging
@@ -802,6 +801,10 @@ class MusicBot:
             await ctx.send("❌ Please provide a YouTube URL! Other platforms may not work reliably.")
             return
         
+        # Stop current music if playing
+        if voice_client.is_playing():
+            voice_client.stop()
+        
         # Remember if we were playing a playlist before
         was_playing_playlist = self.is_playing.get(ctx.guild.id, False)
         
@@ -831,10 +834,8 @@ class MusicBot:
         await ctx.send(f"🎵 Loading: {title}...")
         
         try:
-            # Stop current music if playing
-            if voice_client.is_playing():
-                voice_client.stop()
-                await asyncio.sleep(0.5)  # Brief cleanup delay
+            # Pre-load and buffer the audio before playing
+            await asyncio.sleep(1)
             
             # Create audio source for the specific URL
             player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
@@ -842,41 +843,41 @@ class MusicBot:
             await ctx.send(f"🎵 Now Playing: {title}")
             
             def after_playing(error):
-                guild_id = ctx.guild.id  # Capture guild_id
                 if error:
                     print(f'Specific song player error: {error}')
                 else:
                     print("Specific song finished playing normally")
                 
                 # Always return to shuffle playlist after specific song finishes
-                if self.is_playing.get(guild_id, False):
-                    print(f"Returning to shuffled playlist for guild {guild_id}")
+                if self.is_playing.get(ctx.guild.id, False):
+                    print(f"Returning to shuffled playlist for guild {ctx.guild.id}")
                     
-                    # Schedule next song to play using the same method as regular playlist
+                    # Schedule next song to play
                     future = asyncio.run_coroutine_threadsafe(
-                        self._play_current_song(guild_id), 
+                        self._play_current_song(ctx.guild.id), 
                         self.bot.loop
                     )
                     try:
-                        future.result(timeout=10)  # Same timeout as regular playlist
+                        future.result(timeout=10)  # Wait up to 10 seconds
                     except Exception as e:
                         print(f"Error resuming playlist: {e}")
                 else:
-                    print(f"Playlist not active for guild {guild_id}, not resuming")
+                    print(f"Playlist not active for guild {ctx.guild.id}, not resuming")
+            
+            # Stop current music if playing and wait for cleanup
+            if voice_client.is_playing():
+                voice_client.stop()
+                await asyncio.sleep(1)  # Longer cleanup time
             
             voice_client.play(player, after=after_playing)
             
         except Exception as e:
             await ctx.send(f"❌ Failed to play URL: {str(e)}")
-            # Always try to resume playlist if there was an error and we were playing before
-            if was_playing_playlist:
+            # Always try to resume playlist if there was an error
+            if self.is_playing.get(ctx.guild.id, False):
                 print(f"Error playing specific URL, resuming playlist for guild {ctx.guild.id}")
-                await ctx.send("🎵 Returning to shuffled playlist...")
                 await self._play_current_song(ctx.guild.id)
 
-    # NOTE: play_specific_url method disabled - was causing issues
-    # Use !add <url> then !start instead for now
-    
     async def get_playback_status(self, ctx):
         """Show current playback and auto-repeat status"""
         if ctx.guild.id not in self.voice_clients:
