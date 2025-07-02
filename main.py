@@ -778,6 +778,101 @@ class MusicBot:
         
         await ctx.send(embed=embed)
     
+    async def play_specific_url(self, ctx, url):
+        """Play a specific YouTube URL immediately"""
+        if ctx.guild.id not in self.voice_clients:
+            await ctx.send("❌ I'm not in a voice channel! Use `!join` first.")
+            return
+            
+        voice_client = self.voice_clients[ctx.guild.id]
+        
+        # Check if voice client is still connected
+        if not voice_client.is_connected():
+            await ctx.send("❌ Voice client is disconnected! Use `!join` to reconnect.")
+            return
+        
+        # Validate URL format
+        if not url.startswith(('http://', 'https://')):
+            await ctx.send("❌ Please provide a valid HTTP/HTTPS URL!")
+            return
+        
+        # Check if it's a YouTube URL (basic validation)
+        if 'youtube.com' not in url and 'youtu.be' not in url:
+            await ctx.send("❌ Please provide a YouTube URL! Other platforms may not work reliably.")
+            return
+        
+        # Remember if we were playing a playlist before
+        was_playing_playlist = self.is_playing.get(ctx.guild.id, False)
+        
+        # Ensure we have a shuffle playlist ready for after the specific song
+        if ctx.guild.id not in self.shuffle_playlists:
+            self._generate_shuffle_playlist(ctx.guild.id)
+        
+        # If we weren't playing before, enable playing so the playlist will start after this song
+        if not was_playing_playlist:
+            self.is_playing[ctx.guild.id] = True
+            await ctx.send("🎵 Will start shuffled playlist after this song finishes!")
+        
+        # Get song title for feedback
+        try:
+            if youtube_api:
+                video_id = youtube_api.extract_video_id(url)
+                if video_id:
+                    video_details = await youtube_api.get_video_details(video_id)
+                    title = video_details['snippet']['title'] if video_details else 'Unknown Title'
+                else:
+                    title = 'Unknown Title'
+            else:
+                title = 'Unknown Title (YouTube API not configured)'
+        except:
+            title = 'Unknown Title'
+        
+        await ctx.send(f"🎵 Loading: {title}...")
+        
+        try:
+            # Stop current music if playing
+            if voice_client.is_playing():
+                voice_client.stop()
+                await asyncio.sleep(0.5)  # Brief cleanup delay
+            
+            # Create audio source for the specific URL
+            player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
+            
+            await ctx.send(f"🎵 Now Playing: {title}")
+            
+            def after_playing(error):
+                guild_id = ctx.guild.id  # Capture guild_id
+                if error:
+                    print(f'Specific song player error: {error}')
+                else:
+                    print("Specific song finished playing normally")
+                
+                # Always return to shuffle playlist after specific song finishes
+                if self.is_playing.get(guild_id, False):
+                    print(f"Returning to shuffled playlist for guild {guild_id}")
+                    
+                    # Schedule next song to play using the same method as regular playlist
+                    future = asyncio.run_coroutine_threadsafe(
+                        self._play_current_song(guild_id), 
+                        self.bot.loop
+                    )
+                    try:
+                        future.result(timeout=10)  # Same timeout as regular playlist
+                    except Exception as e:
+                        print(f"Error resuming playlist: {e}")
+                else:
+                    print(f"Playlist not active for guild {guild_id}, not resuming")
+            
+            voice_client.play(player, after=after_playing)
+            
+        except Exception as e:
+            await ctx.send(f"❌ Failed to play URL: {str(e)}")
+            # Always try to resume playlist if there was an error and we were playing before
+            if was_playing_playlist:
+                print(f"Error playing specific URL, resuming playlist for guild {ctx.guild.id}")
+                await ctx.send("🎵 Returning to shuffled playlist...")
+                await self._play_current_song(ctx.guild.id)
+
     # NOTE: play_specific_url method disabled - was causing issues
     # Use !add <url> then !start instead for now
     
@@ -1347,7 +1442,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!status` - Show playback and auto-repeat status\n`!reshuffle` - Generate new shuffle order", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play <youtube_link>` - Play specific song immediately\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!status` - Show playback and auto-repeat status\n`!reshuffle` - Generate new shuffle order", inline=False)
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
@@ -2054,8 +2149,8 @@ async def play(ctx, *, url=None):
         return
     
     if url:
-        # Play specific URL immediately - this would need to be implemented in MusicBot class
-        await ctx.send("🎵 Specific URL playback not yet implemented. Use `!add` then `!start` for now.")
+        # Play specific URL immediately
+        await music_bot.play_specific_url(ctx, url)
     else:
         # Resume current playlist
         await music_bot.play_music(ctx)
