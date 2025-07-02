@@ -134,8 +134,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         }
 
         ffmpeg_options = {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M -analyzeduration 10000000 -thread_queue_size 1024 -fflags +discardcorrupt',
-            'options': '-vn -ar 48000 -ac 2 -b:a 128k -bufsize 4096k -maxrate 192k -avoid_negative_ts make_zero -filter:a "volume=0.8"',
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 32M -analyzeduration 5000000 -thread_queue_size 512',
+            'options': '-vn -ac 2 -ar 48000 -b:a 128k -bufsize 2048k -avoid_negative_ts make_zero',
         }
 
         ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
@@ -248,8 +248,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             # Use conservative FFmpeg options for fallback
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M -thread_queue_size 512 -fflags +discardcorrupt',
-                options='-vn -ar 48000 -ac 2 -b:a 128k -bufsize 2048k -avoid_negative_ts make_zero'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 32M -thread_queue_size 256',
+                options='-vn -ac 2 -ar 48000 -b:a 128k -bufsize 1024k -avoid_negative_ts make_zero'
             )
             return cls(source, data=data)
             
