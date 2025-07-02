@@ -745,53 +745,34 @@ class MusicBot:
     
     async def show_playlist(self, ctx):
         """Show the current playlist"""
-        if not MUSIC_PLAYLISTS:
-            await ctx.send("📝 Playlist is empty! Use `!add <youtube_url>` to add songs.")
-            return
-        
         embed = discord.Embed(
             title="🎵 Current Playlist",
             description=f"Total songs: {len(MUSIC_PLAYLISTS)}",
             color=discord.Color.blue()
         )
         
-        # Show up to 10 songs to avoid embed limits
-        display_count = min(len(MUSIC_PLAYLISTS), 10)
+        embed.add_field(
+            name="View Full Playlist",
+            value="[🔗 Click here to view the playlist on GitHub](https://github.com/Kameonx/Dogbot/blob/main/playlist.py)",
+            inline=False
+        )
         
-        for i in range(display_count):
-            url = MUSIC_PLAYLISTS[i]
-            
-            # Try to get the actual song title using YouTube API
-            try:
-                if youtube_api:
-                    video_id = youtube_api.extract_video_id(url)
-                    if video_id:
-                        video_details = await youtube_api.get_video_details(video_id)
-                        title = video_details['snippet']['title'] if video_details else f"Song {i + 1}"
-                    else:
-                        title = f"Song {i + 1}"
-                else:
-                    title = f"Song {i + 1} (YouTube API not configured)"
-            except:
-                # Fallback to extracting from URL or use generic name
-                if 'youtube.com/watch?v=' in url:
-                    video_id = url.split('v=')[1].split('&')[0]
-                    title = f"YouTube Video ({video_id})"
-                elif 'youtu.be/' in url:
-                    video_id = url.split('youtu.be/')[1].split('?')[0]
-                    title = f"YouTube Video ({video_id})"
-                else:
-                    title = f"Song {i + 1}"
-            
-            current_indicator = "▶️ " if i == self.current_songs.get(ctx.guild.id, 0) else ""
+        # Show current shuffle position if available
+        if ctx.guild.id in self.shuffle_positions and ctx.guild.id in self.shuffle_playlists:
+            current_pos = self.shuffle_positions[ctx.guild.id]
+            shuffle_total = len(self.shuffle_playlists[ctx.guild.id])
             embed.add_field(
-                name=f"{current_indicator}{i + 1}. {title}",
-                value=f"[Link]({url})",
-                inline=False
+                name="Current Position",
+                value=f"Song {current_pos + 1} of {shuffle_total} (shuffled)",
+                inline=True
             )
         
-        if len(MUSIC_PLAYLISTS) > 10:
-            embed.set_footer(text=f"Showing first 10 of {len(MUSIC_PLAYLISTS)} songs")
+        # Show playing status
+        if ctx.guild.id in self.is_playing:
+            status = "▶️ Playing" if self.is_playing[ctx.guild.id] else "⏸️ Stopped"
+            embed.add_field(name="Status", value=status, inline=True)
+        
+        embed.set_footer(text="🔀 Music plays in shuffle mode • Use !add <url> to add songs")
         
         await ctx.send(embed=embed)
     
