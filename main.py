@@ -111,7 +111,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         
         ytdl_format_options = {
-            'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',  # Simpler format selection
+            'format': 'bestaudio[ext=webm][abr<=128]/bestaudio[ext=m4a]/bestaudio',  # Better format selection
             'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
             'restrictfilenames': True,
             'noplaylist': True,
@@ -123,17 +123,17 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'default_search': 'auto',
             'source_address': '0.0.0.0',
             'extract_flat': False,
-            'cookiefile': 'cookies.txt',
+            'cookiefile': 'cookies.txt',  # Use cookies file for better access
             'prefer_ffmpeg': True,
             'keepvideo': False,
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'http_chunk_size': 1048576,  # 1MB chunks for more stable streaming
-            'socket_timeout': 30,
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',  # Better user agent
+            'http_chunk_size': 10485760,  # 10MB chunks for better streaming
+            'socket_timeout': 30,  # Increase timeout
         }
 
         ffmpeg_options = {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 200M -analyzeduration 30000000 -thread_queue_size 1024',
-            'options': '-vn -ar 48000 -ac 2 -b:a 96k -bufsize 4096k',  # Removed thread_queue_size from output options
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M -analyzeduration 10000000',
+            'options': '-vn -ar 48000 -ac 2 -b:a 128k -bufsize 1024k -maxrate 128k',  # Better buffering
         }
 
         ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
@@ -243,11 +243,11 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in fallback data")
                 
-            # Use conservative FFmpeg options for fallback
+            # Use better FFmpeg options for fallback too
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 200M -thread_queue_size 1024',
-                options='-vn -ar 48000 -ac 2 -b:a 96k -bufsize 4096k'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M',
+                options='-vn -ar 48000 -ac 2 -b:a 128k -bufsize 1024k'
             )
             return cls(source, data=data)
             
@@ -590,15 +590,8 @@ class MusicBot:
                 def after_playing(error):
                     if error:
                         print(f'Player error: {error}')
-                        print(f'Error type: {type(error).__name__}')
                     else:
                         print("Song finished playing normally")
-                    
-                    # Check if the song was supposed to be longer (potential cutout)
-                    if voice_client.is_connected():
-                        current_time = asyncio.get_event_loop().time()
-                        # If song played for less than 30 seconds, it might have cut out
-                        # (This is a simple heuristic - you could make this more sophisticated)
                     
                     # Auto-advance to next song if we're still supposed to be playing
                     if self.is_playing.get(guild_id, False):
@@ -630,16 +623,19 @@ class MusicBot:
                         except Exception as e:
                             print(f"Error scheduling next song: {e}")
                 
-                # Stop any currently playing audio and wait for cleanup
+                # Stop any currently playing audio and wait a moment
                 if voice_client.is_playing():
                     voice_client.stop()
-                    await asyncio.sleep(1)  # Longer cleanup time
+                    await asyncio.sleep(0.5)  # Give time for cleanup
                 
                 voice_client.play(player, after=after_playing)
                 print(f"Successfully started playing: {player.title}")
                 
-                # Brief pause to let playback stabilize without verification
+                # Wait a moment to ensure playback started properly
                 await asyncio.sleep(0.5)
+                if not voice_client.is_playing():
+                    print("Warning: Player didn't start properly, retrying...")
+                    raise Exception("Player failed to start")
                     
                 return  # Success! Exit the retry loop
                 
@@ -849,22 +845,20 @@ class MusicBot:
         except:
             title = 'Unknown Title'
         
-        await ctx.send(f"🎵 Loading: {title}...")
+        await ctx.send(f"🎵 Playing: {title}")
         
         try:
-            # Pre-load and buffer the audio before playing
+            # Add delay before extraction for proper buffering
             await asyncio.sleep(1)
             
             # Create audio source for the specific URL
             player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
             
-            await ctx.send(f"🎵 Now Playing: {title}")
-            
             def after_playing(error):
                 if error:
-                    print(f'Specific song player error: {error}')
+                    print(f'Player error: {error}')
                 else:
-                    print("Specific song finished playing normally")
+                    print("Specific song finished playing")
                 
                 # Always return to shuffle playlist after specific song finishes
                 if self.is_playing.get(ctx.guild.id, False):
@@ -889,9 +883,15 @@ class MusicBot:
             # Stop current music if playing and wait for cleanup
             if voice_client.is_playing():
                 voice_client.stop()
-                await asyncio.sleep(1)  # Longer cleanup time
+                await asyncio.sleep(0.5)
             
             voice_client.play(player, after=after_playing)
+            
+            # Verify playback started
+            await asyncio.sleep(0.5)
+            if not voice_client.is_playing():
+                await ctx.send("⚠️ Audio may not have started properly - trying again...")
+                raise Exception("Player failed to start")
             
         except Exception as e:
             await ctx.send(f"❌ Failed to play URL: {str(e)}")
