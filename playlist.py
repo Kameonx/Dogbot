@@ -15,7 +15,6 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/bd-MRcTbx7k?si=AvvPPqRO3ECaoJY3", # Cannons – Golden (Harry Styles Cover) 
     "https://youtu.be/1VGfW2n01nM?si=08Bk2WydIGVGyiM9", # Daddy - Devin Townsend · Ché Aimee Dorval
     "https://youtu.be/AGM8BMqBcTo?si=AnnJ2NFWJo80V3bx", # Gorillaz - Plastic Beach - Plastic Beach
-    "https://youtu.be/VCkFSe3voRc?si=mppyaq3Mdm1aEEWf", # Gorillaz - Kids With Guns (Official Video)
     "https://youtu.be/H5v3kku4y6Q?si=w2vLtWtCJdA7Fx7n", # Harry Styles - As It Was (Official Video)
     "https://youtu.be/bzZjG9B9_Ug?si=ylFYFUc3SYOdY2qS", # Cannons - Purple Sun (Living Room Sessions)
     "https://youtu.be/CMWLX0KXwF4?si=N2emMk8cv9z-f5_q", # Tove Lo - No One Dies From Love (Official Music Video)
@@ -93,6 +92,42 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/rs6Y4kZ8qtw?si=BVcDWS6QcoKOSvze", # Manu Chao - Me Gustas Tu (Official Audio)
     "https://youtu.be/LLsvFTeYc0U?si=MYWsjvBmtgg2E9Ye", # Bazzi - I Think I'm Losing My Mind (Myself) (Lyrics)
     "https://youtu.be/mrZRURcb1cM?si=gkF8kUZlosNWzRov", # Fleetwood Mac - Dreams [with lyrics]
+    "https://youtu.be/6Zbi0XmGtMw?si=r0LYzOldVETGoLQS", # Vengaboys - We like to Party! (The Vengabus)
+    "https://youtu.be/ZyhrYis509A?si=m14CPva3FlwVhTDG", # Aqua - Barbie Girl (Official Music Video)
+    "https://youtu.be/84sHTvn6xf8?si=55uzpsB3ag3On2PX", # Everytime We Touch
+    "https://youtu.be/p6Cnazi_Fi0?si=T9Ugo0XwKybceNdx", # Kylie Minogue - Padam Padam (Official Video)
+    "https://youtu.be/y3BwF33T1UA?si=yp1rgF4P222EmzVj", # Feel It In My Bones
+    "https://youtu.be/I7HahVwYpwo?si=kzHqKJ0vRHk1qwEY", # The Black Eyed Peas - Meet Me Halfway (Official Music Video)
+    "https://youtu.be/Vnoz5uBEWOA?si=lzyZvayFZkv7FgnL", # Kiesza - Hideaway
+    "https://youtu.be/pRpeEdMmmQ0?si=yGFprfV4RokoxcsX", # Shakira - Waka Waka (This Time for Africa) (The Official 2010 FIFA World Cup™ Song)
+    "https://youtu.be/FGBhQbmPwH8?si=0IdeOmZ-MQjaj5mb", # Daft Punk - One More Time (Official Video)
+    "https://youtu.be/djV11Xbc914?si=xqfajyJoOWuDGr-P", # a-ha - Take On Me (Official Video) [4K]
+    "https://youtu.be/989-7xsRLR4?si=nWF7_VBNwB6jCR-y", # Vitas - The 7th Element
+    "https://youtu.be/Lur-rvf6A1c?si=4pzSuddVrNQQBxJx", # Clarity
+    "https://youtu.be/ujpvNvSgcic?si=st0JM7mQQI_xgkKN", # All The Things She Said
+    "https://youtu.be/V1bFr2SWP1I?si=QDycFEfl--49tH6s", # OFFICIAL Somewhere over the Rainbow - Israel "IZ" Kamakawiwoʻole
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
