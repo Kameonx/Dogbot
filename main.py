@@ -620,10 +620,10 @@ class MusicBot:
                             self.bot.loop
                         )
                 
-                # Stop any currently playing audio
+                # Stop any currently playing audio and wait to prevent overlap
                 if voice_client.is_playing():
                     voice_client.stop()
-                    await asyncio.sleep(0.3)  # Brief pause for clean transition
+                    await asyncio.sleep(0.5)  # Longer pause for clean transition
                 
                 voice_client.play(player, after=after_playing)
                 print(f"Successfully started playing: {player.title}")
@@ -834,10 +834,10 @@ class MusicBot:
         await ctx.send(f"🎵 Loading: {title}...")
         
         try:
-            # Stop current music if playing
+            # Stop current music if playing and wait longer to prevent overlap
             if voice_client.is_playing():
                 voice_client.stop()
-                await asyncio.sleep(0.3)  # Brief cleanup delay for smooth transition
+                await asyncio.sleep(0.8)  # Longer cleanup delay for smooth transition
             
             # Create audio source for the specific URL
             player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
@@ -859,19 +859,19 @@ class MusicBot:
                     # Schedule playlist resume without blocking
                     async def resume_playlist_smoothly():
                         try:
-                            # Small delay for audio cleanup
-                            await asyncio.sleep(0.8)
+                            # Longer delay for audio cleanup to prevent overlap
+                            await asyncio.sleep(1.5)
                             
-                            # Verify voice client state
-                            if (guild_id in self.voice_clients and 
-                                self.voice_clients[guild_id].is_connected() and 
+                            # Verify voice client state and ensure nothing is playing
+                            voice_client = self.voice_clients.get(guild_id)
+                            if (voice_client and voice_client.is_connected() and 
                                 self.is_playing.get(guild_id, False) and
-                                not self.voice_clients[guild_id].is_playing()):
+                                not voice_client.is_playing()):
                                 
                                 print(f"Resuming shuffle playlist for guild {guild_id}")
                                 await self._play_current_song(guild_id)
                             else:
-                                print(f"Voice client busy or disconnected for guild {guild_id}")
+                                print(f"Voice client busy, disconnected, or already playing for guild {guild_id}")
                         except Exception as e:
                             print(f"Error resuming playlist: {e}")
                     
@@ -894,8 +894,8 @@ class MusicBot:
             if was_playing_playlist:
                 print(f"Error playing specific URL, resuming playlist for guild {ctx.guild.id}")
                 await ctx.send("🎵 Returning to shuffled playlist...")
-                # Small delay before resuming to avoid audio conflicts
-                await asyncio.sleep(0.5)
+                # Longer delay before resuming to avoid audio conflicts
+                await asyncio.sleep(1.0)
                 await self._play_current_song(ctx.guild.id)
 
     # NOTE: play_specific_url method disabled - was causing issues
