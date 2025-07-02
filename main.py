@@ -523,10 +523,11 @@ class MusicBot:
         embed.add_field(name="Shuffle Position", value=f"{current_pos + 1} of {shuffle_total}", inline=True)
         embed.add_field(name="Total Songs", value=f"{total_songs} available", inline=True)
         embed.add_field(name="Status", value="▶️ Playing" if self.is_playing.get(ctx.guild.id, False) else "⏸️ Stopped", inline=True)
-        embed.add_field(name="URL", value=f"[Link]({current_url})", inline=False)
         embed.set_footer(text="🔀 Shuffle is enabled - songs play in random order")
         
         await ctx.send(embed=embed)
+        # Send the YouTube URL separately so Discord embeds the video
+        await ctx.send(current_url)
     
     async def _play_current_song(self, guild_id):
         """Play the current song (helper method for next/previous)"""
