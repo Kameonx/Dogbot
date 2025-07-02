@@ -174,11 +174,11 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             print(f"Creating audio source from: {filename}")
             print(f"Stream mode: {stream}")
             
-            # Create the audio source with ultra-minimal options to avoid conflicts
+            # Create the audio source with improved buffering for cloud deployment
             source = discord.FFmpegPCMAudio(
                 filename, 
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-                options='-vn'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 16M -analyzeduration 3M',
+                options='-vn -bufsize 512k'
             )
             print(f"FFmpegPCMAudio source created successfully")
             
@@ -261,11 +261,11 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in fallback data")
                 
-            # Use ultra-minimal FFmpeg options for fallback to avoid conflicts
+            # Use improved FFmpeg options for cloud deployment fallback
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-                options='-vn'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 16M -analyzeduration 3M',
+                options='-vn -bufsize 512k'
             )
             return cls(source, data=data)
             
@@ -869,32 +869,22 @@ class MusicBot:
         await ctx.send(f"🎵 Loading: {title}...")
         
         try:
-            # AGGRESSIVE audio cleanup for cloud deployment to prevent corruption
-            print(f"[RENDER.COM] Starting aggressive audio cleanup...")
+            # Enhanced audio cleanup for cloud deployment
+            print(f"[RENDER.COM] Current audio state - Playing: {voice_client.is_playing()}, Paused: {voice_client.is_paused()}")
             
-            # Phase 1: Force stop everything multiple times
-            for attempt in range(3):
-                print(f"[RENDER.COM] Cleanup attempt {attempt + 1}/3")
-                voice_client.stop()
-                await asyncio.sleep(0.8)
-                
-                if not voice_client.is_playing() and not voice_client.is_paused():
-                    print(f"[RENDER.COM] Audio successfully stopped on attempt {attempt + 1}")
-                    break
-                else:
-                    print(f"[RENDER.COM] Audio still playing after attempt {attempt + 1}")
-            
-            # Phase 2: Mandatory silence gap to prevent corruption
-            print(f"[RENDER.COM] Enforcing 3-second silence gap...")
-            await asyncio.sleep(3.0)
-            
-            # Phase 3: Final verification
+            # Force stop all audio with multiple attempts
             if voice_client.is_playing() or voice_client.is_paused():
-                print(f"[RENDER.COM] CRITICAL: Audio still detected after aggressive cleanup!")
-                await ctx.send("❌ Cannot clean audio state. Please use !forceclean and try again.")
-                return
-            
-            print(f"[RENDER.COM] Audio cleanup complete - creating new source...")
+                print(f"[RENDER.COM] Stopping current audio...")
+                voice_client.stop()
+                await asyncio.sleep(1.2)  # Longer cleanup for cloud environment
+                
+                # Double-check and force stop again if needed
+                if voice_client.is_playing():
+                    print(f"[RENDER.COM] Audio still playing, forcing second stop...")
+                    voice_client.stop()
+                    await asyncio.sleep(0.8)
+                    
+                print(f"[RENDER.COM] After cleanup - Playing: {voice_client.is_playing()}")
             
             # Create audio source for the specific URL
             print(f"[RENDER.COM] Creating audio source for: {url}")
@@ -1658,20 +1648,17 @@ async def on_ready():
         print("[RENDER.COM] Not detected (running locally?)")
     
     # Check FFmpeg availability
-    import subprocess
     try:
+        import subprocess
         result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
         if result.returncode == 0:
             version_line = result.stdout.split('\n')[0]
             print(f"[RENDER.COM] FFmpeg: {version_line}")
         else:
             print("[RENDER.COM] FFmpeg: Available but returned error")
-    except subprocess.TimeoutExpired:
-        print("[RENDER.COM] FFmpeg: Command timed out")
     except FileNotFoundError:
         print("[RENDER.COM] FFmpeg: NOT FOUND")
     except Exception as e:
-        print(f"[RENDER.COM] FFmpeg: Error checking - {e}")
         print(f"[RENDER.COM] FFmpeg: Error checking - {e}")
     
     # Check Discord voice support
@@ -1693,6 +1680,1013 @@ async def on_ready():
     # Initialize music bot
     music_bot = MusicBot(bot)
     print("Music bot initialized")
+
+@bot.event
+async def on_member_join(member):
+    # Get the system channel (default channel) or the first text channel
+    channel = member.guild.system_channel
+
+    if channel is None:
+        # If no system channel, find the first text channel
+        for ch in member.guild.text_channels:
+            if ch.permissions_for(member.guild.me).send_messages:
+                channel = ch
+                break
+    
+    if channel:
+        await channel.send(f"🐶 Woof woof! Welcome to the server, {member.mention}! ")
+
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+    
+    # Just process commands, don't handle them manually here
+    await bot.process_commands(message)
+
+# Helper function to check for admin/moderator permissions
+def has_admin_or_moderator_role(ctx):
+    """Check if user has Admin or Moderator role"""
+    user_roles = [role.name.lower() for role in ctx.author.roles]
+    return any(role in ['admin', 'moderator', 'administrator'] for role in user_roles)
+
+@bot.command()
+async def hello(ctx):
+    await ctx.send(f'🐕 Woof woof! Hello {ctx.author.name}!')
+
+@bot.command()
+async def help(ctx):
+    embed = discord.Embed(
+        title="🐶 Dog Bot Commands", 
+        description="Here are all available commands:",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!status` - Show playback and auto-repeat status\n`!reshuffle` - Generate new shuffle order", inline=False)
+    
+    embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
+    embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
+    embed.add_field(name="🎲 D&D Campaign", value="`!dnd <action>` - Take action in campaign\n`!character <n>` - Set your character name\n`!campaign` - View campaign history\n`!clearcampaign` - Clear channel campaign\n`!roll` - Roll a d20", inline=False)
+
+    # Add note about modhelp for admins/moderators
+    if has_admin_or_moderator_role(ctx):
+        embed.add_field(name="👑 Admin/Moderator", value="`!modhelp` - View admin/moderator commands", inline=False)
+
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def modhelp(ctx):
+    """Admin/Moderator only help command"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
+
+        return
+    
+    embed = discord.Embed(
+        title="👑 Admin/Moderator Commands", 
+        description="Commands available to Admins and Moderators:",
+        color=discord.Color.gold()
+    )
+    
+    embed.add_field(
+        name="🎭 Role Assignment", 
+        value="`!assigndogsrole @user` - Assign Dogs role\n"
+              "`!assigncatsrole @user` - Assign Cats role\n"
+              "`!assignlizardsrole @user` - Assign Lizards role\n"
+              "`!assigndndrole @user` - Assign DND role\n"
+              "`!assignpvprole @user` - Assign PVP role", 
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🚫 Role Removal", 
+        value="`!removedogsrolefrom @user` - Remove Dogs role\n"
+              "`!removecatsrolefrom @user` - Remove Cats role\n"
+              "`!removelizardsrolefrom @user` - Remove Lizards role\n"
+              "`!removedndrolefrom @user` - Remove DND role\n"
+              "`!removepvprolefrom @user` - Remove PVP role", 
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🔧 YouTube Configuration", 
+        value="`!ytdlstatus` - Show YouTube API configuration", 
+        inline=False
+    )
+    
+    embed.set_footer(text="💡 Tip: Use @username or user mentions to specify the target user\n🎵 Music commands are now available to everyone!")
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def dogsrole(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
+    if role:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🐶 Assigned {role.name} role to {ctx.author.name}!")
+    else:
+        await ctx.send("Dogs role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def catsrole(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
+    if role:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🐱 Assigned {role.name} role to {ctx.author.name}!")
+    else:
+        await ctx.send("Cats role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def lizardsrole(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
+    if role:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🦎 Assigned {role.name} role to {ctx.author.name}!")
+    else:
+        await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def dndrole(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=dnd_role_name)
+    if role:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🎲 Assigned {role.name} role to {ctx.author.name}!")
+    else:
+        await ctx.send("DND role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def pvprole(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+    if role:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"⚔️ Assigned {role.name} role to {ctx.author.name}!")
+    else:
+        await ctx.send("PVP role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def removedogsrole(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
+    if role:
+        if role in ctx.author.roles:
+            await ctx.author.remove_roles(role)
+            await ctx.send(f"🐶 Removed {role.name} role from {ctx.author.name}!")
+        else:
+            await ctx.send(f"You don't have the {role.name} role to remove.")
+    else:
+        await ctx.send("Dogs role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def removecatsrole(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
+    if role:
+        if role in ctx.author.roles:
+            await ctx.author.remove_roles(role)
+            await ctx.send(f"🐱 Removed {role.name} role from {ctx.author.name}!")
+        else:
+            await ctx.send(f"You don't have the {role.name} role to remove.")
+    else:
+        await ctx.send("Cats role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def removelizardsrole(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
+    if role:
+        if role in ctx.author.roles:
+            await ctx.author.remove_roles(role)
+            await ctx.send(f"🦎 Removed {role.name} role from {ctx.author.name}!")
+        else:
+            await ctx.send(f"You don't have the {role.name} role to remove.")
+    else:
+        await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def removedndrole(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=dnd_role_name)
+    if role:
+        if role in ctx.author.roles:
+            await ctx.author.remove_roles(role)
+            await ctx.send(f"🎲 Removed {role.name} role from {ctx.author.name}!")
+        else:
+            await ctx.send(f"You don't have the {role.name} role to remove.")
+    else:
+        await ctx.send("DND role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def removepvprole(ctx):
+    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+    if role:
+        if role in ctx.author.roles:
+            await ctx.author.remove_roles(role)
+            await ctx.send(f"⚔️ Removed {role.name} role from {ctx.author.name}!")
+        else:
+            await ctx.send(f"You don't have the {role.name} role to remove.")
+    else:
+        await ctx.send("PVP role not found. Please ensure the role exists in this server.")
+
+# Admin/Moderator role assignment commands
+@bot.command()
+async def assigndogsrole(ctx, member: Optional[discord.Member] = None):
+    """Admin/Moderator command to assign Dogs role to a user"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to. Usage: `!assigndogsrole @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
+    if role:
+        if role not in member.roles:
+            await member.add_roles(role)
+            await ctx.send(f"🐶 Assigned {role.name} role to {member.mention}!")
+        else:
+            await ctx.send(f"{member.mention} already has the {role.name} role.")
+    else:
+        await ctx.send("Dogs role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def assigncatsrole(ctx, member: Optional[discord.Member] = None):
+    """Admin/Moderator command to assign Cats role to a user"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to. Usage: `!assigncatsrole @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
+    if role:
+        if role not in member.roles:
+            await member.add_roles(role)
+            await ctx.send(f"🐱 Assigned {role.name} role to {member.mention}!")
+        else:
+            await ctx.send(f"{member.mention} already has the {role.name} role.")
+    else:
+        await ctx.send("Cats role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def assignlizardsrole(ctx, member: Optional[discord.Member] = None):
+    """Admin/Moderator command to assign Lizards role to a user"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to. Usage: `!assignlizardsrole @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
+    if role:
+        if role not in member.roles:
+            await member.add_roles(role)
+            await ctx.send(f"🦎 Assigned {role.name} role to {member.mention}!")
+        else:
+            await ctx.send(f"{member.mention} already has the {role.name} role.")
+    else:
+        await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def assigndndrole(ctx, member: Optional[discord.Member] = None):
+    """Admin/Moderator command to assign DND role to a user"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to. Usage: `!assigndndrole @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=dnd_role_name)
+    if role:
+        if role not in member.roles:
+            await member.add_roles(role)
+            await ctx.send(f"🎲 Assigned {role.name} role to {member.mention}!")
+        else:
+            await ctx.send(f"{member.mention} already has the {role.name} role.")
+    else:
+        await ctx.send("DND role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def assignpvprole(ctx, member: Optional[discord.Member] = None):
+    """Admin/Moderator command to assign PVP role to a user"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to. Usage: `!assignpvprole @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+    if role:
+        if role not in member.roles:
+            await member.add_roles(role)
+            await ctx.send(f"⚔️ Assigned {role.name} role to {member.mention}!")
+        else:
+            await ctx.send(f"{member.mention} already has the {role.name} role.")
+    else:
+        await ctx.send("PVP role not found. Please ensure the role exists in this server.")
+
+# Admin/Moderator role removal commands
+@bot.command()
+async def removedogsrolefrom(ctx, member: Optional[discord.Member] = None):
+    """Admin/Moderator command to remove Dogs role from a user"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from. Usage: `!removedogsrolefrom @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
+    if role:
+        if role in member.roles:
+            await member.remove_roles(role)
+            await ctx.send(f"🐶 Removed {role.name} role from {member.mention}!")
+        else:
+            await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
+    else:
+        await ctx.send("Dogs role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def removecatsrolefrom(ctx, member: Optional[discord.Member] = None):
+    """Admin/Moderator command to remove Cats role from a user"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from. Usage: `!removecatsrolefrom @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
+    if role:
+        if role in member.roles:
+            await member.remove_roles(role)
+            await ctx.send(f"🐱 Removed {role.name} role from {member.mention}!")
+        else:
+            await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
+    else:
+        await ctx.send("Cats role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def removelizardsrolefrom(ctx, member: Optional[discord.Member] = None):
+    """Admin/Moderator command to remove Lizards role from a user"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from. Usage: `!removelizardsrolefrom @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
+    if role:
+        if role in member.roles:
+            await member.remove_roles(role)
+            await ctx.send(f"🦎 Removed {role.name} role from {member.mention}!")
+        else:
+            await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
+    else:
+        await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def removedndrolefrom(ctx, member: Optional[discord.Member] = None):
+    """Admin/Moderator command to remove DND role from a user"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from. Usage: `!removedndrolefrom @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=dnd_role_name)
+    if role:
+        if role in member.roles:
+            await member.remove_roles(role)
+            await ctx.send(f"🎲 Removed {role.name} role from {member.mention}!")
+        else:
+            await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
+    else:
+        await ctx.send("DND role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
+    """Admin/Moderator command to remove PVP role from a user"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from. Usage: `!removepvprolefrom @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+    if role:
+        if role in member.roles:
+            await member.remove_roles(role)
+            await ctx.send(f"⚔️ Removed {role.name} role from {member.mention}!")
+        else:
+            await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
+    else:
+        await ctx.send("PVP role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def say(ctx, *, message):
+    """Make the bot say something"""
+    if not message:
+        await ctx.send("❌ Please provide a message for me to say!")
+        return
+    
+    # Delete the original command message
+    try:
+        await ctx.message.delete()
+    except:
+        pass  # Ignore if we can't delete (permissions)
+    
+    await ctx.send(message)
+
+@bot.command()
+async def ask(ctx, *, question):
+    """Ask AI a question without memory context"""
+    if not question:
+        await ctx.send("❌ Please provide a question to ask!")
+        return
+    
+    # Send typing indicator
+    async with ctx.typing():
+        response = await get_ai_response(str(ctx.author.id), question)
+        await ctx.send(response)
+
+@bot.command()
+async def chat(ctx, *, message):
+    """Chat with AI with memory context"""
+    if not message:
+        await ctx.send("❌ Please provide a message to chat about!")
+        return
+    
+    # Send typing indicator
+    async with ctx.typing():
+        user_id = str(ctx.author.id)
+        user_name = ctx.author.display_name
+        channel_id = str(ctx.channel.id)
+        
+        # Get AI response with history
+        response = await get_ai_response_with_history(user_id, message)
+        
+        # Save to chat history
+        await save_chat_history(user_id, user_name, channel_id, message, response)
+        
+        await ctx.send(response)
+
+@bot.command()
+async def history(ctx):
+    """View your recent chat history"""
+    user_id = str(ctx.author.id)
+    
+    # Get user's chat history
+    history = await get_chat_history(user_id, limit=10)
+    
+    if not history:
+        await ctx.send("📝 You don't have any chat history yet! Use `!chat` to start chatting with AI.")
+        return
+    
+    embed = discord.Embed(
+        title=f"📝 Chat History for {ctx.author.display_name}",
+        color=discord.Color.green()
+    )
+    
+    for i, (user_msg, ai_response) in enumerate(history, 1):
+        # Truncate long messages
+        user_msg_short = user_msg[:100] + "..." if len(user_msg) > 100 else user_msg
+        ai_response_short = ai_response[:100] + "..." if len(ai_response) > 100 else ai_response
+        
+        embed.add_field(
+            name=f"Exchange {i}",
+            value=f"**You:** {user_msg_short}\n**AI:** {ai_response_short}",
+            inline=False        )
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def clearhistory(ctx):
+    """Clear your chat history"""
+    user_id = str(ctx.author.id)
+    
+    async with aiosqlite.connect("chat_history.db") as db:
+        await db.execute("DELETE FROM chat_history WHERE user_id = ?", (user_id,))
+        await db.commit()
+    
+    await ctx.send(f"🗑️ Cleared chat history for {ctx.author.display_name}!")
+
+@bot.command()
+async def undo(ctx):
+    """Undo your last action"""
+    channel_id = str(ctx.channel.id)
+    user_id = str(ctx.author.id)
+    
+    success, message = await undo_last_action(channel_id, user_id)
+    
+    if success:
+        await ctx.send(f"↩️ {message}")
+    else:
+        await ctx.send(f"❌ {message}")
+
+@bot.command()
+async def redo(ctx):
+    """Redo your last undone action"""
+    channel_id = str(ctx.channel.id)
+    user_id = str(ctx.author.id)
+    
+    success, message = await redo_last_undo(channel_id, user_id)
+    
+    if success:
+        await ctx.send(f"↪️ {message}")
+    else:
+        await ctx.send(f"❌ {message}")
+
+@bot.command()
+async def dnd(ctx, *, action):
+    """Take an action in the D&D campaign"""
+    if not action:
+        await ctx.send("❌ Please describe your action!")
+        return
+    
+    # Send typing indicator
+    async with ctx.typing():
+        channel_id = str(ctx.channel.id)
+        user_id = str(ctx.author.id)
+        user_name = ctx.author.display_name
+        
+        # Get character name if set
+        character_name = None
+        # Check if user has set a character name (we'll store this in a simple way)
+        async with aiosqlite.connect("chat_history.db") as db:
+            cursor = await db.execute(
+                "SELECT character_name FROM campaign_history WHERE user_id = ? AND character_name IS NOT NULL ORDER BY timestamp DESC LIMIT 1",
+                (user_id,)
+            )
+            row = await cursor.fetchone()
+            if row:
+                character_name = row[0]
+        
+        # Get AI response with campaign history
+        response = await get_ai_response_with_campaign_history(
+            channel_id, user_name, character_name, action
+        )
+        
+        # Save to campaign history
+        await save_campaign_history(channel_id, user_id, user_name, character_name, action, response)
+        
+        player_display = user_name
+        if character_name:
+            player_display += f" ({character_name})"
+        
+        await ctx.send(f"🎲 **{player_display}:** {action}\n\n🏰 **DM:** {response}")
+
+@bot.command()
+async def character(ctx, *, name):
+    """Set your character name for D&D campaigns"""
+    if not name:
+        await ctx.send("❌ Please provide a character name!")
+        return
+    
+    # Limit character name length
+    if len(name) > 50:
+        await ctx.send("❌ Character name must be 50 characters or less!")
+        return
+    
+    user_id = str(ctx.author.id)
+    user_name = ctx.author.display_name
+    channel_id = str(ctx.channel.id)
+    
+    # Save a special entry to set the character name
+    await save_campaign_history(
+        channel_id, user_id, user_name, name, 
+        f"Set character name to: {name}", 
+        f"Character name set! You are now playing as {name}."
+    )
+    
+    await ctx.send(f"🎭 {ctx.author.display_name} is now playing as **{name}**!")
+
+@bot.command()
+async def campaign(ctx):
+    """View the campaign history for this channel"""
+    channel_id = str(ctx.channel.id)
+    
+    # Get campaign history
+    history = await get_campaign_history(channel_id, limit=10)
+    
+    if not history:
+        await ctx.send("📜 No campaign history in this channel yet! Use `!dnd` to start your adventure.")
+        return
+    
+    embed = discord.Embed(
+        title="📜 Campaign History",
+        description="Recent events in your adventure:",
+        color=discord.Color.purple()
+    )
+    
+    for i, (user_name, char_name, action, response) in enumerate(history, 1):
+        player_display = user_name
+        if char_name:
+            player_display += f" ({char_name})"
+        
+        # Truncate long messages
+        action_short = action[:150] + "..." if len(action) > 150 else action
+        response_short = response[:150] + "..." if len(response) > 150 else response
+        
+        embed.add_field(
+            name=f"Event {i}: {player_display}",
+            value=f"**Action:** {action_short}\n**Result:** {response_short}",
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def clearcampaign(ctx):
+    """Clear the campaign history for this channel (Admin/Moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to clear campaign history.")
+        return
+    
+    channel_id = str(ctx.channel.id)
+    
+    async with aiosqlite.connect("chat_history.db") as db:
+        await db.execute("DELETE FROM campaign_history WHERE channel_id = ?", (channel_id,))
+        await db.execute("DELETE FROM undo_stack WHERE channel_id = ?", (channel_id,))
+        await db.commit()
+    
+    await ctx.send("🗑️ Cleared campaign history for this channel!")
+
+@bot.command()
+async def roll(ctx):
+    """Roll a d20"""
+    roll_result = random.randint(1, 20)
+    
+    # Add some flair based on the roll
+    if roll_result == 20:
+        emoji = "🌟"
+        message = "CRITICAL SUCCESS!"
+    elif roll_result == 1:
+        emoji = "💥"
+        message = "Critical failure..."
+    elif roll_result >= 15:
+        emoji = "✨"
+        message = "Great roll!"
+    elif roll_result >= 10:
+        emoji = "🎲"
+        message = "Not bad!"
+    else:
+        emoji = "😅"
+        message = "Could be better..."
+    
+    await ctx.send(f"{emoji} {ctx.author.display_name} rolled a **{roll_result}**! {message}")
+
+@bot.command()
+async def poll(ctx, *, question):
+    """Create a poll with yes/no reactions"""
+    if not question:
+        await ctx.send("❌ Please provide a question for the poll!")
+        return
+    
+    embed = discord.Embed(
+        title="🗳️ Poll",
+        description=question,
+        color=discord.Color.blue()
+    )
+    embed.set_footer(text=f"Poll created by {ctx.author.display_name}")
+    
+    poll_message = await ctx.send(embed=embed)
+    
+    # Add reactions for voting
+    await poll_message.add_reaction("✅")  # Yes
+    await poll_message.add_reaction("❌")  # No
+    await poll_message.add_reaction("🤷")  # Maybe/Unsure
+
+@bot.command()
+async def join(ctx):
+    """Join voice channel and auto-start music"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    voice_client = await music_bot.join_voice_channel(ctx, auto_start=True)
+
+@bot.command()
+async def leave(ctx):
+    """Leave voice channel"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.leave_voice_channel(ctx)
+
+@bot.command()
+async def start(ctx):
+    """Start/resume music"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.play_music(ctx)
+
+@bot.command()
+async def stop(ctx):
+    """Stop music"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.stop_music(ctx)
+
+@bot.command()
+async def next(ctx):
+    """Skip to next song"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.next_song(ctx)
+
+@bot.command()
+async def previous(ctx):
+    """Go to previous song"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.previous_song(ctx)
+
+@bot.command()
+async def play(ctx, *, url=None):
+    """Play specific song or resume current playlist"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    if url:
+        # Play specific URL immediately
+        await music_bot.play_specific_url(ctx, url)
+    else:
+        # Resume current playlist
+        await music_bot.play_music(ctx)
+
+@bot.command()
+async def add(ctx, *, url):
+    """Add a YouTube URL to the playlist"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.add_song(ctx, url)
+
+@bot.command()
+async def remove(ctx, *, url):
+    """Remove a YouTube URL from the playlist"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.remove_song(ctx, url)
+
+@bot.command()
+async def playlist(ctx):
+    """Show the current music playlist"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.show_playlist(ctx)
+
+@bot.command()
+async def nowplaying(ctx):
+    """Show information about the currently playing song"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.get_current_song_info(ctx)
+
+@bot.command()
+async def status(ctx):
+    """Show current playback and auto-repeat status"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    await music_bot.get_playback_status(ctx)
+
+@bot.command()
+async def musicstatus(ctx):
+    """Show music bot debug status"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    guild_id = ctx.guild.id
+    
+    embed = discord.Embed(
+        title="🎵 Music Bot Status",
+        color=discord.Color.blue()
+    )
+    
+    # Voice client status
+    if guild_id in music_bot.voice_clients:
+        voice_client = music_bot.voice_clients[guild_id]
+        embed.add_field(
+            name="Voice Connection", 
+            value=f"✅ Connected to {voice_client.channel.name}" if voice_client.is_connected() else "❌ Disconnected",
+            inline=True
+        )
+        embed.add_field(
+            name="Playing Status", 
+            value="▶️ Playing" if voice_client.is_playing() else "⏸️ Not playing",
+            inline=True
+        )
+    else:
+        embed.add_field(name="Voice Connection", value="❌ Not connected", inline=True)
+        embed.add_field(name="Playing Status", value="⏸️ Not playing", inline=True)
+    
+    # Playlist info
+    current_index = music_bot.current_songs.get(guild_id, 0)
+    embed.add_field(
+        name="Playlist", 
+        value=f"Song {current_index + 1} of {len(MUSIC_PLAYLISTS)}",
+        inline=True
+    )
+    
+    # Bot status
+    is_playing = music_bot.is_playing.get(guild_id, False)
+    embed.add_field(
+        name="Bot Playing State", 
+        value="✅ Active" if is_playing else "❌ Inactive",
+        inline=True
+    )
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def ytsearch(ctx, *, query):
+    """Search YouTube using the YouTube Data API"""
+    if not query:
+        await ctx.send("❌ Please provide a search query!")
+        return
+    
+    if not youtube_api:
+        await ctx.send("❌ YouTube API not configured. Please set YOUTUBE_API_KEY environment variable.")
+        return
+    
+    # Send typing indicator
+    async with ctx.typing():
+        try:
+            # Search for videos
+            results = await youtube_api.search_videos(query, max_results=5)
+            
+            if not results.get('items'):
+                await ctx.send(f"🔍 No results found for: {query}")
+                return
+            
+            embed = discord.Embed(
+                title=f"🔍 YouTube Search Results for: {query}",
+                color=discord.Color.red()
+            )
+            
+            for i, item in enumerate(results['items'], 1):
+                video_id = item['id']['videoId']
+                title = item['snippet']['title']
+                channel = item['snippet']['channelTitle']
+                description = item['snippet']['description'][:100] + "..." if len(item['snippet']['description']) > 100 else item['snippet']['description']
+                url = f"https://www.youtube.com/watch?v={video_id}"
+                
+                embed.add_field(
+                    name=f"{i}. {title}",
+                    value=f"**Channel:** {channel}\n**Description:** {description}\n**URL:** [Link]({url})",
+                    inline=False
+                )
+            
+            embed.set_footer(text="Use !add <url> to add any of these to the playlist")
+            await ctx.send(embed=embed)
+            
+        except Exception as e:
+            await ctx.send(f"❌ Search failed: {str(e)}")
+
+@bot.command()
+async def ytdlstatus(ctx):
+    """Show YouTube API configuration status"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
+        return
+    
+    embed = discord.Embed(
+        title="🔧 YouTube API Configuration Status",
+        color=discord.Color.orange()
+    )
+    
+    # Check YouTube API status
+    api_status = "✅ Configured" if youtube_api and youtube_api.api_key else "❌ Not configured (set YOUTUBE_API_KEY)"
+    embed.add_field(
+        name="YouTube Data API v3",
+        value=api_status,
+        inline=True
+    )
+    
+    # Show API configuration
+    if youtube_api and youtube_api.api_key:
+        embed.add_field(
+            name="API Key",
+            value="✅ Set" if youtube_api.api_key else "❌ Missing",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Status",
+            value="🚀 Ready for API-only mode",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Features Available",
+            value="• YouTube video metadata\n• Search functionality\n• Video validation\n• No audio streaming (API-only)",
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="Limited Mode",
+            value="❌ No YouTube features available without API",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="Setup Required",
+            value="Add YOUTUBE_API_KEY environment variable",
+            inline=True
+        )
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def checkffmpeg(ctx):
+    """Check if FFmpeg is installed and accessible"""
+    import subprocess
+    
+    try:
+        # Try to run FFmpeg to check if it's available
+        result = subprocess.run(['ffmpeg', '-version'], 
+                               capture_output=True, text=True, timeout=5)
+        
+        if result.returncode == 0:
+            # Extract version info
+            version_lines = result.stdout.split('\n')
+            version_line = version_lines[0] if version_lines else "Unknown version"
+            
+            embed = discord.Embed(
+                title="✅ FFmpeg Status: Available",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="Version", value=version_line, inline=False)
+            embed.add_field(name="Status", value="Ready for music playback! 🎵", inline=False)
+        else:
+            embed = discord.Embed(
+                title="❌ FFmpeg Status: Error",
+                color=discord.Color.red()
+            )
+            embed.add_field(name="Error", value="FFmpeg found but returned error", inline=False)
+    
+    except subprocess.TimeoutExpired:
+        embed = discord.Embed(
+            title="⏰ FFmpeg Status: Timeout",
+            color=discord.Color.orange()
+        )
+        embed.add_field(name="Issue", value="FFmpeg command timed out", inline=False)
+    
+    except FileNotFoundError:
+        embed = discord.Embed(
+            title="❌ FFmpeg Status: Not Found",
+            color=discord.Color.red()
+        )
+        embed.add_field(
+            name="Solution", 
+            value="Install FFmpeg:\n"
+                  "• **Chocolatey**: `choco install ffmpeg`\n"
+                  "• **Winget**: `winget install ffmpeg`\n"
+                  "• **Manual**: Download from https://ffmpeg.org\n"
+                  "• Make sure it's in your system PATH", 
+            inline=False
+        )
+    
+    except Exception as e:
+        embed = discord.Embed(
+            title="❓ FFmpeg Status: Unknown Error",
+            color=discord.Color.red()
+        )
+        embed.add_field(name="Error", value=str(e)[:500], inline=False)
+    
+    await ctx.send(embed=embed)
 
 @bot.command()
 async def checkcookies(ctx):
@@ -1852,52 +2846,3 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("🛑 Bot shutdown complete")
-
-@bot.command()
-async def cleanplay(ctx, *, url=None):
-    """Play with complete audio reset (for fixing corruption issues)"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    if not url:
-        await ctx.send("❌ Please provide a YouTube URL!")
-        return
-    
-    if ctx.guild.id not in music_bot.voice_clients:
-        await ctx.send("❌ I'm not in a voice channel! Use `!join` first.")
-        return
-    
-    voice_client = music_bot.voice_clients[ctx.guild.id]
-    
-    await ctx.send("🧹 **[RENDER.COM] CLEAN PLAY MODE** - Performing complete audio reset...")
-    
-    # NUCLEAR OPTION: Complete audio reset
-    print(f"[RENDER.COM] CLEAN PLAY: Starting nuclear audio reset...")
-    
-    # Stop everything aggressively
-    for i in range(5):
-        voice_client.stop()
-        await asyncio.sleep(1.0)
-        print(f"[RENDER.COM] CLEAN PLAY: Stop attempt {i+1}/5")
-    
-    # Disable auto-play temporarily
-    was_playing = music_bot.is_playing.get(ctx.guild.id, False)
-    music_bot.is_playing[ctx.guild.id] = False
-    
-    # Long silence period
-    await ctx.send("⏳ Waiting for complete audio silence...")
-    await asyncio.sleep(5.0)
-    
-    # Final state check
-    if voice_client.is_playing():
-        await ctx.send("❌ Could not achieve audio silence. Bot may need restart.")
-        return
-    
-    await ctx.send("✅ Audio silence achieved. Starting clean playback...")
-    
-    # Re-enable auto-play if it was enabled
-    music_bot.is_playing[ctx.guild.id] = was_playing
-    
-    # Now try to play with the clean slate
-    await music_bot.play_specific_url(ctx, url)
