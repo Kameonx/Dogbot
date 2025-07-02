@@ -1876,3 +1876,20 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
             await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
     else:
         await ctx.send("PVP role not found. Please ensure the role exists in this server.")
+
+if __name__ == "__main__":
+    # Start HTTP server for Render health checks
+    port = int(os.getenv("PORT", 8080))
+    app = web.Application()
+    async def handle_root(request):
+        return web.Response(text="Dogbot is running!")
+    app.router.add_get('/', handle_root)
+    runner = web.AppRunner(app)
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(runner.setup())
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    loop.run_until_complete(site.start())
+    print(f"🐕 Dogbot web server listening on 0.0.0.0:{port}")
+
+    # Run Discord bot
+    bot.run(token)
