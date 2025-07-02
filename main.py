@@ -14,6 +14,22 @@ from typing import Optional
 import re
 import yt_dlp
 
+# Ensure opus is loaded for voice support
+if not discord.opus.is_loaded():
+    # Try to load opus
+    try:
+        discord.opus.load_opus('opus')
+    except:
+        try:
+            discord.opus.load_opus('libopus.so.0')
+        except:
+            try:
+                discord.opus.load_opus('libopus-0.dll')
+            except:
+                print("⚠️  Warning: Could not load opus library. Voice features may not work properly.")
+
+print(f"Opus loaded: {discord.opus.is_loaded()}")
+
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
 venice_api_key = os.getenv('VENICE_API_KEY')
@@ -133,11 +149,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'fragment_retries': 3,  # Add fragment retries
         }
 
-        ffmpeg_options = {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 32M -analyzeduration 5000000 -thread_queue_size 512',
-            'options': '-vn -ac 2 -ar 48000 -b:a 128k -bufsize 2048k -avoid_negative_ts make_zero',
-        }
-
+        # For cloud deployment (Render.com), use minimal FFmpeg options
+        # Let Discord.py handle most of the configuration automatically
         ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
 
         def extract_info():
@@ -158,13 +171,16 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 raise ValueError("No playable URL found in extracted data")
 
             filename = data['url'] if stream else ytdl.prepare_filename(data)
+            print(f"Creating audio source from: {filename}")
+            print(f"Stream mode: {stream}")
             
-            # Create the audio source with better buffering
+            # Create the audio source with minimal options for cloud deployment
             source = discord.FFmpegPCMAudio(
                 filename, 
-                before_options=ffmpeg_options['before_options'],
-                options=ffmpeg_options['options']
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+                options='-vn'
             )
+            print(f"FFmpegPCMAudio source created successfully")
             
             return cls(source, data=data)
             
@@ -245,11 +261,11 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in fallback data")
                 
-            # Use conservative FFmpeg options for fallback
+            # Use minimal FFmpeg options for cloud deployment fallback
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 32M -thread_queue_size 256',
-                options='-vn -ac 2 -ar 48000 -b:a 128k -bufsize 1024k -avoid_negative_ts make_zero'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+                options='-vn'
             )
             return cls(source, data=data)
             
@@ -844,8 +860,15 @@ class MusicBot:
             player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
             print(f"Audio source created successfully: {player.title}")
             
+            # Check if voice client is still connected before playing
+            if not voice_client.is_connected():
+                await ctx.send("❌ Voice client disconnected during audio loading!")
+                return
+            
             await ctx.send(f"🎵 Now Playing: {title}")
             print(f"Playing specific URL for guild {ctx.guild.id}: {title}")
+            print(f"Voice client connected: {voice_client.is_connected()}")
+            print(f"Voice client playing before new song: {voice_client.is_playing()}")
             
             def after_playing(error):
                 guild_id = ctx.guild.id  # Capture guild_id
@@ -886,7 +909,29 @@ class MusicBot:
                     print(f"Playlist not active for guild {guild_id}, not resuming")
             
             voice_client.play(player, after=after_playing)
-            print(f"Voice client play command executed successfully")
+            print(f"[RENDER.COM] Voice client play command executed successfully")
+            print(f"[RENDER.COM] Voice client playing after command: {voice_client.is_playing()}")
+            
+            # Give a moment for the audio to start and check status
+            await asyncio.sleep(0.2)
+            print(f"[RENDER.COM] Voice client playing after delay: {voice_client.is_playing()}")
+            
+            # Cloud-specific status check
+            if not voice_client.is_playing():
+                print(f"[RENDER.COM] WARNING: Audio may not have started properly")
+                await ctx.send("⚠️ Audio command sent, checking playback status...")
+                
+                # Try a longer delay to see if it starts
+                await asyncio.sleep(1.0)
+                if voice_client.is_playing():
+                    print(f"[RENDER.COM] Audio started after longer delay")
+                    await ctx.send("✅ Audio playback confirmed!")
+                else:
+                    print(f"[RENDER.COM] Audio failed to start even after delay")
+                    await ctx.send("❌ Audio playback may have failed. Check console logs.")
+            else:
+                print(f"[RENDER.COM] Audio playback started immediately")
+                await ctx.send("✅ Audio is playing!")
             
         except Exception as e:
             error_msg = str(e)
@@ -1421,6 +1466,43 @@ async def on_ready():
         print(f"We are ready to go in, {bot.user.name}")
     else:
         print("We are ready to go in, but bot.user is None")
+    
+    # Cloud environment diagnostics for Render.com
+    print("="*50)
+    print("[RENDER.COM] Environment Diagnostics:")
+    
+    # Check if we're running on Render.com
+    render_service = os.getenv('RENDER_SERVICE_NAME')
+    if render_service:
+        print(f"[RENDER.COM] Service Name: {render_service}")
+    else:
+        print("[RENDER.COM] Not detected (running locally?)")
+    
+    # Check FFmpeg availability
+    try:
+        import subprocess
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            version_line = result.stdout.split('\n')[0]
+            print(f"[RENDER.COM] FFmpeg: {version_line}")
+        else:
+            print("[RENDER.COM] FFmpeg: Available but returned error")
+    except FileNotFoundError:
+        print("[RENDER.COM] FFmpeg: NOT FOUND")
+    except Exception as e:
+        print(f"[RENDER.COM] FFmpeg: Error checking - {e}")
+    
+    # Check Discord voice support
+    try:
+        import discord.opus
+        if discord.opus.is_loaded():
+            print("[RENDER.COM] Discord Opus: Loaded")
+        else:
+            print("[RENDER.COM] Discord Opus: Available but not loaded")
+    except Exception as e:
+        print(f"[RENDER.COM] Discord Opus: Error - {e}")
+    
+    print("="*50)
     
     # Initialize database
     await init_database()
