@@ -127,15 +127,13 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'prefer_ffmpeg': True,
             'keepvideo': False,
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'http_chunk_size': 524288,  # 512KB chunks for better stability
-            'socket_timeout': 60,  # Increased timeout
-            'retries': 3,  # Add retries
-            'fragment_retries': 3,  # Add fragment retries
+            'http_chunk_size': 1048576,  # 1MB chunks for more stable streaming
+            'socket_timeout': 30,
         }
 
         ffmpeg_options = {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M -analyzeduration 10000000 -thread_queue_size 512 -fflags +discardcorrupt',
-            'options': '-vn -ar 48000 -ac 2 -b:a 128k -bufsize 2048k -avoid_negative_ts make_zero',
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 200M -analyzeduration 30000000 -thread_queue_size 1024',
+            'options': '-vn -ar 48000 -ac 2 -b:a 96k -bufsize 4096k',  # Removed thread_queue_size from output options
         }
 
         ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
@@ -248,8 +246,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             # Use conservative FFmpeg options for fallback
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M -thread_queue_size 512 -fflags +discardcorrupt',
-                options='-vn -ar 48000 -ac 2 -b:a 128k -bufsize 2048k -avoid_negative_ts make_zero'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 200M -thread_queue_size 1024',
+                options='-vn -ar 48000 -ac 2 -b:a 96k -bufsize 4096k'
             )
             return cls(source, data=data)
             
@@ -569,7 +567,7 @@ class MusicBot:
             print(f"Voice client disconnected for guild {guild_id}")
             self.is_playing[guild_id] = False
             return
-        
+            
         max_retries = 3  # Reduce retries but add delays
         retries = 0
         current_pos = self.shuffle_positions.get(guild_id, 0)
@@ -596,6 +594,12 @@ class MusicBot:
                     else:
                         print("Song finished playing normally")
                     
+                    # Check if the song was supposed to be longer (potential cutout)
+                    if voice_client.is_connected():
+                        current_time = asyncio.get_event_loop().time()
+                        # If song played for less than 30 seconds, it might have cut out
+                        # (This is a simple heuristic - you could make this more sophisticated)
+                    
                     # Auto-advance to next song if we're still supposed to be playing
                     if self.is_playing.get(guild_id, False):
                         # Move to next position in shuffle
@@ -611,20 +615,20 @@ class MusicBot:
                         self.shuffle_positions[guild_id] = next_shuffle_pos
                         print(f"Auto-advancing to shuffle position {next_shuffle_pos + 1} (continuous play)")
                         
-                        # Use asyncio.ensure_future for better compatibility
-                        def schedule_next():
-                            try:
-                                loop = asyncio.get_event_loop()
-                                if loop.is_running():
-                                    asyncio.ensure_future(self._schedule_next_song(guild_id))
-                                else:
-                                    print(f"Event loop not running for guild {guild_id}")
-                            except Exception as e:
-                                print(f"Error scheduling next song for guild {guild_id}: {e}")
+                        # Add a 3-second delay to ensure song finishes and next buffers properly
+                        async def play_next_delayed():
+                            await asyncio.sleep(3)
+                            await self._play_current_song(guild_id)
                         
-                        schedule_next()
-                    else:
-                        print(f"Auto-repeat disabled for guild {guild_id}, stopping playback")
+                        # Schedule next song to play with delay
+                        future = asyncio.run_coroutine_threadsafe(
+                            play_next_delayed(), 
+                            self.bot.loop
+                        )
+                        try:
+                            future.result(timeout=15)  # Increased timeout
+                        except Exception as e:
+                            print(f"Error scheduling next song: {e}")
                 
                 # Stop any currently playing audio and wait for cleanup
                 if voice_client.is_playing():
@@ -662,33 +666,6 @@ class MusicBot:
         if self.is_playing.get(guild_id, False):
             print(f"Failed to play any songs after {max_retries} attempts")
             self.is_playing[guild_id] = False
-    
-    async def _schedule_next_song(self, guild_id):
-        """Schedule the next song to play with proper error handling"""
-        try:
-            # Add delay for proper buffering
-            await asyncio.sleep(3)
-            
-            # Check if we should still be playing
-            if self.is_playing.get(guild_id, False) and guild_id in self.voice_clients:
-                voice_client = self.voice_clients[guild_id]
-                if voice_client.is_connected():
-                    await self._play_current_song(guild_id)
-                else:
-                    print(f"Voice client disconnected for guild {guild_id}, stopping auto-play")
-                    self.is_playing[guild_id] = False
-            else:
-                print(f"Auto-play disabled or voice client missing for guild {guild_id}")
-        except Exception as e:
-            print(f"Error in _schedule_next_song for guild {guild_id}: {e}")
-            # Try one more time after a longer delay
-            try:
-                await asyncio.sleep(5)
-                if self.is_playing.get(guild_id, False):
-                    await self._play_current_song(guild_id)
-            except Exception as retry_error:
-                print(f"Retry failed for guild {guild_id}: {retry_error}")
-                self.is_playing[guild_id] = False
     
     async def add_song(self, ctx, url):
         """Add a song to the playlist"""
@@ -893,18 +870,19 @@ class MusicBot:
                 if self.is_playing.get(ctx.guild.id, False):
                     print(f"Returning to shuffled playlist for guild {ctx.guild.id}")
                     
-                    # Use the same robust scheduling method
-                    def schedule_next():
-                        try:
-                            loop = asyncio.get_event_loop()
-                            if loop.is_running():
-                                asyncio.ensure_future(self._schedule_next_song(ctx.guild.id))
-                            else:
-                                print(f"Event loop not running for guild {ctx.guild.id}")
-                        except Exception as e:
-                            print(f"Error scheduling next song for guild {ctx.guild.id}: {e}")
+                    # Add proper delay for buffering
+                    async def resume_playlist_delayed():
+                        await asyncio.sleep(3)
+                        await self._play_current_song(ctx.guild.id)
                     
-                    schedule_next()
+                    future = asyncio.run_coroutine_threadsafe(
+                        resume_playlist_delayed(), 
+                        self.bot.loop
+                    )
+                    try:
+                        future.result(timeout=15)
+                    except Exception as e:
+                        print(f"Error resuming playlist: {e}")
                 else:
                     print(f"Playlist not active for guild {ctx.guild.id}, not resuming")
             
