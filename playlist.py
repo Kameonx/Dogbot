@@ -106,7 +106,7 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/Lur-rvf6A1c?si=4pzSuddVrNQQBxJx", # Clarity
     "https://youtu.be/ujpvNvSgcic?si=st0JM7mQQI_xgkKN", # All The Things She Said
     "https://youtu.be/V1bFr2SWP1I?si=QDycFEfl--49tH6s", # OFFICIAL Somewhere over the Rainbow - Israel "IZ" Kamakawiwoʻole
-    "", # Placeholder for future tracks
+    "https://youtu.be/k85mRPqvMbE?si=RCkfxq5EOQugr_DT", # Crazy Frog - Axel F (Official Video)
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
