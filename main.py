@@ -134,7 +134,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         }
 
         ffmpeg_options = {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M -analyzeduration 10000000 -thread_queue_size 1024 -fflags +discardcorrupt',
+            'before_options': '-probesize 50M -analyzeduration 10000000 -thread_queue_size 1024 -fflags +discardcorrupt+genpts',
             'options': '-vn -ar 48000 -ac 2 -b:a 128k -bufsize 4096k -maxrate 192k -avoid_negative_ts make_zero -filter:a "volume=0.8"',
         }
 
@@ -248,8 +248,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             # Use conservative FFmpeg options for fallback
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M -thread_queue_size 512 -fflags +discardcorrupt',
-                options='-vn -ar 48000 -ac 2 -b:a 128k -bufsize 2048k -avoid_negative_ts make_zero'
+                before_options='-probesize 50M -analyzeduration 10000000 -thread_queue_size 512 -fflags +discardcorrupt+genpts',
+                options='-vn -ar 48000 -ac 2 -b:a 128k -bufsize 2048k -avoid_negative_ts make_zero -filter:a "volume=0.8"'
             )
             return cls(source, data=data)
             
@@ -266,6 +266,9 @@ class MusicBot:
         self.is_playing = {}  # guild_id -> bool
         self.shuffle_playlists = {}  # guild_id -> shuffled_playlist
         self.shuffle_positions = {}  # guild_id -> current_position_in_shuffle
+        # Add connection stability tracking
+        self.last_connection_time = {}
+        self.connection_attempts = {}
     
     def _generate_shuffle_playlist(self, guild_id):
         """Generate a new shuffled playlist for the guild"""
@@ -298,6 +301,23 @@ class MusicBot:
             playlist = self.shuffle_playlists[guild_id]
         
         return playlist[position] if playlist else None
+    
+    def _check_voice_connection_health(self, guild_id):
+        """Check if voice connection is healthy and stable"""
+        if guild_id not in self.voice_clients:
+            return False
+        
+        voice_client = self.voice_clients[guild_id]
+        
+        # Check basic connection status
+        if not voice_client.is_connected():
+            return False
+        
+        # Check if we have an active channel
+        if not hasattr(voice_client, 'channel') or voice_client.channel is None:
+            return False
+        
+        return True
         
     async def join_voice_channel(self, ctx, auto_start=False):
         """Join the voice channel of the user who called the command"""
@@ -306,15 +326,27 @@ class MusicBot:
             return None
             
         channel = ctx.author.voice.channel
+        guild_id = ctx.guild.id
         
-        if ctx.guild.id in self.voice_clients:
-            voice_client = self.voice_clients[ctx.guild.id]
+        # Connection stability check - prevent rapid reconnections
+        import time
+        current_time = time.time()
+        if guild_id in self.last_connection_time:
+            time_since_last = current_time - self.last_connection_time[guild_id]
+            if time_since_last < 5:  # Prevent reconnections within 5 seconds
+                await ctx.send("⏳ Please wait a moment before reconnecting...")
+                return None
+        
+        self.last_connection_time[guild_id] = current_time
+        
+        if guild_id in self.voice_clients:
+            voice_client = self.voice_clients[guild_id]
             # Check if voice client is still connected
             if voice_client.is_connected():
                 if voice_client.channel == channel:
                     if auto_start:
                         await ctx.send("🎵 I'm already in your voice channel! Starting music...")
-                        if not self.is_playing.get(ctx.guild.id, False):
+                        if not self.is_playing.get(guild_id, False):
                             await self.play_music(ctx)
                     else:
                         await ctx.send("🎵 I'm already in your voice channel!")
@@ -323,27 +355,27 @@ class MusicBot:
                     await voice_client.move_to(channel)
                     if auto_start:
                         await ctx.send(f"🎵 Moved to {channel.name} and starting music!")
-                        if not self.is_playing.get(ctx.guild.id, False):
+                        if not self.is_playing.get(guild_id, False):
                             await self.play_music(ctx)
                     else:
                         await ctx.send(f"🎵 Moved to {channel.name}!")
                     return voice_client
             else:
                 # Clean up disconnected voice client
-                del self.voice_clients[ctx.guild.id]
+                del self.voice_clients[guild_id]
         
         try:
             voice_client = await channel.connect()
-            self.voice_clients[ctx.guild.id] = voice_client
+            self.voice_clients[guild_id] = voice_client
             
             # Generate initial shuffle playlist and start at random position
-            self._generate_shuffle_playlist(ctx.guild.id)
+            self._generate_shuffle_playlist(guild_id)
             # Start at a random position in the shuffled playlist
-            if self.shuffle_playlists.get(ctx.guild.id):
-                self.shuffle_positions[ctx.guild.id] = random.randint(0, len(self.shuffle_playlists[ctx.guild.id]) - 1)
+            if self.shuffle_playlists.get(guild_id):
+                self.shuffle_positions[guild_id] = random.randint(0, len(self.shuffle_playlists[guild_id]) - 1)
             
-            self.current_songs[ctx.guild.id] = 0
-            self.is_playing[ctx.guild.id] = False
+            self.current_songs[guild_id] = 0
+            self.is_playing[guild_id] = False
             
             if auto_start:
                 await ctx.send(f"🎵 Joined {channel.name} and starting music in shuffle mode!")
@@ -564,9 +596,9 @@ class MusicBot:
             
         voice_client = self.voice_clients[guild_id]
         
-        # Check if voice client is still connected
-        if not voice_client.is_connected():
-            print(f"Voice client disconnected for guild {guild_id}")
+        # Use health check instead of basic connection check
+        if not self._check_voice_connection_health(guild_id):
+            print(f"Voice connection unhealthy for guild {guild_id}")
             self.is_playing[guild_id] = False
             return
         
@@ -2519,7 +2551,6 @@ async def checkcookies(ctx):
     
     await ctx.send(embed=embed)
 
-# YouTube API Management Functions
 def enable_youtube_api():
     """Check if YouTube API is configured and ready"""
     if youtube_api and youtube_api.api_key:
