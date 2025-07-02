@@ -840,7 +840,9 @@ class MusicBot:
                 await asyncio.sleep(0.8)  # Longer cleanup delay for smooth transition
             
             # Create audio source for the specific URL
+            print(f"Attempting to create audio source for: {url}")
             player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
+            print(f"Audio source created successfully: {player.title}")
             
             await ctx.send(f"🎵 Now Playing: {title}")
             print(f"Playing specific URL for guild {ctx.guild.id}: {title}")
@@ -884,6 +886,7 @@ class MusicBot:
                     print(f"Playlist not active for guild {guild_id}, not resuming")
             
             voice_client.play(player, after=after_playing)
+            print(f"Voice client play command executed successfully")
             
         except Exception as e:
             error_msg = str(e)
