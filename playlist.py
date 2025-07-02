@@ -19,7 +19,7 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/H5v3kku4y6Q?si=w2vLtWtCJdA7Fx7n", # Harry Styles - As It Was (Official Video)
     "https://youtu.be/bzZjG9B9_Ug?si=ylFYFUc3SYOdY2qS", # Cannons - Purple Sun (Living Room Sessions)
     "https://youtu.be/CMWLX0KXwF4?si=N2emMk8cv9z-f5_q", # Tove Lo - No One Dies From Love (Official Music Video)
-    "https://youtu.be/yIQui6Y9Ho4?si=_13S-ic6M-kkvZYg", # Chris Isaak - Wicked Game (Lyrics)
+    "https://youtu.be/jd-qI62gNJM?si=dv4iNDV8kToWh1-d", # Wicked Game - Single Edit - Official Music Video
     "https://youtu.be/2yHGUoozvLI?si=G7jrGwPpKvneYOpA", # DVBBS - GOMF feat. BRIDGE (Lyric Video) [Ultra Music]
     "https://youtu.be/kPa7bsKwL-c?si=8_BAoMayMDgtYKNv", # Lady Gaga, Bruno Mars - Die With A Smile (Official Music Video)
     "https://youtu.be/9tC-FOXioDo?si=mhBVtIeTPjf-w5a5", # Sunbeam Sound Machine - In Your Arms (Music Video)
@@ -54,6 +54,64 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/VSXT4a2kRHA?si=chR6nut3iy6Ilz4n", # Teddy Swims - The Door (Official Music Video)
     "https://youtu.be/1RKqOmSkGgM?si=RznnDGf_ZbaxV8ZS", # Chappell Roan - Good Luck, Babe! (Official Lyric Video)
     "https://youtu.be/Qh8QwVYOSVU?si=vkH1ju-5P0Cbp4je", # Teddy Swims - Bad Dreams (Official Music Video)
+    "https://youtu.be/RY3B_XXmTYU?si=EIUgkHdI8BdbUue1", # CKay - Love Nwantiti
+    "https://youtu.be/uwWrSR8SFEc?si=ss5B6CpHfxsBZtje", # Alina Baraz - Electric ft. Khalid (Official Audio)
+    "https://youtu.be/WcIcVapfqXw?si=qGZC_WEiz7Fb7tgU", # Rema, Selena Gomez - Calm Down (Official Music Video)
+    "https://youtu.be/FpiJLY_ZRqc?si=SHrWFI_DMjqJ4vyo", # Hozier - Too Sweet (Lyrics)
+    "https://youtu.be/FwZTgDjRLM0?si=Iv0f7bhZIE_Ed_A6", # Selena - Como La Flor (Live From Astrodome)
+    "https://youtu.be/dwqxWlG874s?si=QEPGjchuTqVe1j5P", # Starcadian - Interspace [Music Video] | Interstellar & 2001: A Space Odyssey
+    "https://youtu.be/dPcX-5Tmqt8?si=lCG1HZzGL_tzkxn9", # Someday - Sugar Ray
+    "https://youtu.be/IxX_QHay02M?si=kDGhcx9XKgYATBoQ", # W&W - OIIA OIIA (Spinning Cat)
+    "https://youtu.be/ekr2nIex040?si=e0UbWXZAStvbpu5d", # ROSÉ & Bruno Mars - APT. (Official Music Video)
+    "https://youtu.be/x7_jYYISAbM?si=IShdShdFUzZDwhax", # Cults - Always Forever
+    "https://youtu.be/w4ThD_cxOKQ?si=MQB2R9oC7VoZ6V2v", # Clams Casino & Imogen Heap - I'm God
+    "https://youtu.be/1EF0VOd3WGA?si=93LIRNiUSdT3wGAv", # Doechii - Anxiety (Lyrics)
+    "https://youtu.be/bunJBFtlt-I?si=XYCIm4arWbSl0Nw8", # TV On The Radio - Trouble
+    "https://youtu.be/bZwxTX2pWmw?si=uIeQAPY7jljsKGnw", # Pink Floyd Another Brick In The Wall (HQ)
+    "https://youtu.be/ASrjoM-rC1U?si=YaARnKHUTrfM6g6l", # Toto - Africa (Lyrics)
+    "https://youtu.be/OWO-SDIAW70?si=6UBOgRs5OPv7ctxc", # I'm Still in Love with You (feat. Sasha)
+    "https://youtu.be/OkTpqcFt5tY?si=Hjmhp8AcuGqqY18q", # September - Cry For You
+    "https://youtu.be/K3JGxj2rvAs?si=lgZCRPZuNeUxJS-G", # I Follow Rivers - Lykke Li (La Vie d'Adèle/La Vida de Adele)
+    "https://youtu.be/nhBorPm6JjQ?si=jxpTP386oLdQMcMA", # Rihanna - California King Bed
+    "https://youtu.be/au8QGTiPhEw?si=nIkfF1Vy88QYlzC8", # Azealia Banks - Anna Wintour
+    "https://youtu.be/eJyG7CDYW4I?si=61sfeTdQsWLwflF0", # Azealia Banks - VENUS (Original Version)
+    "https://youtu.be/WL41kS5OFxQ?si=1FrIha9mQm625Rid", # Is this Love - Bob Marley (Looped and Extended)
+    "https://youtu.be/LUXu4aTnK7E?si=ATZSnRfvSRxRCm7Z", # SLOW DANCING IN THE DARK
+    "https://youtu.be/QMP-o8WXSPM?si=SLZmsIxmvbcZsHBA", # Love On The Brain
+    "https://youtu.be/47dtFZ8CFo8?si=dvQgoBYnBjsv-0Y3", # Capital Cities - Safe And Sound
+    "https://youtu.be/0CGVgAYJyjk?si=jYFOWKi4ho7FFQMX", # MIKA - Grace Kelly
+    "https://youtu.be/TBsOSj2C6Nk?si=Z9tVSIryeN-fE2t0", # Dye My Hair (Branchez Remix)
+    "https://youtu.be/ia1iuXbEaYQ?si=swtYpQdA15iaQmNx", # Selena Gomez - Rare (Official Music Video)
+    "https://youtu.be/9tC-FOXioDo?si=3d7Yc4WFg1F8xP5Q", # Sunbeam Sound Machine - In Your Arms (Music Video)
+    "https://youtu.be/6Y_AB7fM3MI?si=HIroN6pXrx2bV6yA", # Korn Feat. Amy Lee (Evanescence) - Freak on a Leash (MTV Live UNPLUGGED) HD
+    "https://youtu.be/iH0kfH04U68?si=ukX0dz-kPlSSBDKq", # Grimes - So Heavy I Fell Through the Earth (Visualizer)
+    "https://youtu.be/BC19kwABFwc?si=tAp4QmNOHD4pC4SO", # Dua Lipa - Love Again (Official Music Video)
+    "https://youtu.be/UNk6LTZYokk?si=zTPOeVMzZSyiYSjx", # Sade - Smooth Operator (Lyrics)
+    "https://youtu.be/UN4VLmo1QG4?si=OyK4mLEr9AqufSEZ", # Indila - Dernière Danse (Lyrics)
+    "https://youtu.be/r8BsuT0PWdI?si=xlcWJyPGFXO5Fv02", # Milky Chance - Flashed Junk Mind (Official Video)
+    "https://youtu.be/9Qjd5gG9zFE?si=vqn-ugCZIMUPzpni", # BRÅVES - Me The Thief (Official Video)
+    "https://youtu.be/rs6Y4kZ8qtw?si=BVcDWS6QcoKOSvze", # Manu Chao - Me Gustas Tu (Official Audio)
+    "https://youtu.be/LLsvFTeYc0U?si=MYWsjvBmtgg2E9Ye", # Bazzi - I Think I'm Losing My Mind (Myself) (Lyrics)
+    "https://youtu.be/mrZRURcb1cM?si=gkF8kUZlosNWzRov", # Fleetwood Mac - Dreams [with lyrics]
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
