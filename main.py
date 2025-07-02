@@ -13,6 +13,7 @@ import random
 from typing import Optional
 import re
 import yt_dlp
+import subprocess
 from playlist import MUSIC_PLAYLISTS  # moved playlist definitions to playlist.py
 
 # Ensure opus is loaded for voice support
@@ -2182,19 +2183,55 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
     else:
         await ctx.send("PVP role not found. Please ensure the role exists in this server.")
 
-if __name__ == "__main__":
-    # Start HTTP server for Render health checks
-    port = int(os.getenv("PORT", 1000))
+async def start_web_server():
+    """Start the HTTP server for Render health checks"""
+    port = int(os.getenv("PORT", 8080))  # Default to 8080 for Render.com
     app = web.Application()
+    
     async def handle_root(request):
-        return web.Response(text="Dogbot is running!")
+        return web.Response(text="Dogbot is running!", content_type='text/plain')
+    
+    async def handle_health(request):
+        # Health check endpoint for Render.com
+        status = {
+            "status": "healthy",
+            "bot_ready": bot.is_ready(),
+            "guilds_count": len(bot.guilds) if bot.is_ready() else 0
+        }
+        return web.json_response(status)
+    
     app.router.add_get('/', handle_root)
+    app.router.add_get('/health', handle_health)
     runner = web.AppRunner(app)
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(runner.setup())
+    await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', port)
-    loop.run_until_complete(site.start())
+    await site.start()
     print(f"🐕 Dogbot web server listening on 0.0.0.0:{port}")
+    print(f"🌐 Health check available at: http://0.0.0.0:{port}/health")
+    
+    # Keep the web server running
+    return runner, site
 
-    # Run Discord bot
-    bot.run(token)
+async def run_bot():
+    """Run the Discord bot"""
+    if not token:
+        raise ValueError("DISCORD_TOKEN environment variable not set or is empty")
+    await bot.start(token)
+
+async def main():
+    """Main async function to run both web server and Discord bot concurrently"""
+    # Start web server
+    runner, site = await start_web_server()
+    
+    try:
+        # Run Discord bot
+        await run_bot()
+    except KeyboardInterrupt:
+        print("Received interrupt signal, shutting down...")
+    finally:
+        # Clean up web server
+        await runner.cleanup()
+
+if __name__ == "__main__":
+    # Run both web server and Discord bot concurrently
+    asyncio.run(main())
