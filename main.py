@@ -134,8 +134,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         }
 
         ffmpeg_options = {
-            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M -analyzeduration 10000000 -thread_queue_size 512 -fflags +discardcorrupt',
-            'options': '-vn -ar 48000 -ac 2 -b:a 128k -bufsize 2048k -avoid_negative_ts make_zero',
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M -analyzeduration 10000000 -thread_queue_size 1024 -fflags +discardcorrupt',
+            'options': '-vn -ar 48000 -ac 2 -b:a 128k -bufsize 4096k -maxrate 192k -avoid_negative_ts make_zero -filter:a "volume=0.8"',
         }
 
         ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
@@ -607,19 +607,23 @@ class MusicBot:
                         self.shuffle_positions[guild_id] = next_shuffle_pos
                         print(f"Auto-advancing to shuffle position {next_shuffle_pos + 1}")
                         
-                        # Schedule next song to play
-                        future = asyncio.run_coroutine_threadsafe(
-                            self._play_current_song(guild_id), 
+                        # Schedule next song to play without blocking
+                        async def play_next_song():
+                            try:
+                                await asyncio.sleep(0.5)  # Brief pause for smooth transition
+                                await self._play_current_song(guild_id)
+                            except Exception as e:
+                                print(f"Error playing next song: {e}")
+                        
+                        asyncio.run_coroutine_threadsafe(
+                            play_next_song(), 
                             self.bot.loop
                         )
-                        try:
-                            future.result(timeout=10)  # Wait up to 10 seconds
-                        except Exception as e:
-                            print(f"Error scheduling next song: {e}")
                 
                 # Stop any currently playing audio
                 if voice_client.is_playing():
                     voice_client.stop()
+                    await asyncio.sleep(0.3)  # Brief pause for clean transition
                 
                 voice_client.play(player, after=after_playing)
                 print(f"Successfully started playing: {player.title}")
@@ -833,12 +837,13 @@ class MusicBot:
             # Stop current music if playing
             if voice_client.is_playing():
                 voice_client.stop()
-                await asyncio.sleep(0.5)  # Brief cleanup delay
+                await asyncio.sleep(0.3)  # Brief cleanup delay for smooth transition
             
             # Create audio source for the specific URL
             player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
             
             await ctx.send(f"🎵 Now Playing: {title}")
+            print(f"Playing specific URL for guild {ctx.guild.id}: {title}")
             
             def after_playing(error):
                 guild_id = ctx.guild.id  # Capture guild_id
@@ -851,26 +856,46 @@ class MusicBot:
                 if self.is_playing.get(guild_id, False):
                     print(f"Returning to shuffled playlist for guild {guild_id}")
                     
-                    # Schedule next song to play using the same method as regular playlist
-                    future = asyncio.run_coroutine_threadsafe(
-                        self._play_current_song(guild_id), 
+                    # Schedule playlist resume without blocking
+                    async def resume_playlist_smoothly():
+                        try:
+                            # Small delay for audio cleanup
+                            await asyncio.sleep(0.8)
+                            
+                            # Verify voice client state
+                            if (guild_id in self.voice_clients and 
+                                self.voice_clients[guild_id].is_connected() and 
+                                self.is_playing.get(guild_id, False) and
+                                not self.voice_clients[guild_id].is_playing()):
+                                
+                                print(f"Resuming shuffle playlist for guild {guild_id}")
+                                await self._play_current_song(guild_id)
+                            else:
+                                print(f"Voice client busy or disconnected for guild {guild_id}")
+                        except Exception as e:
+                            print(f"Error resuming playlist: {e}")
+                    
+                    # Schedule non-blocking resume
+                    asyncio.run_coroutine_threadsafe(
+                        resume_playlist_smoothly(), 
                         self.bot.loop
                     )
-                    try:
-                        future.result(timeout=10)  # Same timeout as regular playlist
-                    except Exception as e:
-                        print(f"Error resuming playlist: {e}")
                 else:
                     print(f"Playlist not active for guild {guild_id}, not resuming")
             
             voice_client.play(player, after=after_playing)
             
         except Exception as e:
-            await ctx.send(f"❌ Failed to play URL: {str(e)}")
+            error_msg = str(e)
+            print(f"Error playing specific URL for guild {ctx.guild.id}: {error_msg}")
+            await ctx.send(f"❌ Failed to play URL: {error_msg}")
+            
             # Always try to resume playlist if there was an error and we were playing before
             if was_playing_playlist:
                 print(f"Error playing specific URL, resuming playlist for guild {ctx.guild.id}")
                 await ctx.send("🎵 Returning to shuffled playlist...")
+                # Small delay before resuming to avoid audio conflicts
+                await asyncio.sleep(0.5)
                 await self._play_current_song(ctx.guild.id)
 
     # NOTE: play_specific_url method disabled - was causing issues
@@ -1442,7 +1467,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play <youtube_link>` - Play specific song immediately\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!status` - Show playback and auto-repeat status\n`!reshuffle` - Generate new shuffle order", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!status` - Show playback and auto-repeat status\n`!reshuffle` - Generate new shuffle order", inline=False)
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
