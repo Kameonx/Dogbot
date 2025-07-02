@@ -2184,7 +2184,7 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
 
 if __name__ == "__main__":
     # Start HTTP server for Render health checks
-    port = int(os.getenv("PORT", 8080))
+    port = int(os.getenv("PORT", 1000))
     app = web.Application()
     async def handle_root(request):
         return web.Response(text="Dogbot is running!")
