@@ -1,3 +1,4 @@
+
 import discord
 from discord.ext import commands
 import logging
@@ -134,8 +135,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         }
 
         ffmpeg_options = {
-            'before_options': '-probesize 50M -analyzeduration 10000000 -thread_queue_size 1024 -fflags +discardcorrupt+genpts',
-            'options': '-vn -ar 48000 -ac 2 -b:a 128k -bufsize 4096k -maxrate 192k -avoid_negative_ts make_zero -filter:a "volume=0.8"',
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M -analyzeduration 10000000 -thread_queue_size 512 -fflags +discardcorrupt',
+            'options': '-vn -ar 48000 -ac 2 -b:a 128k -bufsize 2048k -avoid_negative_ts make_zero',
         }
 
         ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
@@ -248,8 +249,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             # Use conservative FFmpeg options for fallback
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-probesize 50M -analyzeduration 10000000 -thread_queue_size 512 -fflags +discardcorrupt+genpts',
-                options='-vn -ar 48000 -ac 2 -b:a 128k -bufsize 2048k -avoid_negative_ts make_zero -filter:a "volume=0.8"'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 50M -thread_queue_size 512 -fflags +discardcorrupt',
+                options='-vn -ar 48000 -ac 2 -b:a 128k -bufsize 2048k -avoid_negative_ts make_zero'
             )
             return cls(source, data=data)
             
@@ -266,9 +267,6 @@ class MusicBot:
         self.is_playing = {}  # guild_id -> bool
         self.shuffle_playlists = {}  # guild_id -> shuffled_playlist
         self.shuffle_positions = {}  # guild_id -> current_position_in_shuffle
-        # Add connection stability tracking
-        self.last_connection_time = {}
-        self.connection_attempts = {}
     
     def _generate_shuffle_playlist(self, guild_id):
         """Generate a new shuffled playlist for the guild"""
@@ -301,23 +299,6 @@ class MusicBot:
             playlist = self.shuffle_playlists[guild_id]
         
         return playlist[position] if playlist else None
-    
-    def _check_voice_connection_health(self, guild_id):
-        """Check if voice connection is healthy and stable"""
-        if guild_id not in self.voice_clients:
-            return False
-        
-        voice_client = self.voice_clients[guild_id]
-        
-        # Check basic connection status
-        if not voice_client.is_connected():
-            return False
-        
-        # Check if we have an active channel
-        if not hasattr(voice_client, 'channel') or voice_client.channel is None:
-            return False
-        
-        return True
         
     async def join_voice_channel(self, ctx, auto_start=False):
         """Join the voice channel of the user who called the command"""
@@ -326,27 +307,15 @@ class MusicBot:
             return None
             
         channel = ctx.author.voice.channel
-        guild_id = ctx.guild.id
         
-        # Connection stability check - prevent rapid reconnections
-        import time
-        current_time = time.time()
-        if guild_id in self.last_connection_time:
-            time_since_last = current_time - self.last_connection_time[guild_id]
-            if time_since_last < 5:  # Prevent reconnections within 5 seconds
-                await ctx.send("⏳ Please wait a moment before reconnecting...")
-                return None
-        
-        self.last_connection_time[guild_id] = current_time
-        
-        if guild_id in self.voice_clients:
-            voice_client = self.voice_clients[guild_id]
+        if ctx.guild.id in self.voice_clients:
+            voice_client = self.voice_clients[ctx.guild.id]
             # Check if voice client is still connected
             if voice_client.is_connected():
                 if voice_client.channel == channel:
                     if auto_start:
                         await ctx.send("🎵 I'm already in your voice channel! Starting music...")
-                        if not self.is_playing.get(guild_id, False):
+                        if not self.is_playing.get(ctx.guild.id, False):
                             await self.play_music(ctx)
                     else:
                         await ctx.send("🎵 I'm already in your voice channel!")
@@ -355,27 +324,27 @@ class MusicBot:
                     await voice_client.move_to(channel)
                     if auto_start:
                         await ctx.send(f"🎵 Moved to {channel.name} and starting music!")
-                        if not self.is_playing.get(guild_id, False):
+                        if not self.is_playing.get(ctx.guild.id, False):
                             await self.play_music(ctx)
                     else:
                         await ctx.send(f"🎵 Moved to {channel.name}!")
                     return voice_client
             else:
                 # Clean up disconnected voice client
-                del self.voice_clients[guild_id]
+                del self.voice_clients[ctx.guild.id]
         
         try:
             voice_client = await channel.connect()
-            self.voice_clients[guild_id] = voice_client
+            self.voice_clients[ctx.guild.id] = voice_client
             
             # Generate initial shuffle playlist and start at random position
-            self._generate_shuffle_playlist(guild_id)
+            self._generate_shuffle_playlist(ctx.guild.id)
             # Start at a random position in the shuffled playlist
-            if self.shuffle_playlists.get(guild_id):
-                self.shuffle_positions[guild_id] = random.randint(0, len(self.shuffle_playlists[guild_id]) - 1)
+            if self.shuffle_playlists.get(ctx.guild.id):
+                self.shuffle_positions[ctx.guild.id] = random.randint(0, len(self.shuffle_playlists[ctx.guild.id]) - 1)
             
-            self.current_songs[guild_id] = 0
-            self.is_playing[guild_id] = False
+            self.current_songs[ctx.guild.id] = 0
+            self.is_playing[ctx.guild.id] = False
             
             if auto_start:
                 await ctx.send(f"🎵 Joined {channel.name} and starting music in shuffle mode!")
@@ -596,9 +565,9 @@ class MusicBot:
             
         voice_client = self.voice_clients[guild_id]
         
-        # Use health check instead of basic connection check
-        if not self._check_voice_connection_health(guild_id):
-            print(f"Voice connection unhealthy for guild {guild_id}")
+        # Check if voice client is still connected
+        if not voice_client.is_connected():
+            print(f"Voice client disconnected for guild {guild_id}")
             self.is_playing[guild_id] = False
             return
         
@@ -639,23 +608,19 @@ class MusicBot:
                         self.shuffle_positions[guild_id] = next_shuffle_pos
                         print(f"Auto-advancing to shuffle position {next_shuffle_pos + 1}")
                         
-                        # Schedule next song to play without blocking
-                        async def play_next_song():
-                            try:
-                                await asyncio.sleep(0.5)  # Brief pause for smooth transition
-                                await self._play_current_song(guild_id)
-                            except Exception as e:
-                                print(f"Error playing next song: {e}")
-                        
-                        asyncio.run_coroutine_threadsafe(
-                            play_next_song(), 
+                        # Schedule next song to play
+                        future = asyncio.run_coroutine_threadsafe(
+                            self._play_current_song(guild_id), 
                             self.bot.loop
                         )
+                        try:
+                            future.result(timeout=10)  # Wait up to 10 seconds
+                        except Exception as e:
+                            print(f"Error scheduling next song: {e}")
                 
                 # Stop any currently playing audio
                 if voice_client.is_playing():
                     voice_client.stop()
-                    await asyncio.sleep(0.3)  # Brief pause for clean transition
                 
                 voice_client.play(player, after=after_playing)
                 print(f"Successfully started playing: {player.title}")
@@ -869,13 +834,12 @@ class MusicBot:
             # Stop current music if playing
             if voice_client.is_playing():
                 voice_client.stop()
-                await asyncio.sleep(0.3)  # Brief cleanup delay for smooth transition
+                await asyncio.sleep(0.5)  # Brief cleanup delay
             
             # Create audio source for the specific URL
             player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
             
             await ctx.send(f"🎵 Now Playing: {title}")
-            print(f"Playing specific URL for guild {ctx.guild.id}: {title}")
             
             def after_playing(error):
                 guild_id = ctx.guild.id  # Capture guild_id
@@ -888,46 +852,26 @@ class MusicBot:
                 if self.is_playing.get(guild_id, False):
                     print(f"Returning to shuffled playlist for guild {guild_id}")
                     
-                    # Schedule playlist resume without blocking
-                    async def resume_playlist_smoothly():
-                        try:
-                            # Small delay for audio cleanup
-                            await asyncio.sleep(0.8)
-                            
-                            # Verify voice client state
-                            if (guild_id in self.voice_clients and 
-                                self.voice_clients[guild_id].is_connected() and 
-                                self.is_playing.get(guild_id, False) and
-                                not self.voice_clients[guild_id].is_playing()):
-                                
-                                print(f"Resuming shuffle playlist for guild {guild_id}")
-                                await self._play_current_song(guild_id)
-                            else:
-                                print(f"Voice client busy or disconnected for guild {guild_id}")
-                        except Exception as e:
-                            print(f"Error resuming playlist: {e}")
-                    
-                    # Schedule non-blocking resume
-                    asyncio.run_coroutine_threadsafe(
-                        resume_playlist_smoothly(), 
+                    # Schedule next song to play using the same method as regular playlist
+                    future = asyncio.run_coroutine_threadsafe(
+                        self._play_current_song(guild_id), 
                         self.bot.loop
                     )
+                    try:
+                        future.result(timeout=10)  # Same timeout as regular playlist
+                    except Exception as e:
+                        print(f"Error resuming playlist: {e}")
                 else:
                     print(f"Playlist not active for guild {guild_id}, not resuming")
             
             voice_client.play(player, after=after_playing)
             
         except Exception as e:
-            error_msg = str(e)
-            print(f"Error playing specific URL for guild {ctx.guild.id}: {error_msg}")
-            await ctx.send(f"❌ Failed to play URL: {error_msg}")
-            
+            await ctx.send(f"❌ Failed to play URL: {str(e)}")
             # Always try to resume playlist if there was an error and we were playing before
             if was_playing_playlist:
                 print(f"Error playing specific URL, resuming playlist for guild {ctx.guild.id}")
                 await ctx.send("🎵 Returning to shuffled playlist...")
-                # Small delay before resuming to avoid audio conflicts
-                await asyncio.sleep(0.5)
                 await self._play_current_song(ctx.guild.id)
 
     # NOTE: play_specific_url method disabled - was causing issues
@@ -1499,7 +1443,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!status` - Show playback and auto-repeat status\n`!reshuffle` - Generate new shuffle order", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play <youtube_link>` - Play specific song immediately\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!status` - Show playback and auto-repeat status\n`!reshuffle` - Generate new shuffle order", inline=False)
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
@@ -2551,6 +2495,7 @@ async def checkcookies(ctx):
     
     await ctx.send(embed=embed)
 
+# YouTube API Management Functions
 def enable_youtube_api():
     """Check if YouTube API is configured and ready"""
     if youtube_api and youtube_api.api_key:
