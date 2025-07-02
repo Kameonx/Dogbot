@@ -1497,6 +1497,312 @@ def has_admin_or_moderator_role(ctx):
 async def hello(ctx):
     await ctx.send(f'🐕 Woof woof! Hello {ctx.author.name}!')
 
+# Music Bot Commands
+@bot.command()
+async def join(ctx):
+    """Join voice channel and auto-start music"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.join_voice_channel(ctx, auto_start=True)
+
+@bot.command()
+async def leave(ctx):
+    """Leave voice channel"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.leave_voice_channel(ctx)
+
+@bot.command()
+async def start(ctx):
+    """Start playing music"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.play_music(ctx)
+
+@bot.command()
+async def stop(ctx):
+    """Stop playing music"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.stop_music(ctx)
+
+@bot.command()
+async def next(ctx):
+    """Skip to next song"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.next_song(ctx)
+
+@bot.command()
+async def previous(ctx):
+    """Go to previous song"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.previous_song(ctx)
+
+@bot.command()
+async def play(ctx, *, url=None):
+    """Play music or specific URL"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    if url:
+        await music_bot.play_specific_url(ctx, url)
+    else:
+        await music_bot.play_music(ctx)
+
+@bot.command()
+async def playlist(ctx):
+    """Show current playlist"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.show_playlist(ctx)
+
+@bot.command()
+async def add(ctx, *, url):
+    """Add song to playlist"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.add_song(ctx, url)
+
+@bot.command()
+async def remove(ctx, *, url):
+    """Remove song from playlist"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.remove_song(ctx, url)
+
+@bot.command()
+async def nowplaying(ctx):
+    """Show current song info"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.get_current_song_info(ctx)
+
+@bot.command()
+async def status(ctx):
+    """Show playback status"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.get_playback_status(ctx)
+
+@bot.command()
+async def reshuffle(ctx):
+    """Generate new shuffle order"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    if ctx.guild.id in music_bot.shuffle_playlists:
+        music_bot._generate_shuffle_playlist(ctx.guild.id)
+        await ctx.send("🔀 Generated new shuffle order! Use `!next` to skip to a new song.")
+    else:
+        await ctx.send("❌ No active shuffle playlist found!")
+
+# AI and Chat Commands
+@bot.command()
+async def ask(ctx, *, question):
+    """Ask AI a question (no memory)"""
+    response = await get_ai_response(str(ctx.author.id), question)
+    await ctx.send(response)
+
+@bot.command()
+async def chat(ctx, *, message):
+    """Chat with AI (with memory)"""
+    user_id = str(ctx.author.id)
+    user_name = ctx.author.display_name
+    channel_id = str(ctx.channel.id)
+    
+    response = await get_ai_response_with_history(user_id, message)
+    
+    # Save to chat history
+    await save_chat_history(user_id, user_name, channel_id, message, response)
+    
+    await ctx.send(response)
+
+# Character storage for D&D campaigns
+character_names = {}  # user_id -> character_name
+
+@bot.command()
+async def character(ctx, *, name):
+    """Set your character name for D&D campaigns"""
+    user_id = str(ctx.author.id)
+    character_names[user_id] = name
+    await ctx.send(f"🎭 Character name set to: **{name}**")
+
+@bot.command()
+async def dnd(ctx, *, action):
+    """Take action in D&D campaign"""
+    user_id = str(ctx.author.id)
+    user_name = ctx.author.display_name
+    channel_id = str(ctx.channel.id)
+    character_name = character_names.get(user_id)
+    
+    response = await get_ai_response_with_campaign_history(channel_id, user_name, character_name, action)
+    
+    # Save to campaign history
+    await save_campaign_history(channel_id, user_id, user_name, character_name, action, response)
+    
+    await ctx.send(response)
+
+@bot.command()
+async def campaign(ctx):
+    """View campaign history"""
+    channel_id = str(ctx.channel.id)
+    history = await get_campaign_history(channel_id, limit=10)
+    
+    if not history:
+        await ctx.send("📜 No campaign history found in this channel!")
+        return
+    
+    embed = discord.Embed(
+        title="📜 Campaign History",
+        description="Recent actions in this campaign:",
+        color=discord.Color.purple()
+    )
+    
+    for user_name, char_name, message, response in history[-5:]:  # Show last 5
+        player = user_name
+        if char_name:
+            player += f" ({char_name})"
+        
+        embed.add_field(
+            name=f"🎭 {player}",
+            value=f"**Action:** {message[:100]}...\n**DM:** {response[:150]}...",
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def clearcampaign(ctx):
+    """Clear campaign history for this channel (Admin/Moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
+        return
+    
+    channel_id = str(ctx.channel.id)
+    
+    async with aiosqlite.connect("chat_history.db") as db:
+        await db.execute("DELETE FROM campaign_history WHERE channel_id = ?", (channel_id,))
+        await db.execute("DELETE FROM undo_stack WHERE channel_id = ?", (channel_id,))
+        await db.commit()
+    
+    await ctx.send("🗑️ Campaign history cleared for this channel!")
+
+@bot.command()
+async def roll(ctx):
+    """Roll a d20"""
+    roll_result = random.randint(1, 20)
+    
+    if roll_result == 20:
+        await ctx.send(f"🎲 {ctx.author.mention} rolled a **{roll_result}**! 🌟 **CRITICAL SUCCESS!** 🌟")
+    elif roll_result == 1:
+        await ctx.send(f"🎲 {ctx.author.mention} rolled a **{roll_result}**! 💥 **CRITICAL FAILURE!** 💥")
+    elif roll_result >= 15:
+        await ctx.send(f"🎲 {ctx.author.mention} rolled a **{roll_result}**! ✨ Great roll!")
+    elif roll_result <= 5:
+        await ctx.send(f"🎲 {ctx.author.mention} rolled a **{roll_result}**! 😬 Ouch...")
+    else:
+        await ctx.send(f"🎲 {ctx.author.mention} rolled a **{roll_result}**!")
+
+@bot.command()
+async def undo(ctx):
+    """Undo last action"""
+    channel_id = str(ctx.channel.id)
+    user_id = str(ctx.author.id)
+    
+    success, message = await undo_last_action(channel_id, user_id)
+    
+    if success:
+        await ctx.send(f"↩️ {message}")
+    else:
+        await ctx.send(f"❌ {message}")
+
+@bot.command()
+async def redo(ctx):
+    """Redo last undone action"""
+    channel_id = str(ctx.channel.id)
+    user_id = str(ctx.author.id)
+    
+    success, message = await redo_last_undo(channel_id, user_id)
+    
+    if success:
+        await ctx.send(f"↪️ {message}")
+    else:
+        await ctx.send(f"❌ {message}")
+
+# Utility Commands
+@bot.command()
+async def poll(ctx, *, question):
+    """Create a poll"""
+    embed = discord.Embed(
+        title="📊 Poll",
+        description=question,
+        color=discord.Color.blue()
+    )
+    embed.set_footer(text=f"Poll created by {ctx.author.display_name}")
+    
+    message = await ctx.send(embed=embed)
+    await message.add_reaction("👍")
+    await message.add_reaction("👎")
+
+@bot.command()
+async def say(ctx, *, message):
+    """Make the bot say something"""
+    await ctx.message.delete()  # Delete the command message
+    await ctx.send(message)
+
+@bot.command()
+async def ytdlstatus(ctx):
+    """Show YouTube API configuration (Admin/Moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command.")
+        return
+    
+    embed = discord.Embed(
+        title="🔧 YouTube Configuration Status",
+        color=discord.Color.blue()
+    )
+    
+    # Check YouTube API
+    if youtube_api_key:
+        embed.add_field(name="YouTube API Key", value="✅ Configured", inline=True)
+    else:
+        embed.add_field(name="YouTube API Key", value="❌ Not Set", inline=True)
+    
+    # Check yt-dlp
+    try:
+        import yt_dlp
+        embed.add_field(name="yt-dlp", value="✅ Available", inline=True)
+    except ImportError:
+        embed.add_field(name="yt-dlp", value="❌ Not Installed", inline=True)
+    
+    # Check FFmpeg
+    try:
+        import subprocess
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            embed.add_field(name="FFmpeg", value="✅ Available", inline=True)
+        else:
+            embed.add_field(name="FFmpeg", value="⚠️ Error", inline=True)
+    except:
+        embed.add_field(name="FFmpeg", value="❌ Not Found", inline=True)
+    
+    await ctx.send(embed=embed)
+
 @bot.command()
 async def help(ctx):
     embed = discord.Embed(
@@ -1522,7 +1828,6 @@ async def modhelp(ctx):
     """Admin/Moderator only help command"""
     if not has_admin_or_moderator_role(ctx):
         await ctx.send("❌ You need Admin or Moderator role to use this command.")
-
         return
     
     embed = discord.Embed(
