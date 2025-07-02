@@ -636,13 +636,32 @@ class MusicBot:
                             self.bot.loop
                         )
                 
-                # Stop any currently playing audio and wait to prevent overlap
-                if voice_client.is_playing():
+                # Enhanced audio cleanup for playlist transitions (cloud-friendly)
+                if voice_client.is_playing() or voice_client.is_paused():
+                    print(f"[RENDER.COM] Stopping playlist audio for clean transition...")
                     voice_client.stop()
-                    await asyncio.sleep(0.5)  # Longer pause for clean transition
+                    await asyncio.sleep(0.8)  # Cloud-friendly cleanup delay
+                    
+                    # Double-check cleanup
+                    if voice_client.is_playing():
+                        print(f"[RENDER.COM] Forcing second stop for playlist...")
+                        voice_client.stop()
+                        await asyncio.sleep(0.5)
                 
-                voice_client.play(player, after=after_playing)
-                print(f"Successfully started playing: {player.title}")
+                # Try to play with cloud-aware error handling
+                try:
+                    voice_client.play(player, after=after_playing)
+                    print(f"[RENDER.COM] Playlist: Successfully started playing: {player.title}")
+                except Exception as play_error:
+                    if "already playing" in str(play_error).lower():
+                        print(f"[RENDER.COM] Playlist 'already playing' error, forcing cleanup...")
+                        voice_client.stop()
+                        await asyncio.sleep(1.5)
+                        voice_client.play(player, after=after_playing)
+                        print(f"[RENDER.COM] Playlist retry successful")
+                    else:
+                        raise play_error
+                        
                 return  # Success! Exit the retry loop
                 
             except Exception as e:
@@ -850,25 +869,47 @@ class MusicBot:
         await ctx.send(f"🎵 Loading: {title}...")
         
         try:
-            # Stop current music if playing and wait longer to prevent overlap
-            if voice_client.is_playing():
+            # Enhanced audio cleanup for cloud deployment
+            print(f"[RENDER.COM] Current audio state - Playing: {voice_client.is_playing()}, Paused: {voice_client.is_paused()}")
+            
+            # Force stop all audio with multiple attempts
+            if voice_client.is_playing() or voice_client.is_paused():
+                print(f"[RENDER.COM] Stopping current audio...")
                 voice_client.stop()
-                await asyncio.sleep(0.8)  # Longer cleanup delay for smooth transition
+                await asyncio.sleep(1.2)  # Longer cleanup for cloud environment
+                
+                # Double-check and force stop again if needed
+                if voice_client.is_playing():
+                    print(f"[RENDER.COM] Audio still playing, forcing second stop...")
+                    voice_client.stop()
+                    await asyncio.sleep(0.8)
+                    
+                print(f"[RENDER.COM] After cleanup - Playing: {voice_client.is_playing()}")
             
             # Create audio source for the specific URL
-            print(f"Attempting to create audio source for: {url}")
+            print(f"[RENDER.COM] Creating audio source for: {url}")
             player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
-            print(f"Audio source created successfully: {player.title}")
+            print(f"[RENDER.COM] Audio source created successfully: {player.title}")
             
-            # Check if voice client is still connected before playing
+            # Final connectivity check
             if not voice_client.is_connected():
                 await ctx.send("❌ Voice client disconnected during audio loading!")
                 return
+                
+            # Final state verification before playing
+            if voice_client.is_playing():
+                print(f"[RENDER.COM] WARNING: Audio still playing after cleanup!")
+                await ctx.send("⚠️ Forcing audio cleanup...")
+                voice_client.stop()
+                await asyncio.sleep(1.5)
+                
+                if voice_client.is_playing():
+                    await ctx.send("❌ Unable to stop current audio. Please try again.")
+                    return
             
             await ctx.send(f"🎵 Now Playing: {title}")
-            print(f"Playing specific URL for guild {ctx.guild.id}: {title}")
-            print(f"Voice client connected: {voice_client.is_connected()}")
-            print(f"Voice client playing before new song: {voice_client.is_playing()}")
+            print(f"[RENDER.COM] Starting playback for guild {ctx.guild.id}: {title}")
+            print(f"[RENDER.COM] Pre-play state - Connected: {voice_client.is_connected()}, Playing: {voice_client.is_playing()}")
             
             def after_playing(error):
                 guild_id = ctx.guild.id  # Capture guild_id
@@ -908,8 +949,32 @@ class MusicBot:
                 else:
                     print(f"Playlist not active for guild {guild_id}, not resuming")
             
-            voice_client.play(player, after=after_playing)
-            print(f"[RENDER.COM] Voice client play command executed successfully")
+            # Attempt to play with error handling for "Already playing" errors
+            try:
+                voice_client.play(player, after=after_playing)
+                print(f"[RENDER.COM] Voice client play command executed successfully")
+            except Exception as play_error:
+                if "already playing" in str(play_error).lower():
+                    print(f"[RENDER.COM] Caught 'already playing' error, forcing stop and retry...")
+                    await ctx.send("⚠️ Audio conflict detected, forcing cleanup and retry...")
+                    
+                    # Force stop with extreme prejudice
+                    voice_client.stop()
+                    await asyncio.sleep(2.0)  # Extra long delay for cloud
+                    
+                    # Try to play again
+                    try:
+                        voice_client.play(player, after=after_playing)
+                        print(f"[RENDER.COM] Retry successful after forced cleanup")
+                        await ctx.send("✅ Audio cleanup successful, now playing!")
+                    except Exception as retry_error:
+                        print(f"[RENDER.COM] Retry failed: {retry_error}")
+                        await ctx.send(f"❌ Failed even after cleanup: {str(retry_error)}")
+                        return
+                else:
+                    print(f"[RENDER.COM] Unexpected play error: {play_error}")
+                    raise play_error
+            
             print(f"[RENDER.COM] Voice client playing after command: {voice_client.is_playing()}")
             
             # Give a moment for the audio to start and check status
@@ -1569,6 +1634,7 @@ async def modhelp(ctx):
     """Admin/Moderator only help command"""
     if not has_admin_or_moderator_role(ctx):
         await ctx.send("❌ You need Admin or Moderator role to use this command.")
+
         return
     
     embed = discord.Embed(
