@@ -570,7 +570,7 @@ class MusicBot:
             self.is_playing[guild_id] = False
             return
         
-        max_retries = len(MUSIC_PLAYLISTS)  # Try all songs once
+        max_retries = 3  # Reduce retries but add delays
         retries = 0
         current_pos = self.shuffle_positions.get(guild_id, 0)
         
@@ -584,11 +584,15 @@ class MusicBot:
                     
                 print(f"Attempting to play: {url}")
                 
+                # Add delay before extraction for proper buffering
+                await asyncio.sleep(1)
+                
                 player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
                 
                 def after_playing(error):
                     if error:
                         print(f'Player error: {error}')
+                        print(f'Error type: {type(error).__name__}')
                     else:
                         print("Song finished playing normally")
                     
@@ -598,31 +602,41 @@ class MusicBot:
                         current_shuffle_pos = self.shuffle_positions.get(guild_id, 0)
                         next_shuffle_pos = current_shuffle_pos + 1
                         
-                        # Check if we need to regenerate shuffle
+                        # Check if we need to regenerate shuffle - always continue playing
                         if guild_id not in self.shuffle_playlists or next_shuffle_pos >= len(self.shuffle_playlists[guild_id]):
-                            print(f"End of shuffle reached for guild {guild_id}, regenerating...")
+                            print(f"End of shuffle reached for guild {guild_id}, regenerating for continuous play...")
                             self._generate_shuffle_playlist(guild_id)
                             next_shuffle_pos = 0
                         
                         self.shuffle_positions[guild_id] = next_shuffle_pos
-                        print(f"Auto-advancing to shuffle position {next_shuffle_pos + 1}")
+                        print(f"Auto-advancing to shuffle position {next_shuffle_pos + 1} (continuous play)")
                         
-                        # Schedule next song to play
-                        future = asyncio.run_coroutine_threadsafe(
-                            self._play_current_song(guild_id), 
-                            self.bot.loop
-                        )
-                        try:
-                            future.result(timeout=10)  # Wait up to 10 seconds
-                        except Exception as e:
-                            print(f"Error scheduling next song: {e}")
+                        # Use asyncio.ensure_future for better compatibility
+                        def schedule_next():
+                            try:
+                                loop = asyncio.get_event_loop()
+                                if loop.is_running():
+                                    asyncio.ensure_future(self._schedule_next_song(guild_id))
+                                else:
+                                    print(f"Event loop not running for guild {guild_id}")
+                            except Exception as e:
+                                print(f"Error scheduling next song for guild {guild_id}: {e}")
+                        
+                        schedule_next()
+                    else:
+                        print(f"Auto-repeat disabled for guild {guild_id}, stopping playback")
                 
-                # Stop any currently playing audio
+                # Stop any currently playing audio and wait for cleanup
                 if voice_client.is_playing():
                     voice_client.stop()
+                    await asyncio.sleep(1)  # Longer cleanup time
                 
                 voice_client.play(player, after=after_playing)
                 print(f"Successfully started playing: {player.title}")
+                
+                # Brief pause to let playback stabilize without verification
+                await asyncio.sleep(0.5)
+                    
                 return  # Success! Exit the retry loop
                 
             except Exception as e:
@@ -641,13 +655,40 @@ class MusicBot:
                 
                 self.shuffle_positions[guild_id] = next_shuffle_pos
                 
-                # Add a small delay before retrying
-                await asyncio.sleep(1)
+                # Add a longer delay before retrying to avoid rate limiting
+                await asyncio.sleep(2)
         
         # If we exhausted all retries
         if self.is_playing.get(guild_id, False):
             print(f"Failed to play any songs after {max_retries} attempts")
             self.is_playing[guild_id] = False
+    
+    async def _schedule_next_song(self, guild_id):
+        """Schedule the next song to play with proper error handling"""
+        try:
+            # Add delay for proper buffering
+            await asyncio.sleep(3)
+            
+            # Check if we should still be playing
+            if self.is_playing.get(guild_id, False) and guild_id in self.voice_clients:
+                voice_client = self.voice_clients[guild_id]
+                if voice_client.is_connected():
+                    await self._play_current_song(guild_id)
+                else:
+                    print(f"Voice client disconnected for guild {guild_id}, stopping auto-play")
+                    self.is_playing[guild_id] = False
+            else:
+                print(f"Auto-play disabled or voice client missing for guild {guild_id}")
+        except Exception as e:
+            print(f"Error in _schedule_next_song for guild {guild_id}: {e}")
+            # Try one more time after a longer delay
+            try:
+                await asyncio.sleep(5)
+                if self.is_playing.get(guild_id, False):
+                    await self._play_current_song(guild_id)
+            except Exception as retry_error:
+                print(f"Retry failed for guild {guild_id}: {retry_error}")
+                self.is_playing[guild_id] = False
     
     async def add_song(self, ctx, url):
         """Add a song to the playlist"""
@@ -852,15 +893,18 @@ class MusicBot:
                 if self.is_playing.get(ctx.guild.id, False):
                     print(f"Returning to shuffled playlist for guild {ctx.guild.id}")
                     
-                    # Schedule next song to play
-                    future = asyncio.run_coroutine_threadsafe(
-                        self._play_current_song(ctx.guild.id), 
-                        self.bot.loop
-                    )
-                    try:
-                        future.result(timeout=10)  # Wait up to 10 seconds
-                    except Exception as e:
-                        print(f"Error resuming playlist: {e}")
+                    # Use the same robust scheduling method
+                    def schedule_next():
+                        try:
+                            loop = asyncio.get_event_loop()
+                            if loop.is_running():
+                                asyncio.ensure_future(self._schedule_next_song(ctx.guild.id))
+                            else:
+                                print(f"Event loop not running for guild {ctx.guild.id}")
+                        except Exception as e:
+                            print(f"Error scheduling next song for guild {ctx.guild.id}: {e}")
+                    
+                    schedule_next()
                 else:
                     print(f"Playlist not active for guild {ctx.guild.id}, not resuming")
             
