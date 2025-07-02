@@ -50,5 +50,13 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/wOwblaKmyVw?si=RhjLaWK0u59fmHWU", # Miley Cyrus - The Backyard Sessions - "Jolene"
     "https://youtu.be/f2JuxM-snGc?si=XDqGTrN9gS25QwIV", # Lorde - Team
     "https://youtu.be/9gWIIIr2Asw?si=SGei3f_24XnweXPX", # Teddy Swims - Lose Control (The Village Sessions)
-    
+    "https://youtu.be/k-k2_Liofy8?si=5Tic9cVKMR5su9Ae", # Lola Young - Messy (Official Video)
+    "https://youtu.be/VSXT4a2kRHA?si=chR6nut3iy6Ilz4n", # Teddy Swims - The Door (Official Music Video)
+    "https://youtu.be/1RKqOmSkGgM?si=RznnDGf_ZbaxV8ZS", # Chappell Roan - Good Luck, Babe! (Official Lyric Video)
+    "https://youtu.be/Qh8QwVYOSVU?si=vkH1ju-5P0Cbp4je", # Teddy Swims - Bad Dreams (Official Music Video)
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
 ]
