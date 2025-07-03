@@ -298,16 +298,22 @@ class MusicBot:
                         await ctx.send("🎵 I'm already in your voice channel!")
                     return voice_client
                 else:
-                    await voice_client.move_to(channel)
-                    if auto_start:
-                        await ctx.send(f"🎵 Moved to {channel.name} and starting music!")
-                        if not self.is_playing.get(ctx.guild.id, False):
-                            await self.play_music(ctx)
-                    else:
-                        await ctx.send(f"🎵 Moved to {channel.name}!")
-                    return voice_client
+                    try:
+                        await voice_client.move_to(channel)
+                        if auto_start:
+                            await ctx.send(f"🎵 Moved to {channel.name} and starting music!")
+                            if not self.is_playing.get(ctx.guild.id, False):
+                                await self.play_music(ctx)
+                        else:
+                            await ctx.send(f"🎵 Moved to {channel.name}!")
+                        return voice_client
+                    except Exception as e:
+                        print(f"[VOICE] Failed to move to channel {channel.name}: {e}")
+                        # Clean up and try fresh connection
+                        del self.voice_clients[ctx.guild.id]
             else:
                 # Clean up disconnected voice client
+                print(f"[VOICE] Cleaning up disconnected voice client for guild {ctx.guild.id}")
                 del self.voice_clients[ctx.guild.id]
         
         try:
@@ -434,14 +440,25 @@ class MusicBot:
         
         self.shuffle_positions[ctx.guild.id] = next_pos
         
-        # Enhanced cleanup for manual skip - let _play_current_song handle everything
+        # Comprehensive cleanup for manual skip to prevent corrupted audio
         if voice_client.is_playing() or voice_client.is_paused():
             print(f"[NEXT] Stopping current audio for manual skip...")
             voice_client.stop()
-            # Longer wait for complete cleanup before starting new song
-            await asyncio.sleep(1.5)
+            
+            # Wait for voice client to fully stop
+            print(f"[NEXT] Waiting for complete audio cleanup...")
+            await asyncio.sleep(2.0)  # Increased wait time
+            
+            # Double-check that audio is fully stopped
+            retry_count = 0
+            while (voice_client.is_playing() or voice_client.is_paused()) and retry_count < 5:
+                print(f"[NEXT] Audio still playing, forcing stop (attempt {retry_count + 1})")
+                voice_client.stop()
+                await asyncio.sleep(0.5)
+                retry_count += 1
         
         if self.is_playing.get(ctx.guild.id, False):
+            # Use skip_cleanup=True since we already did comprehensive cleanup above
             await self._play_current_song(ctx.guild.id, skip_cleanup=True)
         else:
             await ctx.send(f"⏭️ Next song queued. Use `!start` to play.")
@@ -472,15 +489,26 @@ class MusicBot:
         
         self.shuffle_positions[ctx.guild.id] = previous_pos
         
-        # Enhanced cleanup for manual skip - let _play_current_song handle everything
+        # Comprehensive cleanup for manual skip to prevent corrupted audio
         if voice_client.is_playing() or voice_client.is_paused():
             print(f"[PREVIOUS] Stopping current audio for manual skip...")
             voice_client.stop()
-            # Longer wait for complete cleanup before starting new song
-            await asyncio.sleep(1.5)
+            
+            # Wait for voice client to fully stop
+            print(f"[PREVIOUS] Waiting for complete audio cleanup...")
+            await asyncio.sleep(2.0)  # Increased wait time
+            
+            # Double-check that audio is fully stopped
+            retry_count = 0
+            while (voice_client.is_playing() or voice_client.is_paused()) and retry_count < 5:
+                print(f"[PREVIOUS] Audio still playing, forcing stop (attempt {retry_count + 1})")
+                voice_client.stop()
+                await asyncio.sleep(0.5)
+                retry_count += 1
         
         if self.is_playing.get(ctx.guild.id, False):
             await ctx.send(f"⏮️ Going back to previous song...")
+            # Use skip_cleanup=True since we already did comprehensive cleanup above
             await self._play_current_song(ctx.guild.id, skip_cleanup=True)
         else:
             await ctx.send(f"⏮️ Previous song queued. Use `!start` to play.")
@@ -550,9 +578,32 @@ class MusicBot:
         
         # Check if voice client is still connected
         if not voice_client.is_connected():
-            print(f"Voice client disconnected for guild {guild_id}")
-            self.is_playing[guild_id] = False
-            return
+            print(f"[VOICE] Voice client disconnected for guild {guild_id}")
+            # Try to get guild and channel for reconnection attempt
+            guild = self.bot.get_guild(guild_id)
+            if guild:
+                # Find a member who was likely using the bot and try to reconnect
+                for member in guild.members:
+                    if member.voice and not member.bot:
+                        try:
+                            print(f"[VOICE] Attempting auto-reconnect to {member.voice.channel.name}")
+                            new_voice_client = await member.voice.channel.connect()
+                            self.voice_clients[guild_id] = new_voice_client
+                            print(f"[VOICE] Successfully reconnected to voice channel")
+                            # Continue with playback
+                            voice_client = new_voice_client
+                            break
+                        except Exception as e:
+                            print(f"[VOICE] Auto-reconnect failed: {e}")
+                            continue
+                else:
+                    print(f"[VOICE] No suitable voice channel found for auto-reconnect")
+                    self.is_playing[guild_id] = False
+                    return
+            else:
+                print(f"[VOICE] Guild not found for auto-reconnect")
+                self.is_playing[guild_id] = False
+                return
         
         # Only clean up if not already done by manual skip commands
         if not skip_cleanup:
@@ -561,6 +612,12 @@ class MusicBot:
                 print(f"[RENDER.COM] Stopping existing audio for clean transition...")
                 voice_client.stop()
                 await asyncio.sleep(1.0)  # Longer delay for complete cleanup
+        else:
+            # Even with skip_cleanup=True, do a final safety check to prevent audio overlap
+            if voice_client.is_playing() or voice_client.is_paused():
+                print(f"[SKIP_CLEANUP] Final safety check - audio still playing, forcing stop...")
+                voice_client.stop()
+                await asyncio.sleep(0.5)  # Brief wait to ensure stop takes effect
         
         max_retries = 10  # Reduced from 151 to prevent infinite loops
         retries = 0
@@ -627,19 +684,36 @@ class MusicBot:
                     else:
                         print(f"⏹️ Playback stopped for guild {guild_id} - not auto-advancing")
                 
-                # Play the new audio
+                # Play the new audio with improved error handling
                 try:
                     voice_client.play(player, after=after_playing)
                     print(f"[RENDER.COM] Playlist: Successfully started playing: {player.title}")
                     return  # Success! Exit the retry loop
                 except Exception as play_error:
-                    if "already playing" in str(play_error).lower():
-                        print(f"[RENDER.COM] 'Already playing' error, forcing cleanup...")
+                    error_str = str(play_error).lower()
+                    if "already playing" in error_str or "source is already playing audio" in error_str:
+                        print(f"[AUDIO_FIX] 'Already playing' error detected, forcing comprehensive cleanup...")
+                        
+                        # Force stop and wait longer
                         voice_client.stop()
-                        await asyncio.sleep(1.5)
-                        voice_client.play(player, after=after_playing)
-                        print(f"[RENDER.COM] Retry successful")
-                        return  # Success after retry
+                        await asyncio.sleep(2.0)  # Longer wait for cleanup
+                        
+                        # Check again if still playing and force stop multiple times if needed
+                        cleanup_attempts = 0
+                        while (voice_client.is_playing() or voice_client.is_paused()) and cleanup_attempts < 3:
+                            print(f"[AUDIO_FIX] Still playing after stop, forcing again (attempt {cleanup_attempts + 1})")
+                            voice_client.stop()
+                            await asyncio.sleep(1.0)
+                            cleanup_attempts += 1
+                        
+                        # Try to play again after comprehensive cleanup
+                        try:
+                            voice_client.play(player, after=after_playing)
+                            print(f"[AUDIO_FIX] Successfully started playing after cleanup: {player.title}")
+                            return  # Success after retry
+                        except Exception as retry_error:
+                            print(f"[AUDIO_FIX] Retry failed: {retry_error}")
+                            raise retry_error
                     else:
                         raise play_error
                         
@@ -1494,6 +1568,30 @@ async def on_message(message):
     
     # Just process commands, don't handle them manually here
     await bot.process_commands(message)
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    """Track voice state changes to detect when the bot is disconnected"""
+    if member == bot.user:
+        if before.channel and not after.channel:
+            # Bot was disconnected from voice channel
+            guild_id = before.channel.guild.id
+            print(f"[VOICE] Bot was disconnected from {before.channel.name} in guild {guild_id}")
+            
+            # Clean up music bot state if it exists
+            if music_bot and guild_id in music_bot.voice_clients:
+                print(f"[VOICE] Cleaning up music bot state for guild {guild_id}")
+                # Clean up all data for this guild
+                del music_bot.voice_clients[guild_id]
+                if guild_id in music_bot.current_songs:
+                    del music_bot.current_songs[guild_id]
+                if guild_id in music_bot.is_playing:
+                    music_bot.is_playing[guild_id] = False
+                # Keep shuffle playlists and positions for potential reconnection
+                print(f"[VOICE] State cleaned up, ready for reconnection")
+        elif not before.channel and after.channel:
+            # Bot connected to voice channel
+            print(f"[VOICE] Bot connected to {after.channel.name}")
 
 # Helper function to check for admin/moderator permissions
 def has_admin_or_moderator_role(ctx):
