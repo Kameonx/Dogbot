@@ -173,19 +173,19 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/ATjNmGDuJ3Y?si=1WYjCTUmsUlAkkr4", # Atmosphere - GodLovesUgly (Zeds Dead & Subtronics Remix)
     "https://youtu.be/3YXVdyA9Fxw?si=dtOIEiQoGPhctYQy", # Ganja White Night x Boogie T - Burnin | Official Music Video | Animation | 2024
     "https://youtu.be/Gjb0zDYnh5A?si=maelkCJOznYu--8F", # Flux Pavilion - Every Cable Goes Somewhere
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/fq8ZkL3-8Kg?si=bcXKOU2FR5MFoBAd", # Labrinth - Still Don’t Know My Name (Official Video) | euphoria (Original HBO Score)
+    "https://youtu.be/w-sQRS-Lc9k?si=HV7MvLeuLTATZkhy", # KORDHELL - MURDER IN MY MIND
+    "https://youtu.be/OvaL-ElQ8Lc?si=-skMhKSDyfpWXf1K", # KUTE - AVOID ME (Official Visualizer)
+    "https://youtu.be/4_JJANRocU8?si=82G80PkrFrOfXr_W", # Chichen itza w/ creepmxne
+    "https://youtu.be/aU8gR6gA-AQ?si=QmGOojsRIoSljfdc", # MISHASHI SENSEI - LIGHTNESS
+    "https://youtu.be/Se64o2XEk6M?si=mANaF01PzszXXzAt", # MUPP "FTP"
+    "https://youtu.be/Tl9XoP1FuYk?si=yxMvozyRn4b-XUFL", # SHADXWBXRN x 4WHEEL - KILLSTREAK
+    "https://youtu.be/5qrizD3lAtE?si=rrTxqttpf13mmYK1", # $WERVE - WIG SPLIT
+    "https://youtu.be/eU7-TKN2qxg?si=-gFbnsYhTyQQApH5", # $WERVE x KXNVRA x KSLV - Impervious
+    "https://youtu.be/_Paw8ZRSlqY?si=lVeogBfDQtkdT-M8", # Swing Lynn (Official Audio)
+    "https://youtu.be/tlGUom_AV4o?si=-yW7gD6T9tkLYtOZ", # Clairo - 4EVER
+    "https://youtu.be/_QGIzmtIr3E?si=2--A3uU4mLtoFxHY", # Melting
+    "https://youtu.be/pdAGwKJoIEM?si=w1frvz7goRar-4KQ", # Dancer in the Dark
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
