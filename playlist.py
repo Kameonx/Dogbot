@@ -119,6 +119,67 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/42YhVh3gZi0?si=om0mG14dVI62DqV_", # Kislaw - Glitter (La Felix Remix)
     "https://youtu.be/WHw8cilA3x4?si=Umkk521EVNfksAwd", # Summer Heart - Wash You Off (Oliver Nelson Remix) (Official Music Video)
     "https://youtu.be/8RmI9xJFwLQ?si=68Yivly3YfxLApH-", # Childish Gambino - Do Ya Like ( LoftyLows Edit )
+    "https://youtu.be/MfAN1fByArc?si=1M2mEq_vW1eSGMgr", # Eugene The Dream - DAYSLIKETHIS
+    "https://youtu.be/JKn6HPboUqs?si=LoIX2jdpCKtee9fT", # The Neighbourhood - Sweater Weather (pronouncedyea Remix)
+    "https://youtu.be/-i7a-nfvLWc?si=cCqkM8erMGO6o5qz", # Hippie Sabotage - "Drifter" [Official Audio]
+    "https://youtu.be/ZPg59LPn6mQ?si=O37pgjMTmjy2Yblo", # Vanic - Samurai (Audio) ft. Katy Tiz
+    "https://youtu.be/eYDI8b5Nn5s?si=YpHn7Wq-HJ836mLp", # Jack Stauber - Buttercup | music video
+    "https://youtu.be/Qw5LrNWgWJQ?si=MdJbP7waFdFyeQBd", # Wurme - Do Not Come
+    "https://youtu.be/IdtWIlgpL_o?si=hJjv0LAEuL40i3MH", # Isenberg - Gotta Be | IN / ROTATION
+    "https://youtu.be/hk64q0BwITk?si=vaH06QUpuwvEH7Tf", # Drinks On Me & Why So Low - Lights Go Down (Official Audio)
+    "https://youtu.be/aTAvUyUHTMk?si=IOHGhBbaeiRYE9ak", # Sarah Cothran - As The World Caves In (Wuki Remix)
+    "https://youtu.be/pPxzuVpNr-8?si=qCOL3_gq2bFBde7q", # Bo Burnham - All Eyes On Me [Ghastly edit]
+    "https://youtu.be/ILtz5nX3_fc?si=I4XxpBXF3igPwj83", # Numa Numa Original Music Video
+    "https://youtu.be/yFScoAY_rCc?si=IMSuxnJ8rfK2QbhR", # Flume - The Difference (DENNETT Remix)
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
