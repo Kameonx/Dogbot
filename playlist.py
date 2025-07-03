@@ -131,48 +131,48 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/pPxzuVpNr-8?si=qCOL3_gq2bFBde7q", # Bo Burnham - All Eyes On Me [Ghastly edit]
     "https://youtu.be/ILtz5nX3_fc?si=I4XxpBXF3igPwj83", # Numa Numa Original Music Video
     "https://youtu.be/yFScoAY_rCc?si=IMSuxnJ8rfK2QbhR", # Flume - The Difference (DENNETT Remix)
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/Z9e7K6Hx_rY?si=69tFpNdr_GsGWiYW", # Rex Orange County - Sunflower
+    "https://youtu.be/RM3Lvhd899I?si=EH1L7sJTuqJef0c-", # Suki Waterhouse - Good Looking (Official Video)
+    "https://youtu.be/bn_p95HbHoQ?si=o0QISl57yGrx5EaU", # Kali Uchis – telepatía [Official Music Video]
+    "https://youtu.be/njbmwfndFH4?si=UzJgLAFtKpna00Eo", # Beach House - Silver Soul [OFFICIAL VIDEO]
+    "https://youtu.be/MelI_w9IppU?si=M3qG-ZYqfgfcCy64", # What Would I Do?
+    "https://youtu.be/rg8VibZkPNk?si=2IX8-lOB9audfeL_", # Mr Rager - Kid Cudi (Lyrics)
+    "https://youtu.be/zBukbgTN0cE?si=1l7tuJ0hxZ8_WP5a", # Kali Uchis - Moonlight (Official Music Video)
+    "https://youtu.be/EgfsXTOn_pI?si=RpjDSc25TgeJr8Dt", # Passionfruit
+    "https://youtu.be/93ufch_2mfw?si=depPLbC-ZTwpaceT", # Joey Bada$$ - “Love Is Only A Feeling“ (Official Audio)
+    "https://youtu.be/OqBuXQLR4Y8?si=XWCdg9o4kHFA2OP0", # Rex Orange County - Best Friend (Official Audio)
+    "https://youtu.be/cuWQD8HkmLU?si=uFxInDzu--Y-r07g", # BAD&BOUJEE//GYPSY WOMAN JTW REMIX
+    "https://youtu.be/bsmSq5w-Pcw?si=9QnXMFSGsDCRfeAY", # Money In The Grave but it's a house banger (JBroadway Remix)
+    "https://youtu.be/nY0-UnjHOaE?si=Rgmz3b_o6Mcb8x5_", # KANYE WEST- "I WONDER" (TRACKADEMICKS REMIX)
+    "https://youtu.be/A4EsbkK0Apw?si=qM49rKyyL9Xb5ebs", # oDDling - Early Bird
+    "https://youtu.be/EPAPMJ-tCig?si=8S-5EHoArX1GUk2V", # Hippie Sabotage - "Your Soul" [Official Audio]
+    "https://youtu.be/0hfFQl2iEi8?si=yUffXMCYBk-S4X6t", # Hey Mami - Sylvan Esso (Big Wild Remix)
+    "https://youtu.be/hQ1vad0D9lM?si=wYpq_YT7Mp4SVtBy", # 06 Cocaine Model - Zhu - The Nightday EP FLAC HD
+    "https://youtu.be/jeo3an2M_Lo?si=ezOya8sKyl_wByj2", # Glass Animals - Gooey (Official Audio)
+    "https://youtu.be/k49I5m1J6Is?si=AvWIEe0Ej41n2IHz", # Redbone
+    "https://youtu.be/tmI0YyDxnJ4?si=xDtXmjQe3Sha3zal", # Grouplove - Ways To Go (Grandtheft Remix)
+    "https://youtu.be/kVk1zZJgaGE?si=I1h3dySCLYtRXgxq", # Major Lazer - Wave (Big Gigantic Remix)
+    "https://youtu.be/NyPtlOoCmV4?si=bK1QxS1UAfkGyUJJ", # ODESZA - My Friends Never Die (Official Video)
+    "https://youtu.be/i3kc3MKSUT8?si=7-lU5cwsoME5yp0z", # ODESZA - Keep Her Close
+    "https://youtu.be/xEiZ39qBRwo?si=zJhUta4QZhQAqEqm", # Slow Magic - Waited 4 U (ODESZA Remix)
+    "https://youtu.be/w0WJ8limSR8?si=M9goO4rj84qw-SFp", # Pretty Lights - One Day They'll Know (ODESZA Remix)
+    "https://youtu.be/qkvnAPI_M9s?si=8uDBwn2Q2nTojSGG", # Kill Them With Colour - Get High
+    "https://youtu.be/NXCJfwkdMYE?si=oLbm4l3L4F7dyAH-", # Life in grey Point Point Slowed
+    "https://youtu.be/OYLpvufjW6s?si=a3Fz1AAE-mQxYWfY", # Flume - Insane (TRAILS Remix)
+    "https://youtu.be/6vopR3ys8Kw?si=DRn9qfLk-xb7fMdW", # Flume & Chet Faker - Drop the Game [Official Music Video]
+    "https://youtu.be/PUX-VCGAsD8?si=fxBEmPETx3TsYm8l", # Flume - Heater
+    "https://youtu.be/tjecYugTbIQ?si=vB9pCJNp7KmsGjQ0", # Grizzly Bear - Two Weeks (music video in HD) Veckatimest out now
+    "https://youtu.be/DHEOF_rcND8?si=fYZcscf4FhEGKlLO", # Edward Sharpe & The Magnetic Zeros - Home (Official Video)
+    "https://youtu.be/4l15evegaKo?si=2hIGR6-lkdBr7kzS", # Ta-ku - Higher (Flume Remix)
+    "https://youtu.be/iDxr-y4y944?si=os4a7_P7WR3Tioyn", # Lorde vs Flume - Sleepless Club (WEKEED Boot)
+    "https://youtu.be/WimaIoH8FUE?si=ryG0eIXr0F3U8GEM", # Billie Eilish & Khalid - lovely (Hippie Sabotage Remix)
+    "https://youtu.be/PEbJ4qLiMu0?si=MkgH5xr-XIY4n5oT", # DJ Fresh - Gold Dust (Flux Pavilion Remix)
+    "https://youtu.be/OsqDpoaFVmU?si=Y4LmW0XC02Clfkmw", # Flux Pavilion - Freeway (Flux Pavilion & Kill The Noise Remix)
+    "https://youtu.be/ZeaIvjoH1FY?si=05UbmJ4X3HLtxLas", # Flight Facilities - Crave You (Adventure Club Dubstep Remix) (feat. Giselle)
+    "https://youtu.be/46wcq-aiyv0?si=S1tvvoYg3LO-Fllc", # Griztronics - GRiZ (ft. Subtronics) (Official Audio)
+    "https://youtu.be/ATjNmGDuJ3Y?si=1WYjCTUmsUlAkkr4", # Atmosphere - GodLovesUgly (Zeds Dead & Subtronics Remix)
+    "https://youtu.be/3YXVdyA9Fxw?si=dtOIEiQoGPhctYQy", # Ganja White Night x Boogie T - Burnin | Official Music Video | Animation | 2024
+    "https://youtu.be/Gjb0zDYnh5A?si=maelkCJOznYu--8F", # Flux Pavilion - Every Cable Goes Somewhere
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
