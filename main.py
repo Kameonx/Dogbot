@@ -343,27 +343,69 @@ class MusicBot:
     
     async def leave_voice_channel(self, ctx):
         """Leave the current voice channel"""
-        if ctx.guild.id not in self.voice_clients:
+        guild_id = ctx.guild.id
+        
+        # First, try to sync voice clients to get accurate state
+        self._sync_voice_clients(guild_id)
+        
+        # Check if we have a voice client record
+        voice_client = None
+        if guild_id in self.voice_clients:
+            voice_client = self.voice_clients[guild_id]
+        
+        # Also check Discord's native voice clients
+        discord_voice_client = None
+        for vc in self.bot.voice_clients:
+            try:
+                # Use getattr with default to safely check guild
+                vc_guild = getattr(vc, 'guild', None)
+                if vc_guild and getattr(vc_guild, 'id', None) == guild_id:
+                    discord_voice_client = vc
+                    break
+            except Exception:
+                # Skip any voice clients that cause errors
+                continue
+        
+        # If we found a Discord voice client but not in our records, update our records
+        if discord_voice_client and not voice_client:
+            self.voice_clients[guild_id] = discord_voice_client
+            voice_client = discord_voice_client
+            print(f"[VOICE_FIX] Found and restored voice client for guild {guild_id}")
+        
+        # If still no voice client found
+        if not voice_client and not discord_voice_client:
             await ctx.send("❌ I'm not in a voice channel!")
             return
-            
-        voice_client = self.voice_clients[ctx.guild.id]
-        await voice_client.disconnect()
         
-        # Clean up all data for this guild
-        del self.voice_clients[ctx.guild.id]
-        if ctx.guild.id in self.current_songs:
-            del self.current_songs[ctx.guild.id]
-        if ctx.guild.id in self.is_playing:
-            del self.is_playing[ctx.guild.id]
-        if ctx.guild.id in self.shuffle_playlists:
-            del self.shuffle_playlists[ctx.guild.id]
-        if ctx.guild.id in self.shuffle_positions:
-            del self.shuffle_positions[ctx.guild.id]
-        if ctx.guild.id in self.manual_skip_in_progress:
-            del self.manual_skip_in_progress[ctx.guild.id]
-            
-        await ctx.send("🎵 Left the voice channel!")
+        # Use whichever voice client we have
+        client_to_disconnect = voice_client or discord_voice_client
+        
+        if not client_to_disconnect:
+            await ctx.send("❌ I'm not in a voice channel!")
+            return
+        
+        try:
+            await client_to_disconnect.disconnect()
+            await ctx.send("🎵 Left the voice channel!")
+        except Exception as e:
+            print(f"[VOICE_ERROR] Error disconnecting: {e}")
+            await ctx.send("🎵 Disconnected from voice channel (forced)!")
+        
+        # Clean up all data for this guild regardless of disconnect success
+        if guild_id in self.voice_clients:
+            del self.voice_clients[guild_id]
+        if guild_id in self.current_songs:
+            del self.current_songs[guild_id]
+        if guild_id in self.is_playing:
+            del self.is_playing[guild_id]
+        if guild_id in self.shuffle_playlists:
+            del self.shuffle_playlists[guild_id]
+        if guild_id in self.shuffle_positions:
+            del self.shuffle_positions[guild_id]
+        if guild_id in self.manual_skip_in_progress:
+            del self.manual_skip_in_progress[guild_id]
+        
+        print(f"[VOICE_CLEANUP] Cleaned up all voice data for guild {guild_id}")
     
     async def play_music(self, ctx):
         """Start playing music from the shuffled playlist"""
@@ -595,34 +637,32 @@ class MusicBot:
             
         voice_client = self.voice_clients[guild_id]
         
-        # Check if voice client is still connected
-        if not voice_client.is_connected():
-            print(f"[VOICE] Voice client disconnected for guild {guild_id}")
-            # Try to get guild and channel for reconnection attempt
-            guild = self.bot.get_guild(guild_id)
-            if guild:
-                # Find a member who was likely using the bot and try to reconnect
-                for member in guild.members:
-                    if member.voice and not member.bot:
-                        try:
-                            print(f"[VOICE] Attempting auto-reconnect to {member.voice.channel.name}")
-                            new_voice_client = await member.voice.channel.connect()
-                            self.voice_clients[guild_id] = new_voice_client
-                            print(f"[VOICE] Successfully reconnected to voice channel")
-                            # Continue with playback
-                            voice_client = new_voice_client
-                            break
-                        except Exception as e:
-                            print(f"[VOICE] Auto-reconnect failed: {e}")
-                            continue
+        # Check if voice client is still connected - improved detection
+        if not voice_client or not hasattr(voice_client, 'is_connected') or not voice_client.is_connected():
+            print(f"[VOICE] Voice client disconnected or invalid for guild {guild_id}")
+            
+            # Try to sync and find the actual voice client
+            if self._sync_voice_clients(guild_id):
+                voice_client = self.voice_clients[guild_id]
+                print(f"[VOICE] Successfully resynced voice client for guild {guild_id}")
+            else:
+                # Try to get guild and channel for reconnection attempt
+                guild = self.bot.get_guild(guild_id)
+                if guild and guild.me.voice and guild.me.voice.channel:
+                    try:
+                        print(f"[VOICE] Attempting auto-reconnect to {guild.me.voice.channel.name}")
+                        new_voice_client = await guild.me.voice.channel.connect()
+                        self.voice_clients[guild_id] = new_voice_client
+                        voice_client = new_voice_client
+                        print(f"[VOICE] Successfully auto-reconnected to voice channel")
+                    except Exception as e:
+                        print(f"[VOICE] Auto-reconnect failed: {e}")
+                        self.is_playing[guild_id] = False
+                        return
                 else:
                     print(f"[VOICE] No suitable voice channel found for auto-reconnect")
                     self.is_playing[guild_id] = False
                     return
-            else:
-                print(f"[VOICE] Guild not found for auto-reconnect")
-                self.is_playing[guild_id] = False
-                return
         
         # Only clean up if not already done by manual skip commands
         if not skip_cleanup:
@@ -1027,26 +1067,84 @@ class MusicBot:
             # Check if bot is actually connected to a voice channel
             guild = self.bot.get_guild(guild_id)
             if not guild:
+                print(f"[VOICE_SYNC] Guild {guild_id} not found")
                 return False
                 
             # Find actual voice client from Discord.py
+            found_voice_client = None
             for vc in self.bot.voice_clients:
-                if hasattr(vc, 'guild') and vc.guild.id == guild_id:
-                    if hasattr(vc, 'is_connected') and vc.is_connected():
-                        print(f"[VOICE_SYNC] Found connected voice client for guild {guild_id}")
-                        self.voice_clients[guild_id] = vc
-                        return True
+                try:
+                    # Use getattr with default to safely check guild
+                    vc_guild = getattr(vc, 'guild', None)
+                    if vc_guild and getattr(vc_guild, 'id', None) == guild_id:
+                        if hasattr(vc, 'is_connected') and vc.is_connected():
+                            print(f"[VOICE_SYNC] Found connected voice client for guild {guild_id}")
+                            found_voice_client = vc
+                            break
+                except Exception:
+                    # Skip any voice clients that cause errors
+                    continue
             
-            # If no voice client found, clean up our record
-            if guild_id in self.voice_clients:
-                print(f"[VOICE_SYNC] Cleaning up stale voice client record for guild {guild_id}")
-                del self.voice_clients[guild_id]
-            
-            return False
+            if found_voice_client:
+                # Update our record with the actual voice client
+                self.voice_clients[guild_id] = found_voice_client
+                return True
+            else:
+                # If no voice client found, clean up our record
+                if guild_id in self.voice_clients:
+                    print(f"[VOICE_SYNC] Cleaning up stale voice client record for guild {guild_id}")
+                    del self.voice_clients[guild_id]
+                return False
+                
         except Exception as e:
             print(f"[VOICE_SYNC] Error syncing voice clients: {e}")
             return False
 
+    async def voice_health_check(self):
+        """Periodic health check for voice connections"""
+        while True:
+            try:
+                await asyncio.sleep(60)  # Check every 60 seconds
+                
+                for guild_id in list(self.voice_clients.keys()):
+                    if not self.is_playing.get(guild_id, False):
+                        continue  # Skip if not supposed to be playing
+                    
+                    voice_client = self.voice_clients.get(guild_id)
+                    if not voice_client:
+                        continue
+                    
+                    # Check if voice client is still connected and working
+                    if not voice_client.is_connected():
+                        print(f"[HEALTH_CHECK] Voice client disconnected for guild {guild_id}")
+                        # Try to auto-reconnect
+                        guild = self.bot.get_guild(guild_id)
+                        if guild and guild.me.voice and guild.me.voice.channel:
+                            try:
+                                print(f"[HEALTH_CHECK] Attempting auto-reconnect for guild {guild_id}")
+                                new_voice_client = await guild.me.voice.channel.connect()
+                                self.voice_clients[guild_id] = new_voice_client
+                                # Restart music if it was playing
+                                await self._play_current_song(guild_id)
+                                print(f"[HEALTH_CHECK] Successfully reconnected and restarted music for guild {guild_id}")
+                            except Exception as e:
+                                print(f"[HEALTH_CHECK] Auto-reconnect failed for guild {guild_id}: {e}")
+                                self.is_playing[guild_id] = False
+                    
+                    # Check if music should be playing but isn't
+                    elif not voice_client.is_playing() and not voice_client.is_paused():
+                        if not self.manual_skip_in_progress.get(guild_id, False):
+                            print(f"[HEALTH_CHECK] Music stopped unexpectedly for guild {guild_id}, restarting...")
+                            try:
+                                await self._play_current_song(guild_id)
+                                print(f"[HEALTH_CHECK] Successfully restarted music for guild {guild_id}")
+                            except Exception as e:
+                                print(f"[HEALTH_CHECK] Failed to restart music for guild {guild_id}: {e}")
+                
+            except Exception as e:
+                print(f"[HEALTH_CHECK] Error in voice health check: {e}")
+    
+    # ...existing code...
 @bot.command()
 async def playback(ctx):
     """Check current playback status and duration"""
@@ -1615,6 +1713,10 @@ async def on_ready():
     # Initialize music bot
     music_bot = MusicBot(bot)
     print("Music bot initialized")
+    
+    # Start voice health check task
+    asyncio.create_task(music_bot.voice_health_check())
+    print("Voice health check started")
 
 @bot.event
 async def on_member_join(member):
@@ -1781,23 +1883,34 @@ async def status(ctx):
     guild_id = ctx.guild.id
     
     # Check bot's voice state
-    bot_voice_channel = None
-    if ctx.guild.me.voice and ctx.guild.me.voice.channel:
-        bot_voice_channel = ctx.guild.me.voice.channel.name
+    bot_voice_state = ctx.guild.me.voice
+    discord_voice_channel = bot_voice_state.channel.name if bot_voice_state and bot_voice_state.channel else "None"
     
     # Check our voice client record
     has_voice_client = guild_id in music_bot.voice_clients
     voice_client_connected = False
     if has_voice_client:
-        voice_client_connected = music_bot.voice_clients[guild_id].is_connected()
+        try:
+            voice_client_connected = music_bot.voice_clients[guild_id].is_connected()
+        except:
+            voice_client_connected = False
     
-    # Check Discord voice clients count
-    voice_clients_count = len(bot.voice_clients)
+    # Check Discord's native voice clients
+    discord_voice_clients = []
+    for vc in bot.voice_clients:
+        try:
+            # Use getattr with default to safely check guild
+            vc_guild = getattr(vc, 'guild', None)
+            if vc_guild and getattr(vc_guild, 'id', None) == guild_id:
+                discord_voice_clients.append(vc)
+        except Exception:
+            # Skip any voice clients that cause errors
+            continue
     
-    embed.add_field(name="Bot Voice Channel", value=bot_voice_channel or "None", inline=True)
+    embed.add_field(name="Bot Voice Channel", value=discord_voice_channel or "None", inline=True)
     embed.add_field(name="Has Voice Client Record", value="✅ Yes" if has_voice_client else "❌ No", inline=True)
     embed.add_field(name="Voice Client Connected", value="✅ Yes" if voice_client_connected else "❌ No", inline=True)
-    embed.add_field(name="Total Voice Clients", value=str(voice_clients_count), inline=True)
+    embed.add_field(name="Total Voice Clients", value=str(len(discord_voice_clients)), inline=True)
     embed.add_field(name="Playing Status", value="▶️ Playing" if music_bot.is_playing.get(guild_id, False) else "⏸️ Stopped", inline=True)
     embed.add_field(name="Manual Skip Active", value="🔄 Yes" if music_bot.manual_skip_in_progress.get(guild_id, False) else "❌ No", inline=True)
     
@@ -2078,7 +2191,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!status` - Show playback and auto-repeat status\n`!loop` - Show infinite loop status\n`!reshuffle` - Generate new shuffle order", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!status` - Show playback and auto-repeat status\n`!loop` - Show infinite loop status\n`!reshuffle` - Generate new shuffle order\n`!voicefix` - Fix voice connection issues", inline=False)
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
     embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
@@ -2448,6 +2561,81 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
             await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
     else:
         await ctx.send("PVP role not found. Please ensure the role exists in this server.")
+
+@bot.command()
+async def voicefix(ctx):
+    """Fix voice connection issues and resync"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    guild_id = ctx.guild.id
+    
+    embed = discord.Embed(
+        title="🔧 Voice Connection Diagnostics & Fix",
+        color=discord.Color.orange()
+    )
+    
+    # Check Discord's view of bot's voice state
+    bot_voice_state = ctx.guild.me.voice
+    discord_voice_channel = bot_voice_state.channel.name if bot_voice_state and bot_voice_state.channel else "None"
+    
+    # Check our internal voice client records
+    has_voice_client = guild_id in music_bot.voice_clients
+    voice_client_connected = False
+    if has_voice_client:
+        try:
+            voice_client_connected = music_bot.voice_clients[guild_id].is_connected()
+        except:
+            voice_client_connected = False
+    
+    # Check Discord's native voice clients
+    discord_voice_clients = []
+    for vc in bot.voice_clients:
+        try:
+            # Use getattr with default to safely check guild
+            vc_guild = getattr(vc, 'guild', None)
+            if vc_guild and getattr(vc_guild, 'id', None) == guild_id:
+                discord_voice_clients.append(vc)
+        except Exception:
+            # Skip any voice clients that cause errors
+            continue
+    
+    embed.add_field(name="Discord Voice Channel", value=discord_voice_channel, inline=True)
+    embed.add_field(name="Has Voice Client Record", value="✅ Yes" if has_voice_client else "❌ No", inline=True)
+    embed.add_field(name="Voice Client Connected", value="✅ Yes" if voice_client_connected else "❌ No", inline=True)
+    embed.add_field(name="Total Voice Clients", value=str(len(discord_voice_clients)), inline=True)
+    
+    # Attempt to fix issues
+    fixes_applied = []
+    
+    # Fix 1: Sync voice clients
+    if music_bot._sync_voice_clients(guild_id):
+        fixes_applied.append("✅ Synced voice client records")
+    
+    # Fix 2: If we have a Discord voice connection but no internal record, restore it
+    if not has_voice_client and discord_voice_clients:
+        music_bot.voice_clients[guild_id] = discord_voice_clients[0]
+        fixes_applied.append("✅ Restored internal voice client record")
+    
+    # Fix 3: If music was playing but stopped, restart it
+    was_playing = music_bot.is_playing.get(guild_id, False)
+    if was_playing and guild_id in music_bot.voice_clients:
+        voice_client = music_bot.voice_clients[guild_id]
+        if not voice_client.is_playing() and not voice_client.is_paused():
+            try:
+                await music_bot._play_current_song(guild_id)
+                fixes_applied.append("✅ Restarted music playback")
+            except Exception as e:
+                fixes_applied.append(f"❌ Failed to restart music: {str(e)[:50]}...")
+    
+    if fixes_applied:
+        embed.add_field(name="Fixes Applied", value="\n".join(fixes_applied), inline=False)
+    else:
+        embed.add_field(name="Status", value="🟢 No issues detected", inline=False)
+    
+    embed.set_footer(text="Use this command if music stops randomly or voice commands don't work")
+    await ctx.send(embed=embed)
 
 # Web server for Render.com health checks
 async def health_check(request):
