@@ -8,8 +8,10 @@ services:
     healthCheckPath: /health
     envVars:
       - key: PORT
-        value: 4000
+        value: 10000
       - key: DISCORD_TOKEN
         sync: false
       - key: VENICE_API_KEY
+        sync: false
+      - key: YOUTUBE_API_KEY
         sync: false
