@@ -107,18 +107,18 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/ujpvNvSgcic?si=st0JM7mQQI_xgkKN", # All The Things She Said
     "https://youtu.be/V1bFr2SWP1I?si=QDycFEfl--49tH6s", # OFFICIAL Somewhere over the Rainbow - Israel "IZ" Kamakawiwoʻole
     "https://youtu.be/k85mRPqvMbE?si=RCkfxq5EOQugr_DT", # Crazy Frog - Axel F (Official Video)
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/SQnc1QibapQ?si=-Vsb8l8hq_EzH9Ds", # SZA - Kill Bill (Official Audio)
+    "https://youtu.be/pXRviuL6vMY?si=FxLSjYKUOMS82pGU", # twenty one pilots: Stressed Out [OFFICIAL VIDEO]
+    "https://youtu.be/0CWVgu2Odjg?si=Uiq2AuqIbzU9sci7", # ZHU - Good Life (Audio)
+    "https://youtu.be/-RVPH9cV1HY?si=OZ8xmzE06Oep7FAO", # Ellie Goulding - Tesselate (∆IDEN Remix)
+    "https://youtu.be/C3Rv3Epvamg?si=b5bN9ZLT-4DzV6uq", # Lion Babe - Still In Love [feat Junglepussy]
+    "https://youtu.be/OZ-YBC3MGmM?si=rDRND4YF06956tre", # Chiefs x Nick Acquroff - Inside Out (Stélouse & Louis The Child Remix)
+    "https://youtu.be/cUUlzkI4Ivc?si=Bv_wYXF-im3sJ2Ub", # MUTO. - Sugar ft. Mel May
+    "https://youtu.be/HRQyg8RHvIQ?si=Su02ziagmgeXWm7b", # I DONT SELL MOLLY NO MORE (PROD. @SONNYDIGITAL)
+    "https://youtu.be/GNth4yhlffU?si=XYW0eVPXuby7oawl", # Gorillaz - Empire Ants - Plastic Beach
+    "https://youtu.be/42YhVh3gZi0?si=om0mG14dVI62DqV_", # Kislaw - Glitter (La Felix Remix)
+    "https://youtu.be/WHw8cilA3x4?si=Umkk521EVNfksAwd", # Summer Heart - Wash You Off (Oliver Nelson Remix) (Official Music Video)
+    "https://youtu.be/8RmI9xJFwLQ?si=68Yivly3YfxLApH-", # Childish Gambino - Do Ya Like ( LoftyLows Edit )
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
