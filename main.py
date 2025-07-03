@@ -122,11 +122,11 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             print(f"Creating audio source from: {filename}")
             print(f"Stream mode: {stream}")
             
-            # Create the audio source with improved buffering for cloud deployment
+            # Create the audio source with optimized settings for Render.com
             source = discord.FFmpegPCMAudio(
                 filename,
-                before_options='-re -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 10 -probesize 64M -analyzeduration 32M',
-                options='-vn -bufsize 1024k'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 32M -analyzeduration 16M',
+                options='-vn -bufsize 512k -ar 48000 -ac 2'
             )
             print(f"FFmpegPCMAudio source created successfully")
             
@@ -209,11 +209,11 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in fallback data")
                 
-            # Use improved FFmpeg options for cloud deployment fallback
+            # Use optimized FFmpeg options for Render.com cloud deployment
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-re -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 10 -probesize 64M -analyzeduration 32M',
-                options='-vn -bufsize 1024k'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 32M -analyzeduration 16M',
+                options='-vn -bufsize 512k -ar 48000 -ac 2'
             )
             return cls(source, data=data)
             
@@ -230,6 +230,7 @@ class MusicBot:
         self.is_playing = {}  # guild_id -> bool
         self.shuffle_playlists = {}  # guild_id -> shuffled_playlist
         self.shuffle_positions = {}  # guild_id -> current_position_in_shuffle
+        self.manual_skip_in_progress = {}  # guild_id -> bool (prevents race conditions)
     
     def _generate_shuffle_playlist(self, guild_id):
         """Generate a new shuffled playlist for the guild"""
@@ -328,6 +329,7 @@ class MusicBot:
             
             self.current_songs[ctx.guild.id] = 0
             self.is_playing[ctx.guild.id] = False
+            self.manual_skip_in_progress[ctx.guild.id] = False  # Initialize flag
             
             if auto_start:
                 await ctx.send(f"🎵 Joined {channel.name} and starting music in shuffle mode!")
@@ -358,6 +360,8 @@ class MusicBot:
             del self.shuffle_playlists[ctx.guild.id]
         if ctx.guild.id in self.shuffle_positions:
             del self.shuffle_positions[ctx.guild.id]
+        if ctx.guild.id in self.manual_skip_in_progress:
+            del self.manual_skip_in_progress[ctx.guild.id]
             
         await ctx.send("🎵 Left the voice channel!")
     
@@ -440,6 +444,9 @@ class MusicBot:
         
         self.shuffle_positions[ctx.guild.id] = next_pos
         
+        # Set manual skip flag to prevent race conditions with auto-advance
+        self.manual_skip_in_progress[ctx.guild.id] = True
+        
         # Comprehensive cleanup for manual skip to prevent corrupted audio
         if voice_client.is_playing() or voice_client.is_paused():
             print(f"[NEXT] Stopping current audio for manual skip...")
@@ -462,6 +469,9 @@ class MusicBot:
             await self._play_current_song(ctx.guild.id, skip_cleanup=True)
         else:
             await ctx.send(f"⏭️ Next song queued. Use `!start` to play.")
+        
+        # Clear manual skip flag after playback starts
+        self.manual_skip_in_progress[ctx.guild.id] = False
     
     async def previous_song(self, ctx):
         """Go back to the previous song in the shuffled playlist"""
@@ -489,6 +499,9 @@ class MusicBot:
         
         self.shuffle_positions[ctx.guild.id] = previous_pos
         
+        # Set manual skip flag to prevent race conditions with auto-advance
+        self.manual_skip_in_progress[ctx.guild.id] = True
+        
         # Comprehensive cleanup for manual skip to prevent corrupted audio
         if voice_client.is_playing() or voice_client.is_paused():
             print(f"[PREVIOUS] Stopping current audio for manual skip...")
@@ -512,6 +525,9 @@ class MusicBot:
             await self._play_current_song(ctx.guild.id, skip_cleanup=True)
         else:
             await ctx.send(f"⏮️ Previous song queued. Use `!start` to play.")
+        
+        # Clear manual skip flag after playback starts
+        self.manual_skip_in_progress[ctx.guild.id] = False
     
     async def get_current_song_info(self, ctx):
         """Get information about the current song"""
@@ -619,7 +635,7 @@ class MusicBot:
                 voice_client.stop()
                 await asyncio.sleep(0.5)  # Brief wait to ensure stop takes effect
         
-        max_retries = 10  # Reduced from 151 to prevent infinite loops
+        max_retries = 5  # Reduced for Render.com to prevent timeout issues
         retries = 0
         
         while retries < max_retries and self.is_playing.get(guild_id, False):
@@ -634,9 +650,20 @@ class MusicBot:
                     retries += 1
                     continue
                     
-                print(f"Attempting to play: {url}")
+                print(f"[RENDER.COM] Attempting to play: {url}")
                 
-                player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
+                # Create audio source with better error handling for Render.com
+                try:
+                    player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
+                    print(f"[RENDER.COM] Audio source created successfully: {player.title}")
+                except Exception as source_error:
+                    print(f"[RENDER.COM] Failed to create audio source: {source_error}")
+                    # Skip to next song if source creation fails
+                    current_pos = self.shuffle_positions.get(guild_id, 0)
+                    self.shuffle_positions[guild_id] = (current_pos + 1) % len(MUSIC_PLAYLISTS)
+                    retries += 1
+                    await asyncio.sleep(1)  # Brief delay before retry
+                    continue
                 
                 def after_playing(error):
                     if error:
@@ -644,8 +671,21 @@ class MusicBot:
                     else:
                         print(f"🎵 Song finished playing normally for guild {guild_id}")
                     
+                    # Clean up player object to free memory on Render.com
+                    try:
+                        if hasattr(player, 'cleanup'):
+                            player.cleanup()
+                        elif hasattr(player, 'source') and hasattr(player.source, 'cleanup'):
+                            player.source.cleanup()
+                    except Exception as cleanup_error:
+                        print(f"[MEMORY] Player cleanup error: {cleanup_error}")
+                    
                     # Auto-advance to next song if we're still supposed to be playing
-                    if self.is_playing.get(guild_id, False):
+                    # BUT ONLY if no manual skip is in progress (prevents race conditions)
+                    if (self.is_playing.get(guild_id, False) and 
+                        not self.manual_skip_in_progress.get(guild_id, False)):
+                        
+                        print(f"[AUTO-ADVANCE] Moving to next song automatically")
                         # Move to next position in shuffle (thread-safe)
                         current_shuffle_pos = self.shuffle_positions.get(guild_id, 0)
                         next_shuffle_pos = current_shuffle_pos + 1
@@ -662,7 +702,7 @@ class MusicBot:
                         # Schedule next song to play without blocking (ensures infinite loop)
                         async def play_next_song():
                             try:
-                                await asyncio.sleep(1.0)  # Longer pause for clean transition
+                                await asyncio.sleep(1.5)  # Longer pause for clean transition on Render.com
                                 await self._play_current_song(guild_id)
                             except Exception as e:
                                 print(f"❌ Error playing next song for infinite loop: {e}")
@@ -670,7 +710,7 @@ class MusicBot:
                                 if self.is_playing.get(guild_id, False):
                                     print(f"🔄 Single recovery attempt for guild {guild_id}")
                                     self.shuffle_positions[guild_id] = 0  # Reset to start
-                                    await asyncio.sleep(2)
+                                    await asyncio.sleep(3)  # Longer delay for Render.com
                                     try:
                                         await self._play_current_song(guild_id)
                                     except:
@@ -682,7 +722,10 @@ class MusicBot:
                             self.bot.loop
                         )
                     else:
-                        print(f"⏹️ Playback stopped for guild {guild_id} - not auto-advancing")
+                        if self.manual_skip_in_progress.get(guild_id, False):
+                            print(f"⏭️ Manual skip in progress for guild {guild_id} - skipping auto-advance")
+                        else:
+                            print(f"⏹️ Playback stopped for guild {guild_id} - not auto-advancing")
                 
                 # Play the new audio with improved error handling
                 try:
