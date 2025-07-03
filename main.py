@@ -2135,7 +2135,6 @@ async def assignlizardsrole(ctx, member: Optional[discord.Member] = None):
         await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
 
 @bot.command()
-@bot.command()
 async def assignpvprole(ctx, member: Optional[discord.Member] = None):
     """Admin/Moderator command to assign PVP role to a user"""
     if not has_admin_or_moderator_role(ctx):
