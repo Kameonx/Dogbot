@@ -216,10 +216,10 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/R1UjrJsogUw?si=_r0YpwnjGd0LcZDk", # Steve Lacy - Bad Habit (atotalfraud X Chris Saso Disco House Remix) (Extended Edit)
     "https://youtu.be/IdtWIlgpL_o?si=oP5XHPq9NJWudFgO", # Isenberg - Gotta Be | IN / ROTATION
     "https://youtu.be/T11XQQP4ucA?si=b-FUgk9iAJbUtE2u", # Frank Ocean - Chanel (adrunkderp Remix)
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/vLWX0hDgz44?si=cbDvL5UkQZn5-yFd", # NEVER DULL - CARE 4 ME (OFFICIAL AUDIO)
+    "https://youtu.be/03QcbSp4WX0?si=Bbxdf9Cp0chmNfyS", # Konfuz, TINI LIN, PUSSYKILLER - Последний кайф (Mashup)
+    "https://youtu.be/YP85NzlqTUA?si=HJJn4O8GiSwzR7zj", # Never Dull - Lick My Disco (Extended Mix)
+    "https://youtu.be/eB0RV3EeQpU?si=h8RIYVHjxnHNnW_P", # Doja Cat - Woman (Never Dull's Disco Rework)
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
