@@ -126,7 +126,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             source = discord.FFmpegPCMAudio(
                 filename,
                 before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 32M -analyzeduration 16M',
-                options='-vn -bufsize 512k -ar 48000 -ac 2'
+                options='-vn -bufsize 512k'
             )
             print(f"FFmpegPCMAudio source created successfully")
             
@@ -213,7 +213,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             source = discord.FFmpegPCMAudio(
                 data['url'],
                 before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 32M -analyzeduration 16M',
-                options='-vn -bufsize 512k -ar 48000 -ac 2'
+                options='-vn -bufsize 512k'
             )
             return cls(source, data=data)
             
@@ -367,14 +367,15 @@ class MusicBot:
     
     async def play_music(self, ctx):
         """Start playing music from the shuffled playlist"""
-        if ctx.guild.id not in self.voice_clients:
+        # First try to sync voice clients in case of connection issues
+        if not self._sync_voice_clients(ctx.guild.id):
             await ctx.send("❌ I'm not in a voice channel! Use `!join` first.")
             return
             
         voice_client = self.voice_clients[ctx.guild.id]
         
-        # Check if voice client is still connected
-        if not voice_client.is_connected():
+        # Double-check if voice client is actually connected
+        if not voice_client or not voice_client.is_connected():
             await ctx.send("❌ Voice client is disconnected! Use `!join` to reconnect.")
             return
         
@@ -470,7 +471,8 @@ class MusicBot:
         else:
             await ctx.send(f"⏭️ Next song queued. Use `!start` to play.")
         
-        # Clear manual skip flag after playback starts
+        # Clear manual skip flag after a small delay to ensure playback starts
+        await asyncio.sleep(0.5)
         self.manual_skip_in_progress[ctx.guild.id] = False
     
     async def previous_song(self, ctx):
@@ -526,7 +528,8 @@ class MusicBot:
         else:
             await ctx.send(f"⏮️ Previous song queued. Use `!start` to play.")
         
-        # Clear manual skip flag after playback starts
+        # Clear manual skip flag after a small delay to ensure playback starts
+        await asyncio.sleep(0.5)
         self.manual_skip_in_progress[ctx.guild.id] = False
     
     async def get_current_song_info(self, ctx):
@@ -993,9 +996,9 @@ class MusicBot:
         current_status = "▶️ Playing" if voice_client.is_playing() else "⏸️ Stopped"
         embed.add_field(name="Current Status", value=current_status, inline=True)
         
-        # Auto-repeat status
-        auto_repeat = "🔄 Enabled" if self.is_playing.get(guild_id, False) else "❌ Disabled"
-        embed.add_field(name="Auto-Repeat", value=auto_repeat, inline=True)
+        # Auto-play status
+        auto_play = "🔄 Enabled" if self.is_playing.get(guild_id, False) else "❌ Disabled"
+        embed.add_field(name="Auto-Repeat", value=auto_play, inline=True)
         
         # Shuffle info
         if guild_id in self.shuffle_playlists:
@@ -1017,6 +1020,32 @@ class MusicBot:
         embed.set_footer(text="� Infinite loop enabled • Music plays forever • Auto-shuffle on playlist end")
         
         await ctx.send(embed=embed)
+    
+    def _sync_voice_clients(self, guild_id):
+        """Sync voice client records with actual Discord voice clients"""
+        try:
+            # Check if bot is actually connected to a voice channel
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                return False
+                
+            # Find actual voice client from Discord.py
+            for vc in self.bot.voice_clients:
+                if hasattr(vc, 'guild') and vc.guild.id == guild_id:
+                    if hasattr(vc, 'is_connected') and vc.is_connected():
+                        print(f"[VOICE_SYNC] Found connected voice client for guild {guild_id}")
+                        self.voice_clients[guild_id] = vc
+                        return True
+            
+            # If no voice client found, clean up our record
+            if guild_id in self.voice_clients:
+                print(f"[VOICE_SYNC] Cleaning up stale voice client record for guild {guild_id}")
+                del self.voice_clients[guild_id]
+            
+            return False
+        except Exception as e:
+            print(f"[VOICE_SYNC] Error syncing voice clients: {e}")
+            return False
 
 @bot.command()
 async def playback(ctx):
@@ -1741,11 +1770,40 @@ async def nowplaying(ctx):
 
 @bot.command()
 async def status(ctx):
-    """Show playback status"""
+    """Debug voice channel status"""
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    await music_bot.get_playback_status(ctx)
+    
+    embed = discord.Embed(
+        title="🔧 Voice Channel Debug Status",
+        color=discord.Color.orange()
+    )
+    
+    guild_id = ctx.guild.id
+    
+    # Check bot's voice state
+    bot_voice_channel = None
+    if ctx.guild.me.voice and ctx.guild.me.voice.channel:
+        bot_voice_channel = ctx.guild.me.voice.channel.name
+    
+    # Check our voice client record
+    has_voice_client = guild_id in music_bot.voice_clients
+    voice_client_connected = False
+    if has_voice_client:
+        voice_client_connected = music_bot.voice_clients[guild_id].is_connected()
+    
+    # Check Discord voice clients count
+    voice_clients_count = len(bot.voice_clients)
+    
+    embed.add_field(name="Bot Voice Channel", value=bot_voice_channel or "None", inline=True)
+    embed.add_field(name="Has Voice Client Record", value="✅ Yes" if has_voice_client else "❌ No", inline=True)
+    embed.add_field(name="Voice Client Connected", value="✅ Yes" if voice_client_connected else "❌ No", inline=True)
+    embed.add_field(name="Total Voice Clients", value=str(voice_clients_count), inline=True)
+    embed.add_field(name="Playing Status", value="▶️ Playing" if music_bot.is_playing.get(guild_id, False) else "⏸️ Stopped", inline=True)
+    embed.add_field(name="Manual Skip Active", value="🔄 Yes" if music_bot.manual_skip_in_progress.get(guild_id, False) else "❌ No", inline=True)
+    
+    await ctx.send(embed=embed)
 
 @bot.command()
 async def loop(ctx):
@@ -2393,56 +2451,3 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
             await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
     else:
         await ctx.send("PVP role not found. Please ensure the role exists in this server.")
-
-async def start_web_server():
-    """Start the HTTP server for Render health checks"""
-    port = int(os.getenv("PORT", 8080))  # Default to 8080 for Render.com
-    app = web.Application()
-    
-    async def handle_root(request):
-        return web.Response(text="Dogbot is running!", content_type='text/plain')
-    
-    async def handle_health(request):
-        # Health check endpoint for Render.com
-        status = {
-            "status": "healthy",
-            "bot_ready": bot.is_ready(),
-            "guilds_count": len(bot.guilds) if bot.is_ready() else 0
-        }
-        return web.json_response(status)
-    
-    app.router.add_get('/', handle_root)
-    app.router.add_get('/health', handle_health)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    print(f"🐕 Dogbot web server listening on 0.0.0.0:{port}")
-    print(f"🌐 Health check available at: http://0.0.0.0:{port}/health")
-    
-    # Keep the web server running
-    return runner, site
-
-async def run_bot():
-    """Run the Discord bot"""
-    if not token:
-        raise ValueError("DISCORD_TOKEN environment variable not set or is empty")
-    await bot.start(token)
-
-async def main():
-    """Main async function to run both web server and Discord bot concurrently"""
-    # Start web server
-    runner, site = await start_web_server()
-    
-    try:
-        # Run Discord bot
-        await run_bot()
-    except KeyboardInterrupt:
-        print("Received interrupt signal, shutting down...")
-    finally:
-        # Clean up web server
-        await runner.cleanup()
-
-if __name__ == "__main__":
-    # Run both web server and Discord bot concurrently
-    asyncio.run(main())
