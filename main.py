@@ -417,11 +417,6 @@ class MusicBot:
             
         voice_client = self.voice_clients[ctx.guild.id]
         
-        # Stop current song if playing and wait for clean stop
-        if voice_client.is_playing():
-            voice_client.stop()
-            await asyncio.sleep(0.5)  # Wait for clean stop
-        
         # Ensure we have a shuffle playlist
         if ctx.guild.id not in self.shuffle_playlists:
             self._generate_shuffle_playlist(ctx.guild.id)
@@ -439,8 +434,15 @@ class MusicBot:
         
         self.shuffle_positions[ctx.guild.id] = next_pos
         
+        # Enhanced cleanup for manual skip - let _play_current_song handle everything
+        if voice_client.is_playing() or voice_client.is_paused():
+            print(f"[NEXT] Stopping current audio for manual skip...")
+            voice_client.stop()
+            # Longer wait for complete cleanup before starting new song
+            await asyncio.sleep(1.5)
+        
         if self.is_playing.get(ctx.guild.id, False):
-            await self._play_current_song(ctx.guild.id)
+            await self._play_current_song(ctx.guild.id, skip_cleanup=True)
         else:
             await ctx.send(f"⏭️ Next song queued. Use `!start` to play.")
     
@@ -456,11 +458,6 @@ class MusicBot:
             
         voice_client = self.voice_clients[ctx.guild.id]
         
-        # Stop current song if playing and wait for clean stop
-        if voice_client.is_playing():
-            voice_client.stop()
-            await asyncio.sleep(0.5)  # Wait for clean stop
-        
         # Ensure we have a shuffle playlist
         if ctx.guild.id not in self.shuffle_playlists:
             self._generate_shuffle_playlist(ctx.guild.id)
@@ -475,9 +472,16 @@ class MusicBot:
         
         self.shuffle_positions[ctx.guild.id] = previous_pos
         
+        # Enhanced cleanup for manual skip - let _play_current_song handle everything
+        if voice_client.is_playing() or voice_client.is_paused():
+            print(f"[PREVIOUS] Stopping current audio for manual skip...")
+            voice_client.stop()
+            # Longer wait for complete cleanup before starting new song
+            await asyncio.sleep(1.5)
+        
         if self.is_playing.get(ctx.guild.id, False):
             await ctx.send(f"⏮️ Going back to previous song...")
-            await self._play_current_song(ctx.guild.id)
+            await self._play_current_song(ctx.guild.id, skip_cleanup=True)
         else:
             await ctx.send(f"⏮️ Previous song queued. Use `!start` to play.")
     
@@ -537,7 +541,7 @@ class MusicBot:
         # Send the YouTube URL separately so Discord embeds the video
         await ctx.send(current_url)
     
-    async def _play_current_song(self, guild_id):
+    async def _play_current_song(self, guild_id, skip_cleanup=False):
         """Play the current song (helper method for next/previous)"""
         if guild_id not in self.voice_clients or not self.is_playing.get(guild_id, False):
             return
@@ -550,11 +554,13 @@ class MusicBot:
             self.is_playing[guild_id] = False
             return
         
-        # Clean up any existing audio BEFORE trying to play new song
-        if voice_client.is_playing() or voice_client.is_paused():
-            print(f"[RENDER.COM] Stopping existing audio for clean transition...")
-            voice_client.stop()
-            await asyncio.sleep(1.0)  # Longer delay for complete cleanup
+        # Only clean up if not already done by manual skip commands
+        if not skip_cleanup:
+            # Clean up any existing audio BEFORE trying to play new song
+            if voice_client.is_playing() or voice_client.is_paused():
+                print(f"[RENDER.COM] Stopping existing audio for clean transition...")
+                voice_client.stop()
+                await asyncio.sleep(1.0)  # Longer delay for complete cleanup
         
         max_retries = 10  # Reduced from 151 to prevent infinite loops
         retries = 0
