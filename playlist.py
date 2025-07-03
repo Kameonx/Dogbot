@@ -200,6 +200,86 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/DQnvWE8ns90?si=YxdHmltu1q0JpHYI", # Sudan Archives - Selfish Soul (ODESZA Remix) - Official Audio
     "https://youtu.be/RXHPFhEsunY?si=44on_LUqngVT3_eq", # ODESZA & Yellow House - Waiting Forever (feat. Preston.) - Official Audio
     "https://youtu.be/ldrfuFmNS2g?si=GIBiQApPRs4Qayln", # ODESZA & Yellow House - Easy Money - Official Audio
+    "https://youtu.be/vUWmpb4Ikwk?si=swKLfVUhsCn4P4Gz", # Malibu
+    "https://youtu.be/L-beCjC0JU8?si=lbJjMGzSNCrjB0tK", # Big Wild - When I Get There
+    "https://youtu.be/zFMYL0XQ3lA?si=e01RNfThUy3TYhaN", # Cassö x Raye x D Block Europe - Prada (Official Video)
+    "https://youtu.be/Q9qMc_dhwYY?si=o4M8HMFEm_vpe-0c", # KIMMIC - Never Miss A Beat (Official Lyric Video)
+    "https://youtu.be/OCaE_QfkYr4?si=SOTqpdMu_lQN2tkV", # Seek Bromance On The Beach - Caolan Kelly | Audio Library - No Copyright Music
+    "https://youtu.be/FCk9MJblIIg?si=wYESCsanwSpAJriR", # Tyler The Creator - DOGTOOTH (NEVER DULL REMIX)
+    "https://youtu.be/DxDh4mlrnaM?si=Uy9sgKeH7PXlLMCC", # GEE LEE, Riton and Kah-Lo - Coke & Rum (Fake ID Remix) - Official Video
+    "https://youtu.be/lii8wVTYxZQ?si=UId6tPz7cSF5-bgX", # DnS (feat. DJ Óttar & Elisa Björg) (Cursed)
+    "https://youtu.be/2Y0bvrGWRtU?si=V1eGEETn-rec0z3p", # Kendrick Lamar - N95 (Never Dull House Remix)
+    "https://youtu.be/_6tIqzxBGnY?si=6tmL2zzKl0IsxyZm", # Whighle, Torha - B.A.N.D.I.D.O
+    "https://youtu.be/8JdC1NmhTVU?si=eWcX8occbHJSp5I7", # Mc Fioti, Future, J Balvin, Stefflon Don, Juan Magan - Bum Bum Tam Tam
+    "https://youtu.be/jbUtl5DgJMY?si=8GVpNAXmIXX2bjVq", # Drake - Marvin's Room (Fred Again.. remix) [Ripped from RINSE FM show Nov 2020]
+    "https://youtu.be/ZeaJuBgtv18?si=r43sCGzzo5snz7Ab", # Kanye West - Believe What I Say (Glass Half Empty Remix)
+    "https://youtu.be/R1UjrJsogUw?si=_r0YpwnjGd0LcZDk", # Steve Lacy - Bad Habit (atotalfraud X Chris Saso Disco House Remix) (Extended Edit)
+    "https://youtu.be/IdtWIlgpL_o?si=oP5XHPq9NJWudFgO", # Isenberg - Gotta Be | IN / ROTATION
+    "https://youtu.be/T11XQQP4ucA?si=b-FUgk9iAJbUtE2u", # Frank Ocean - Chanel (adrunkderp Remix)
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
