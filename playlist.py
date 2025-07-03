@@ -186,20 +186,20 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/tlGUom_AV4o?si=-yW7gD6T9tkLYtOZ", # Clairo - 4EVER
     "https://youtu.be/_QGIzmtIr3E?si=2--A3uU4mLtoFxHY", # Melting
     "https://youtu.be/pdAGwKJoIEM?si=w1frvz7goRar-4KQ", # Dancer in the Dark
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/5w6n_a32WE4?si=Wn5sSW_l4oZemZRC", # i got summer on my mind
+    "https://youtu.be/LhKPDhJpM6U?si=Kzw97iDn_Fdx7ht8", # Childish Gambino - Feels like Summer ⟨ 𝘴𝘭𝘰𝘸𝘦𝘥 + reverb ⟩
+    "https://youtu.be/fn3LO48-rkU?si=HC5df4GRKeBbLLdP", # clairo - 4ever ( slowed + reverb)
+    "https://youtu.be/aC4tDHAEj8E?si=2ILKq8-e2Hmxkl-O", # kali uchis - just a stranger ft. steve lacy (slowed down)༄
+    "https://youtu.be/PraLxY8SAss?si=QEifZscVNICBZbDY", # Willow - Female Energy, Part 2 [Slowed + Reverb]
+    "https://youtu.be/5wZKG9RREZ0?si=TdbRvfax9aEJ2joV", # Cazztek - Poison
+    "https://youtu.be/5Ejp7yFZxPM?si=ZWzXqu3ltPIauXkZ", # FIFTY FIFTY - Cupid (Twin Version) (Lyrics)
+    "https://youtu.be/g4hMeNahFjI?si=Zham4PboM-c9p_Ka", # Kage - Cereb | Bass House | NCS - Copyright Free Music
+    "https://youtu.be/B5CzUdixwf4?si=Y2nr0z7TXAuwbqD6", # Clear My Mind
+    "https://youtu.be/L6rpG53OOe8?si=V7zMeb5c2tTzR1d5", # 2 Brothers on the 4th Floor - Dreams (Will Come Alive) (PARKAH & DURZO HyperTechno Remix)
+    "https://youtu.be/sa7zDTOtp54?si=ILAq_xxYedfBxJOS", # Fuck Your Sorrys (feat. Cal Trask)
+    "https://youtu.be/DQnvWE8ns90?si=YxdHmltu1q0JpHYI", # Sudan Archives - Selfish Soul (ODESZA Remix) - Official Audio
+    "https://youtu.be/RXHPFhEsunY?si=44on_LUqngVT3_eq", # ODESZA & Yellow House - Waiting Forever (feat. Preston.) - Official Audio
+    "https://youtu.be/ldrfuFmNS2g?si=GIBiQApPRs4Qayln", # ODESZA & Yellow House - Easy Money - Official Audio
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
