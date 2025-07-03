@@ -124,8 +124,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             # Create the audio source with optimized settings for Render.com
             source = discord.FFmpegPCMAudio(
                 filename,
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 16M -analyzeduration 8M',
-                options='-vn -bufsize 256k -ar 48000 -ac 2'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+                options='-vn'
             )
             print(f"FFmpegPCMAudio source created successfully")
             
@@ -211,8 +211,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             # Use optimized FFmpeg options for Render.com cloud deployment
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 16M -analyzeduration 8M',
-                options='-vn -bufsize 256k -ar 48000 -ac 2'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+                options='-vn'
             )
             return cls(source, data=data)
             
