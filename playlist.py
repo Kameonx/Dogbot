@@ -220,13 +220,13 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/03QcbSp4WX0?si=Bbxdf9Cp0chmNfyS", # Konfuz, TINI LIN, PUSSYKILLER - Последний кайф (Mashup)
     "https://youtu.be/YP85NzlqTUA?si=HJJn4O8GiSwzR7zj", # Never Dull - Lick My Disco (Extended Mix)
     "https://youtu.be/eB0RV3EeQpU?si=h8RIYVHjxnHNnW_P", # Doja Cat - Woman (Never Dull's Disco Rework)
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/DN1yIBw2FwY?si=NEK05h7fZ_l0Agvv", # Mac Demarco - Freaking out the neighborhood (Astronaut Cult's smoke break remix)
+    "https://youtu.be/JzhG6agUYkk?si=YXhZdFo17IJX77K7", # Lildeath - moment (Lyrics) | are you falling in love | TikTok
+    "https://youtu.be/GYS8G13Eb3I?si=qozJ0O7PTvxfY3ha", # Ezekiel - help_urself (Official Visualizer)
+    "https://youtu.be/acx8VbZ7Gik?si=sp5BYvB8DblfzzBY", # what's new - megan thee stallion (slowed n reverb)
+    "https://youtu.be/QkJzeMOeCWM?si=vTH05si1OgqhX4G5", # kali,atl jacob-mmm mmm (slowed+reverb) 'he want my number, had to hit him with the mmm-mmm'
+    "https://youtu.be/UD04JR4QsTc?si=h0cWjVc9dfBLrEOP", # kali uchis - dead to me﹝slowed + reverb﹞
+    "https://youtu.be/DZQoELxGsy0?si=pgMON30jB_596rv2", # FISHER - Just Feels Tight [Official Music Video]
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
