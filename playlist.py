@@ -227,11 +227,11 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/QkJzeMOeCWM?si=vTH05si1OgqhX4G5", # kali,atl jacob-mmm mmm (slowed+reverb) 'he want my number, had to hit him with the mmm-mmm'
     "https://youtu.be/UD04JR4QsTc?si=h0cWjVc9dfBLrEOP", # kali uchis - dead to me﹝slowed + reverb﹞
     "https://youtu.be/DZQoELxGsy0?si=pgMON30jB_596rv2", # FISHER - Just Feels Tight [Official Music Video]
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/a5qV2ESZZe4?si=aYh5sBEYnVa4nws3", # Jack Rush - Rebel
+    "https://youtu.be/ViCkI-j6nvk?si=kEPt6QDFrPnqTiZl", # Broken Future, Stund - Benz Friends [Hood Politics Records]
+    "https://youtu.be/xa1gW9vd5uE?si=0XIK8IuvmBFeQxjk", # Poolhaus, Rowetta - Feel The Rush (Local Singles Remix)
+    "https://youtu.be/TmG_bcbiZVs?si=6ljepWjX-0FTCa6k", # Cruel Youth - Mr. Watson (BKAYE Remix)
+    "https://youtu.be/uScZ8WZMjhs?si=ZumcsiWo9Ug8PCuB", # Kedam - Shy Girl
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
