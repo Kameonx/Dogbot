@@ -1583,7 +1583,6 @@ async def on_ready():
     
     # Check FFmpeg availability
     try:
-        import subprocess
         result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
         if result.returncode == 0:
             # Extract version info
@@ -1600,7 +1599,6 @@ async def on_ready():
     
     # Check Discord voice support
     try:
-        import discord.opus
         if discord.opus.is_loaded():
             print("[RENDER.COM] Discord Opus: Loaded")
         else:
@@ -2062,7 +2060,6 @@ async def ytdlstatus(ctx):
     
     # Check FFmpeg
     try:
-        import subprocess
         result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
         if result.returncode == 0:
             embed.add_field(name="FFmpeg", value="✅ Available", inline=True)
@@ -2451,3 +2448,71 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
             await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
     else:
         await ctx.send("PVP role not found. Please ensure the role exists in this server.")
+
+# Web server for Render.com health checks
+async def health_check(request):
+    """Health check endpoint for Render.com"""
+    return web.Response(text="Bot is running!", status=200)
+
+async def bot_status(request):
+    """Bot status endpoint"""
+    if bot.is_ready():
+        # Calculate total users safely, filtering out None values
+        total_users = sum(guild.member_count for guild in bot.guilds if guild.member_count is not None)
+        status = {
+            "bot_name": "Dogbot",
+            "status": "online",
+            "guilds": len(bot.guilds),
+            "users": total_users
+        }
+    else:
+        status = {
+            "bot_name": "Dogbot", 
+            "status": "starting",
+            "guilds": 0,
+            "users": 0
+        }
+    return web.json_response(status)
+
+async def start_web_server():
+    """Start the web server for Render.com"""
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    app.router.add_get('/status', bot_status)
+    
+    # Get port from environment variable (Render.com sets this)
+    port = int(os.getenv('PORT', 10000))
+    
+    print(f"[RENDER.COM] Starting web server on port {port}")
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"[RENDER.COM] Web server started successfully on 0.0.0.0:{port}")
+
+async def main():
+    """Main function to run both bot and web server"""
+    print("[RENDER.COM] Starting Dogbot for Render.com deployment...")
+    
+    # Validate token
+    if not token:
+        print("[RENDER.COM] ERROR: DISCORD_TOKEN environment variable not set!")
+        return
+    
+    # Start the web server
+    await start_web_server()
+    
+    # Start the bot
+    print("[RENDER.COM] Starting Discord bot...")
+    await bot.start(token)
+
+# Start everything
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("[RENDER.COM] Bot stopped by user")
+    except Exception as e:
+        print(f"[RENDER.COM] Failed to start bot: {e}")
+        raise
