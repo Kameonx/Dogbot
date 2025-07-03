@@ -55,7 +55,6 @@ dogs_role_name = "Dogs"
 cats_role_name = "Cats"
 lizards_role_name = "Lizards"
 pvp_role_name = "PVP"
-dnd_role_name = "DND"
 
 # YouTube Data API v3 Configuration
 YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3"
@@ -125,8 +124,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             # Create the audio source with optimized settings for Render.com
             source = discord.FFmpegPCMAudio(
                 filename,
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 32M -analyzeduration 16M',
-                options='-vn -bufsize 512k'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 16M -analyzeduration 8M',
+                options='-vn -bufsize 256k -ar 48000 -ac 2'
             )
             print(f"FFmpegPCMAudio source created successfully")
             
@@ -212,8 +211,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             # Use optimized FFmpeg options for Render.com cloud deployment
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 32M -analyzeduration 16M',
-                options='-vn -bufsize 512k'
+                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 16M -analyzeduration 8M',
+                options='-vn -bufsize 256k -ar 48000 -ac 2'
             )
             return cls(source, data=data)
             
@@ -333,6 +332,8 @@ class MusicBot:
             
             if auto_start:
                 await ctx.send(f"🎵 Joined {channel.name} and starting music in shuffle mode!")
+                # Give a moment for voice client to fully connect
+                await asyncio.sleep(1)
                 await self.play_music(ctx)
             else:
                 await ctx.send(f"🎵 Joined {channel.name}! Ready to play music in shuffle mode!")
@@ -678,7 +679,7 @@ class MusicBot:
                 voice_client.stop()
                 await asyncio.sleep(0.5)  # Brief wait to ensure stop takes effect
         
-        max_retries = 5  # Reduced for Render.com to prevent timeout issues
+        max_retries = 3  # Reduced for cloud stability
         retries = 0
         
         while retries < max_retries and self.is_playing.get(guild_id, False):
@@ -705,7 +706,7 @@ class MusicBot:
                     current_pos = self.shuffle_positions.get(guild_id, 0)
                     self.shuffle_positions[guild_id] = (current_pos + 1) % len(MUSIC_PLAYLISTS)
                     retries += 1
-                    await asyncio.sleep(1)  # Brief delay before retry
+                    await asyncio.sleep(2)  # Brief delay before retry
                     continue
                 
                 def after_playing(error):
@@ -745,30 +746,20 @@ class MusicBot:
                         # Schedule next song to play without blocking (ensures infinite loop)
                         async def play_next_song():
                             try:
-                                # Add longer delay and connection check before playing next song
-                                await asyncio.sleep(3.0)  # Longer pause for clean transition on Render.com
+                                await asyncio.sleep(2.0)  # Reasonable pause for Render.com
                                 
-                                # Check if we're still supposed to be playing and still connected
-                                if (self.is_playing.get(guild_id, False) and 
-                                    guild_id in self.voice_clients and
-                                    self.voice_clients[guild_id].is_connected()):
+                                # Simple check - if we're still playing, continue
+                                if self.is_playing.get(guild_id, False):
                                     await self._play_current_song(guild_id)
-                                else:
-                                    print(f"[AUTO-ADVANCE] Skipping next song - not playing or disconnected")
                             except Exception as e:
                                 print(f"❌ Error playing next song for infinite loop: {e}")
                                 # Only try recovery once per song to prevent loops
                                 if self.is_playing.get(guild_id, False):
                                     print(f"🔄 Single recovery attempt for guild {guild_id}")
-                                    await asyncio.sleep(5)  # Longer delay for Render.com
+                                    self.shuffle_positions[guild_id] = 0  # Reset to start
+                                    await asyncio.sleep(3)  # Longer delay for Render.com
                                     try:
-                                        # Check connection before recovery attempt
-                                        if guild_id in self.voice_clients and self.voice_clients[guild_id].is_connected():
-                                            self.shuffle_positions[guild_id] = 0  # Reset to start
-                                            await self._play_current_song(guild_id)
-                                        else:
-                                            print(f"❌ Recovery skipped - voice client disconnected")
-                                            self.is_playing[guild_id] = False
+                                        await self._play_current_song(guild_id)
                                     except:
                                         print(f"❌ Recovery failed, stopping playback for guild {guild_id}")
                                         self.is_playing[guild_id] = False
@@ -1117,7 +1108,7 @@ class MusicBot:
         """Periodic health check for voice connections"""
         while True:
             try:
-                await asyncio.sleep(30)  # Check more frequently (30 seconds)
+                await asyncio.sleep(45)  # Check every 45 seconds - not too frequent
                 
                 for guild_id in list(self.voice_clients.keys()):
                     if not self.is_playing.get(guild_id, False):
@@ -1127,35 +1118,33 @@ class MusicBot:
                     if not voice_client:
                         continue
                     
-                    # Check if voice client is still connected and working
+                    # Check if voice client is still connected
                     if not voice_client.is_connected():
                         print(f"[HEALTH_CHECK] Voice client disconnected for guild {guild_id}")
-                        # Try to auto-reconnect - but with delay to prevent rapid cycles
+                        # Try to auto-reconnect but don't be too aggressive
                         guild = self.bot.get_guild(guild_id)
                         if guild and guild.me.voice and guild.me.voice.channel:
                             try:
-                                print(f"[HEALTH_CHECK] Waiting 5 seconds before reconnecting...")
-                                await asyncio.sleep(5)  # Wait before reconnecting
-                                print(f"[HEALTH_CHECK] Attempting auto-reconnect for guild {guild_id}")
+                                print(f"[HEALTH_CHECK] Attempting gentle reconnect for guild {guild_id}")
+                                await asyncio.sleep(2)  # Brief wait
                                 new_voice_client = await guild.me.voice.channel.connect()
                                 self.voice_clients[guild_id] = new_voice_client
-                                # Wait a bit more before restarting music
-                                await asyncio.sleep(3)
-                                # Restart music if it was playing
+                                await asyncio.sleep(2)  # Wait before restarting music
                                 await self._play_current_song(guild_id)
                                 print(f"[HEALTH_CHECK] Successfully reconnected and restarted music for guild {guild_id}")
                             except Exception as e:
                                 print(f"[HEALTH_CHECK] Auto-reconnect failed for guild {guild_id}: {e}")
-                                self.is_playing[guild_id] = False
+                                # Don't immediately disable - let user commands handle it
                     
-                    # Check if music should be playing but isn't (less aggressive)
+                    # Only restart music if it's been stopped for a while
                     elif not voice_client.is_playing() and not voice_client.is_paused():
                         if not self.manual_skip_in_progress.get(guild_id, False):
-                            # Wait a bit to see if music starts naturally
-                            await asyncio.sleep(5)
+                            # Give some time for natural song transitions
+                            await asyncio.sleep(10)
                             # Check again after waiting
-                            if not voice_client.is_playing() and not voice_client.is_paused():
-                                print(f"[HEALTH_CHECK] Music stopped unexpectedly for guild {guild_id}, restarting...")
+                            if (not voice_client.is_playing() and not voice_client.is_paused() and 
+                                not self.manual_skip_in_progress.get(guild_id, False)):
+                                print(f"[HEALTH_CHECK] Music appears stuck for guild {guild_id}, gentle restart...")
                                 try:
                                     await self._play_current_song(guild_id)
                                     print(f"[HEALTH_CHECK] Successfully restarted music for guild {guild_id}")
@@ -1318,28 +1307,13 @@ async def init_database():
             )
         """)
         
-        # Create campaign table for shared D&D sessions
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS campaign_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                channel_id TEXT NOT NULL,
-                user_id TEXT NOT NULL,
-                user_name TEXT NOT NULL,
-                character_name TEXT,
-                message TEXT NOT NULL,
-                response TEXT NOT NULL,
-                is_active INTEGER DEFAULT 1,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
         # Create undo stack table for universal undo/redo
         await db.execute("""
             CREATE TABLE IF NOT EXISTS undo_stack (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 channel_id TEXT NOT NULL,
                 user_id TEXT NOT NULL,
-                action_type TEXT NOT NULL,  -- 'chat' or 'campaign'
+                action_type TEXT NOT NULL,  -- 'chat'
                 action_id INTEGER NOT NULL,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -1352,7 +1326,7 @@ async def init_database():
             pass  # Column already exists
         
         try:
-            await db.execute("ALTER TABLE undo_stack ADD COLUMN action_type TEXT DEFAULT 'campaign'")
+            await db.execute("ALTER TABLE undo_stack ADD COLUMN action_type TEXT DEFAULT 'chat'")
         except:
             pass  # Column already exists
             
@@ -1368,16 +1342,6 @@ async def save_chat_history(user_id: str, user_name: str, channel_id: str, messa
         await db.commit()
         return cursor.lastrowid or 0
 
-async def save_campaign_history(channel_id: str, user_id: str, user_name: str, character_name: str | None, message: str, response: str) -> int:
-    """Save campaign interaction to shared channel history, returns the action ID"""
-    async with aiosqlite.connect("chat_history.db") as db:
-        cursor = await db.execute(
-            "INSERT INTO campaign_history (channel_id, user_id, user_name, character_name, message, response, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)",
-            (channel_id, user_id, user_name, character_name, message, response)
-        )
-        await db.commit()
-        return cursor.lastrowid or 0
-
 async def get_chat_history(user_id: str, limit: int = 5):
     """Get recent chat history for a user (for context)"""
     async with aiosqlite.connect("chat_history.db") as db:
@@ -1388,26 +1352,9 @@ async def get_chat_history(user_id: str, limit: int = 5):
         rows = await cursor.fetchall()
         return [(str(row[0]), str(row[1])) for row in rows]
 
-async def get_campaign_history(channel_id: str, limit: int = 10):
-    """Get recent campaign history for a channel (shared between all players) - only active actions"""
-    async with aiosqlite.connect("chat_history.db") as db:
-        cursor = await db.execute(
-            "SELECT user_name, character_name, message, response FROM campaign_history WHERE channel_id = ? AND is_active = 1 ORDER BY timestamp ASC LIMIT ?",
-            (channel_id, limit)
-        )
-        rows = await cursor.fetchall()
-        return [(str(row[0]), str(row[1]) if row[1] else None, str(row[2]), str(row[3])) for row in rows]
-
 async def undo_last_action(channel_id: str, user_id: str) -> tuple[bool, str]:
-    """Undo the last action (chat or campaign) by the user in the channel. Returns (success, message)"""
+    """Undo the last chat action by the user in the channel. Returns (success, message)"""
     async with aiosqlite.connect("chat_history.db") as db:
-        # Try campaign action first (most recent)
-        cursor = await db.execute(
-            "SELECT id, user_name, character_name, message FROM campaign_history WHERE channel_id = ? AND user_id = ? AND is_active = 1 ORDER BY timestamp DESC LIMIT 1",
-            (channel_id, user_id)
-        )
-        campaign_row = await cursor.fetchone()
-        
         # Try chat action
         cursor = await db.execute(
             "SELECT id, user_name, message FROM chat_history WHERE channel_id = ? AND user_id = ? ORDER BY timestamp DESC LIMIT 1",
@@ -1415,119 +1362,30 @@ async def undo_last_action(channel_id: str, user_id: str) -> tuple[bool, str]:
         )
         chat_row = await cursor.fetchone()
         
-        campaign_action = None
-        chat_action = None
-        
-        if campaign_row:
-            campaign_action = {
-                'id': campaign_row[0],
-                'user_name': campaign_row[1],
-                'character_name': campaign_row[2],
-                'message': campaign_row[3],
-                'type': 'campaign'
-            }
-        if chat_row:
-            chat_action = {
-                'id': chat_row[0],
-                'user_name': chat_row[1],
-                'message': chat_row[2],
-                'type': 'chat'
-            }
-        
-        # Choose the most recent action (simplified - assumes IDs are sequential)
-        action_to_undo = None
-        if campaign_action and chat_action:
-            action_to_undo = campaign_action if campaign_action['id'] > chat_action['id'] else chat_action
-        elif campaign_action:
-            action_to_undo = campaign_action
-        elif chat_action:
-            action_to_undo = chat_action
-        
-        if not action_to_undo:
+        if not chat_row:
             return False, "No actions to undo!"
         
-        if action_to_undo['type'] == 'campaign':
-            # Mark campaign action as inactive
-            await db.execute(
-                "UPDATE campaign_history SET is_active = 0 WHERE id = ?",
-                (action_to_undo['id'],)
-            )
-            
-            player_display = action_to_undo['user_name']
-            if action_to_undo['character_name']:
-                player_display += f" ({action_to_undo['character_name']})"
-            
-            message = f"Undone campaign action by {player_display}: {action_to_undo['message'][:100]}..."
-        else:
-            # Delete chat action
-            await db.execute(
-                "DELETE FROM chat_history WHERE id = ?",
-                (action_to_undo['id'],)
-            )
-            
-            message = f"Undone chat message by {action_to_undo['user_name']}: {action_to_undo['message'][:100]}..."
+        action_id, user_name, message = chat_row
+        
+        # Delete chat action
+        await db.execute(
+            "DELETE FROM chat_history WHERE id = ?",
+            (action_id,)
+        )
         
         # Add to undo stack
         await db.execute(
             "INSERT INTO undo_stack (channel_id, user_id, action_type, action_id) VALUES (?, ?, ?, ?)",
-            (channel_id, user_id, action_to_undo['type'], action_to_undo['id'])
+            (channel_id, user_id, 'chat', action_id)
         )
         
         await db.commit()
-        return True, message
+        return True, f"Undone chat message by {user_name}: {message[:100]}..."
 
 async def redo_last_undo(channel_id: str, user_id: str) -> tuple[bool, str]:
     """Redo the last undone action by the user. Returns (success, message)"""
     async with aiosqlite.connect("chat_history.db") as db:
-        # Get the most recent undo by this user
-        cursor = await db.execute(
-            "SELECT action_type, action_id FROM undo_stack WHERE channel_id = ? AND user_id = ? ORDER BY timestamp DESC LIMIT 1",
-            (channel_id, user_id)
-        )
-        row = await cursor.fetchone()
-        
-        if not row:
-            return False, "No actions to redo!"
-        
-        action_type, action_id = row
-        
-        if action_type == 'campaign':
-            # Get campaign action details
-            cursor = await db.execute(
-                "SELECT user_name, character_name, message FROM campaign_history WHERE id = ?",
-                (action_id,)
-            )
-            action_row = await cursor.fetchone()
-            
-            if not action_row:
-                return False, "Action not found!"
-            
-            user_name, char_name, action = action_row
-            
-            # Reactivate the action
-            await db.execute(
-                "UPDATE campaign_history SET is_active = 1 WHERE id = ?",
-                (action_id,)
-            )
-            
-            player_display = user_name
-            if char_name:
-                player_display += f" ({char_name})"
-            
-            message = f"Redone campaign action by {player_display}: {action[:100]}..."
-        else:
-            # For chat actions, we need to restore them (this is complex since we deleted them)
-            # For now, just inform that chat actions can't be redone
-            return False, "Chat actions cannot be redone once undone!"
-        
-        # Remove from undo stack
-        await db.execute(
-            "DELETE FROM undo_stack WHERE channel_id = ? AND user_id = ? AND action_type = ? AND action_id = ? ORDER BY timestamp DESC LIMIT 1",
-            (channel_id, user_id, action_type, action_id)
-        )
-        
-        await db.commit()
-        return True, message
+        return False, "Chat actions cannot be redone once undone!"
 
 async def get_ai_response_with_history(user_id: str, prompt: str, max_tokens: int = 500, use_history: bool = True) -> str:
     """Get response from Venice AI with chat history context"""
@@ -1594,77 +1452,6 @@ async def get_ai_response(user_id: str, prompt: str, max_tokens: int = 500) -> s
         ],
         "max_tokens": max_tokens,
         "temperature": 0.7
-    }
-    
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(VENICE_API_URL, headers=headers, json=data)
-            response.raise_for_status()
-            
-            result = response.json()
-            return result["choices"][0]["message"]["content"].strip()
-    except httpx.TimeoutException:
-        return "⏰ AI response timed out. Please try again."
-    except httpx.HTTPStatusError as e:
-        return f"❌ AI service error: {e.response.status_code}"
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
-
-async def get_ai_response_with_campaign_history(channel_id: str, user_name: str, character_name: str | None, prompt: str, max_tokens: int = 500) -> str:
-    """Get response from Venice AI using shared campaign history"""
-    if not venice_api_key:
-        return "AI features are disabled. Please set VENICE_API_KEY environment variable."
-    
-    messages = []
-    
-    # Add campaign context
-    campaign_context = f"""You are the Dungeon Master for a D&D campaign with a friendly, engaging personality! 🎲⚔️🏰🐉 
-
-Use Discord formatting to make the adventure more immersive:
-- **Bold** for important actions, names, and dramatic moments
-- *Italics* for descriptions, thoughts, and atmospheric details  
-- `Code blocks` for game mechanics, dice rolls, and stats
-- > Quotes for NPC dialogue and special narration
-- Emojis frequently to enhance the storytelling experience
-
-Remember all characters, their actions, the story so far, and maintain consistency across the adventure.
-
-When you need a player to make a roll (skill checks, saving throws, attack rolls, etc.), simply ask them to "roll a d20" and they will use the !roll command. You can then interpret their roll result based on the context and difficulty of the task.
-
-Current player: {user_name}"""
-    
-    if character_name:
-        campaign_context += f" (playing as {character_name})"
-    
-    messages.append({"role": "system", "content": campaign_context})
-    
-    # Add campaign history for context
-    history = await get_campaign_history(channel_id, limit=8)  # More history for campaigns
-    for player_name, char_name, user_msg, ai_response in history:
-        player_display = f"{player_name}"
-        if char_name:
-            player_display += f" ({char_name})"
-        
-        messages.append({"role": "user", "content": f"{player_display}: {user_msg}"})
-        messages.append({"role": "assistant", "content": ai_response})
-    
-    # Add current message
-    current_player = f"{user_name}"
-    if character_name:
-        current_player += f" ({character_name})"
-    
-    messages.append({"role": "user", "content": f"{current_player}: {prompt}"})
-    
-    headers = {
-        "Authorization": f"Bearer {venice_api_key}",
-        "Content-Type": "application/json"
-    }
-    
-    data = {
-        "model": VENICE_MODEL,
-        "messages": messages,
-        "max_tokens": max_tokens,
-        "temperature": 0.8  # Slightly higher for creativity in storytelling
     }
     
     try:
@@ -1795,6 +1582,39 @@ def has_admin_or_moderator_role(ctx):
 @bot.command()
 async def hello(ctx):
     await ctx.send(f'🐕 Woof woof! Hello {ctx.author.name}!')
+
+@bot.command()
+async def test(ctx):
+    """Test bot functionality"""
+    embed = discord.Embed(
+        title="🔧 Bot Test Results",
+        color=discord.Color.green()
+    )
+    
+    # Test music bot
+    if music_bot:
+        embed.add_field(name="Music Bot", value="✅ Initialized", inline=True)
+    else:
+        embed.add_field(name="Music Bot", value="❌ Not initialized", inline=True)
+    
+    # Test playlist
+    if MUSIC_PLAYLISTS:
+        embed.add_field(name="Playlist", value=f"✅ {len(MUSIC_PLAYLISTS)} songs", inline=True)
+    else:
+        embed.add_field(name="Playlist", value="❌ Empty", inline=True)
+    
+    # Test voice connection
+    if music_bot and ctx.guild.id in music_bot.voice_clients:
+        voice_client = music_bot.voice_clients[ctx.guild.id]
+        if voice_client.is_connected():
+            embed.add_field(name="Voice", value="✅ Connected", inline=True)
+        else:
+            embed.add_field(name="Voice", value="❌ Disconnected", inline=True)
+    else:
+        embed.add_field(name="Voice", value="❌ Not connected", inline=True)
+    
+    embed.set_footer(text="Use !join to start music")
+    await ctx.send(embed=embed)
 
 # Music Bot Commands
 @bot.command()
@@ -2034,118 +1854,6 @@ async def chat(ctx, *, message):
     
     await ctx.send(response)
 
-# Character storage for D&D campaigns
-character_names = {}  # user_id -> character_name
-
-@bot.command()
-async def character(ctx, *, name):
-    """Set your character name for D&D campaigns"""
-    user_id = str(ctx.author.id)
-    character_names[user_id] = name
-    await ctx.send(f"🎭 Character name set to: **{name}**")
-
-@bot.command()
-async def dnd(ctx, *, action):
-    """Take action in D&D campaign"""
-    user_id = str(ctx.author.id)
-    user_name = ctx.author.display_name
-    channel_id = str(ctx.channel.id)
-    character_name = character_names.get(user_id)
-    
-    response = await get_ai_response_with_campaign_history(channel_id, user_name, character_name, action)
-    
-    # Save to campaign history
-    await save_campaign_history(channel_id, user_id, user_name, character_name, action, response)
-    
-    await ctx.send(response)
-
-@bot.command()
-async def campaign(ctx):
-    """View campaign history"""
-    channel_id = str(ctx.channel.id)
-    history = await get_campaign_history(channel_id, limit=10)
-    
-    if not history:
-        await ctx.send("📜 No campaign history found in this channel!")
-        return
-    
-    embed = discord.Embed(
-        title="📜 Campaign History",
-        description="Recent actions in this campaign:",
-        color=discord.Color.purple()
-    )
-    
-    for user_name, char_name, message, response in history[-5:]:  # Show last 5
-        player = user_name
-        if char_name:
-            player += f" ({char_name})"
-        
-        embed.add_field(
-            name=f"🎭 {player}",
-            value=f"**Action:** {message[:100]}...\n**DM:** {response[:150]}...",
-            inline=False
-        )
-    
-    await ctx.send(embed=embed)
-
-@bot.command()
-async def clearcampaign(ctx):
-    """Clear campaign history for this channel (Admin/Moderator only)"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    channel_id = str(ctx.channel.id)
-    
-    async with aiosqlite.connect("chat_history.db") as db:
-        await db.execute("DELETE FROM campaign_history WHERE channel_id = ?", (channel_id,))
-        await db.execute("DELETE FROM undo_stack WHERE channel_id = ?", (channel_id,))
-        await db.commit()
-    
-    await ctx.send("🗑️ Campaign history cleared for this channel!")
-
-@bot.command()
-async def roll(ctx):
-    """Roll a d20"""
-    roll_result = random.randint(1, 20)
-    
-    if roll_result == 20:
-        await ctx.send(f"🎲 {ctx.author.mention} rolled a **{roll_result}**! 🌟 **CRITICAL SUCCESS!** 🌟")
-    elif roll_result == 1:
-        await ctx.send(f"🎲 {ctx.author.mention} rolled a **{roll_result}**! 💥 **CRITICAL FAILURE!** 💥")
-    elif roll_result >= 15:
-        await ctx.send(f"🎲 {ctx.author.mention} rolled a **{roll_result}**! ✨ Great roll!")
-    elif roll_result <= 5:
-        await ctx.send(f"🎲 {ctx.author.mention} rolled a **{roll_result}**! 😬 Ouch...")
-    else:
-        await ctx.send(f"🎲 {ctx.author.mention} rolled a **{roll_result}**!")
-
-@bot.command()
-async def undo(ctx):
-    """Undo last action"""
-    channel_id = str(ctx.channel.id)
-    user_id = str(ctx.author.id)
-    
-    success, message = await undo_last_action(channel_id, user_id)
-    
-    if success:
-        await ctx.send(f"↩️ {message}")
-    else:
-        await ctx.send(f"❌ {message}")
-
-@bot.command()
-async def redo(ctx):
-    """Redo last undone action"""
-    channel_id = str(ctx.channel.id)
-    user_id = str(ctx.author.id)
-    
-    success, message = await redo_last_undo(channel_id, user_id)
-    
-    if success:
-        await ctx.send(f"↪️ {message}")
-    else:
-        await ctx.send(f"❌ {message}")
-
 # Utility Commands
 @bot.command()
 async def poll(ctx, *, question):
@@ -2211,12 +1919,10 @@ async def help(ctx):
         description="Here are all available commands:",
         color=discord.Color.blue()
     )
-    embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!status` - Show playback and auto-repeat status\n`!loop` - Show infinite loop status\n`!reshuffle` - Generate new shuffle order\n`!voicefix` - Fix voice connection issues\n`!reconnect` - Force reconnect to voice channel", inline=False)
+    embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n`!test` - Test bot functionality\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!status` - Show playback and auto-repeat status", inline=False)
     
-    embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!dndrole` - Get DND role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
-    embed.add_field(name="🗳️ Utility", value="`!poll <question>` - Create a poll\n`!say <message>` - Make the bot say something", inline=False)
-    embed.add_field(name="🎲 D&D Campaign", value="`!dnd <action>` - Take action in campaign\n`!character <n>` - Set your character name\n`!campaign` - View campaign history\n`!clearcampaign` - Clear channel campaign\n`!roll` - Roll a d20", inline=False)
+    embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
 
     # Add note about modhelp for admins/moderators
     if has_admin_or_moderator_role(ctx):
@@ -2242,7 +1948,6 @@ async def modhelp(ctx):
         value="`!assigndogsrole @user` - Assign Dogs role\n"
               "`!assigncatsrole @user` - Assign Cats role\n"
               "`!assignlizardsrole @user` - Assign Lizards role\n"
-              "`!assigndndrole @user` - Assign DND role\n"
               "`!assignpvprole @user` - Assign PVP role", 
         inline=False
     )
@@ -2252,7 +1957,6 @@ async def modhelp(ctx):
         value="`!removedogsrolefrom @user` - Remove Dogs role\n"
               "`!removecatsrolefrom @user` - Remove Cats role\n"
               "`!removelizardsrolefrom @user` - Remove Lizards role\n"
-              "`!removedndrolefrom @user` - Remove DND role\n"
               "`!removepvprolefrom @user` - Remove PVP role", 
         inline=False
     )
@@ -2260,6 +1964,22 @@ async def modhelp(ctx):
     embed.add_field(
         name="🔧 YouTube Configuration", 
         value="`!ytdlstatus` - Show YouTube API configuration", 
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🗳️ Utility Commands", 
+        value="`!poll <question>` - Create a poll\n"
+              "`!say <message>` - Make the bot say something", 
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🎵 Advanced Music", 
+        value="`!loop` - Show infinite loop status\n"
+              "`!reshuffle` - Generate new shuffle order\n"
+              "`!voicefix` - Fix voice connection issues\n"
+              "`!reconnect` - Force reconnect to voice channel", 
         inline=False
     )
     
@@ -2292,15 +2012,6 @@ async def lizardsrole(ctx):
         await ctx.send(f"🦎 Assigned {role.name} role to {ctx.author.name}!")
     else:
         await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def dndrole(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=dnd_role_name)
-    if role:
-        await ctx.author.add_roles(role)
-        await ctx.send(f"🎲 Assigned {role.name} role to {ctx.author.name}!")
-    else:
-        await ctx.send("DND role not found. Please ensure the role exists in this server.")
 
 @bot.command()
 async def pvprole(ctx):
@@ -2346,18 +2057,6 @@ async def removelizardsrole(ctx):
             await ctx.send(f"You don't have the {role.name} role to remove.")
     else:
         await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def removedndrole(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=dnd_role_name)
-    if role:
-        if role in ctx.author.roles:
-            await ctx.author.remove_roles(role)
-            await ctx.send(f"🎲 Removed {role.name} role from {ctx.author.name}!")
-        else:
-            await ctx.send(f"You don't have the {role.name} role to remove.")
-    else:
-        await ctx.send("DND role not found. Please ensure the role exists in this server.")
 
 @bot.command()
 async def removepvprole(ctx):
@@ -2436,26 +2135,6 @@ async def assignlizardsrole(ctx, member: Optional[discord.Member] = None):
         await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
 
 @bot.command()
-async def assigndndrole(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to assign DND role to a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to assign the role to. Usage: `!assigndndrole @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=dnd_role_name)
-    if role:
-        if role not in member.roles:
-            await member.add_roles(role)
-            await ctx.send(f"🎲 Assigned {role.name} role to {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} already has the {role.name} role.")
-    else:
-        await ctx.send("DND role not found. Please ensure the role exists in this server.")
-
 @bot.command()
 async def assignpvprole(ctx, member: Optional[discord.Member] = None):
     """Admin/Moderator command to assign PVP role to a user"""
@@ -2540,27 +2219,6 @@ async def removelizardsrolefrom(ctx, member: Optional[discord.Member] = None):
             await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
     else:
         await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def removedndrolefrom(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to remove DND role from a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to remove the role from. Usage: `!removedndrolefrom @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=dnd_role_name)
-    if role:
-        if role in member.roles:
-            await member.remove_roles(role)
-            await ctx.send(f"🎲 Removed {role.name} role from {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
-    else:
-        await ctx.send("DND role not found. Please ensure the role exists in this server.")
 
 @bot.command()
 async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
