@@ -232,6 +232,66 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/xa1gW9vd5uE?si=0XIK8IuvmBFeQxjk", # Poolhaus, Rowetta - Feel The Rush (Local Singles Remix)
     "https://youtu.be/TmG_bcbiZVs?si=6ljepWjX-0FTCa6k", # Cruel Youth - Mr. Watson (BKAYE Remix)
     "https://youtu.be/uScZ8WZMjhs?si=ZumcsiWo9Ug8PCuB", # Kedam - Shy Girl
+    "https://youtu.be/Yy51Cm-FzL4?si=FAVNX9rS5Wxp7e5t", # MUST DIE! x Akeos x Skream - LOL OK (Habstrakt Remix)
+    "https://youtu.be/gEgvu0R7_KA?si=DKMuqmd35B4Avw9s", # Effin - Unlucky [Monstercat Release]
+    "https://youtu.be/J04EeRtKpY0?si=gjCXhwsmF3Ii5INn", # MOONBOY - HAUS TING
+    "https://youtu.be/F1LkNhNU6kQ?si=8VjTYMeWufo1xThE", # Knock2 - SPEAK up! (Official Audio) (Visualizer)
+    "https://youtu.be/U41bONK2V-U?si=gvXkenJC0OrRuvUk", # Skrillex, Noisia, josh pan & Dylan Brady - Supersonic (My Existence) [Official Audio]
+    "https://youtu.be/clojLDEkJgw?si=P5-yo2hhIulf5EWX", # ZETTA - DIGITAL DREAMS [DUBSTEP]
+    "https://youtu.be/y4hV2XGnqkA?si=LFeY6i6ZbPfpPdNI", # BARELY ALIVE - Killer Robots
+    "https://youtu.be/itGbk3DtYKQ?si=0bYI3aGUbpUS6vgt", # ALIAS - DISCOBUSTER
+    "https://youtu.be/7Azv0G85lh8?si=NP-_ZTGXwRDKjYtG", # Halsey - I am not a woman, I'm a god
+    "https://youtu.be/L9asdnQKegQ?si=R1B7wdh7UAthmztL", # LMPG
+    "https://youtu.be/O22C4A2uJ9s?si=1rqGHLzwEoc5Eu9t", # Lexi Jayde - walkin away (Official Lyric Video)
+    "https://youtu.be/KPEO_qwPGHI?si=R4YBu4RDsWadvqNm", # Maty Noyes - California Palms
+    "https://youtu.be/taSubkjZUA4?si=kflsWd94RG1lNkRj", # Tiësto & Karol G - Don't Be Shy (Official Music Video)
+    "https://youtu.be/LQ7R9zHeDy8?si=aSkwxUMasLK7RS0v", # R3HAB x A Touch Of Class - All Around The World (La La La) (Official Video)
+    "https://youtu.be/5qNgbIGsrtM?si=i5RkstgWKj7Tig_2", # 4 morant (better luck next time) - doja cat
+    "https://youtu.be/guDJvZp5Bqk?si=SOmy5EuCxHyzwBxy", # PASTEL GHOST ~ DARK BEACH
+    "https://youtu.be/KQCc3yatBD0?si=GuSOhNSjluSX2uNt", # frou frou - a new kind of love (demo)[slowed + reverb]
+    "https://youtu.be/s83V_D-Dd0M?si=GX6et4EF4zRHhSEC", # Alone Again (ft. Mac DeMarco)
+    "https://youtu.be/BGmnVEtD4BQ?si=IYC9sD4XnbP9GJ_H", # BABYXSOSA- EVERYWHEREIGO (PROD. GAWD)
+    "https://youtu.be/wycjnCCgUes?si=ktNc5piEevO1BFGh", # Tame Impala - Feels Like We Only Go Backwards (Official Video)
+    "https://youtu.be/44lWO3qhQMk?si=NPWv4McIi-G24PtT", # Tame Impala - Posthumous Forgiveness (Official Audio)
+    "https://youtu.be/HN0l9RTGgYg?si=RmB5ecYYtBvrc-gG", # SZA - Back Together ft Tame Impala (Lyrics)
+    "https://youtu.be/lcs1b9EITCA?si=jIw3mmoBeUmBpz6j", # kali uchis - never be yours [slowed + reverb]
+    "https://youtu.be/rkRBiA0syfg?si=G9w5QcWvDRjW_x_W", # Gorillaz - Saturnz Barz [HQ]
+    "https://youtu.be/BOyO8sZOaOQ?si=i1WHPa25EfDB_VU3", # JVKE - this is what falling in love feels like (Official Video)
+    "https://youtu.be/P0s6jtuyH0Q?si=2Kwdn0h3-he4IwDH", # Verzache - Needs (Official Audio)
+    "https://youtu.be/PSQ2BGhfrwo?si=NqmevUCDvkO3CEBi", # dyl dion - pouring outside (official music video)
+    "https://youtu.be/F30Pb7NSieE?si=8uq5dP0EV3gb3KNK", # Pink Bubblegum // lavi lyrics
+    "https://youtu.be/b4ONl3n9RKg?si=fDK5fV_Y6FLTlHri", # VICTOR INTERNET - TINDER SONG (OFFICIAL VIDEO)
+    "https://youtu.be/GQAOrCOknCY?si=uI5t1QsB2_DdgKtS", # NEIKED, Mae Muller, Polo G - Better Days
+    "https://youtu.be/Sl84nmRaqaA?si=iD_eQXQaglTP8Skb", # Cuco - Bossa No Sé ft. Jean Carter (Official Video) ft. Jean Carter
+    "https://youtu.be/x-OzspEcQG8?si=znToqNb9Fi_xYifT", # STEVE LACY - RYD / DARK RED
+    "https://youtu.be/8YiDQk6Bgik?si=-xqk0de4uNZRXBxm", # Warned You
+    "https://youtu.be/RBtlPT23PTM?si=uFU-vflgQCa0I7NB", # Beach House - Space Song
+    "https://youtu.be/hG3M3TNFpK8?si=p9N3Pm0-9A27H_YS", # zach farache (verzache) - the loser
+    "https://youtu.be/e5iUEHE3k5A?si=cVtU1BT8Zku-wsmf", # Serena Isioma - Sensitive (Lyrics)
+    "https://youtu.be/VMFJwSR1MQQ?si=v0D-qa8Q1EOUQluK", # Tyler, The Creator - ARE WE STILL FRIENDS?
+    "https://youtu.be/9bXXUCSi4yI?si=wYBtZoGOsCuuGH4s", # BADBADNOTGOOD - Time Moves Slow (Lyrics) feat. Sam Herring
+    "https://youtu.be/I-4p8CQODqc?si=ERbQTJ5sgkhVfoUL", # Fire & Gold (Ship Wrek Remix)
+    "https://youtu.be/OSI6JJaz35I?si=U8mjs5DsQyClNDyE", # Never
+    "https://youtu.be/ymIseyI4OHU?si=qGFB971jtWPf07AX", # Major Lazer - Get Free ft. Amber (What So Not Remix)
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
