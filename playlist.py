@@ -283,31 +283,31 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/IC_UIfqNyWk?si=qGrBh70G_zRrkBu-", # Femi Tahiru - Home (Official Music Video)
     "https://youtu.be/D92tgxVvWd0?si=oV4dD5JiWub8ware", # K-391 - Earth
     "https://youtu.be/bafd5CsNk0M?si=kA0vcprrTUK8dGee", # ROY KNOX - Lost In Sound (Magic Free Release)
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/tdFTyVwQsjc?si=KUx1nj8MQ1ZEVRb4", # High You Are (Branchez Remix)
+    "https://youtu.be/0hfFQl2iEi8?si=R19E7xQWZ4dX97Qj", # Hey Mami - Sylvan Esso (Big Wild Remix)
+    "https://youtu.be/AIrlVwxziFE?si=8--pqbMOSBpFzRSc", # Louis The Child - Fire feat. Evalyn (Official Video)
+    "https://youtu.be/i4Hhv7g-ZVI?si=os-XVvcgI2IkeiDy", # DJ MARLON - Baby (Official Video) | Irresistible Dance Anthem That'll Make You Move!
+    "https://youtu.be/kVk1zZJgaGE?si=6jZvjPGw2SQIt9B9", # Major Lazer - Wave (Big Gigantic Remix)
+    "https://youtu.be/P3hSMfDy5sk?si=REJTZgJb61vpjR3O", # Yahtzel - High With Me
+    "https://youtu.be/V7-yAX9ijuM?si=adZHOJdGQfaQy2lX", # Flume - Sleepless feat. Jezzabell Doran
+    "https://youtu.be/idSJRWzCAN0?si=30cgKUVdkJnm2_Xo", # Latto, Mariah Carey - Big Energy (Remix (Official Audio)) ft. DJ Khaled
+    "https://youtu.be/5ZHXYnGVlcg?si=jS2nxiKUnQKouzEZ", # Tyga, Doja Cat - Freaky Deaky (Official Video)
+    "https://youtu.be/mzJj5-lubeM?si=Tix6UeiVE-zoIXfk", # Red Hot Chili Peppers - Scar Tissue [Official Music Video] [HD UPGRADE]
+    "https://youtu.be/7rZyI7kPZMI?si=g0b6bCx2-HTw_12b", # Ben E King - Stand By Me (Lyrics)
+    "https://youtu.be/MmZexg8sxyk?si=wjgwXEFLyLiFERUG", # MGMT - Electric Feel (Official HD Video)
+    "https://youtu.be/AIOAlaACuv4?si=TB09maD27-lWuSZ9", # Tracy Chapman - Fast Car (Official Music Video)
+    "https://youtu.be/egpE0ysQ21Q?si=EKh9n0zgOfN2I3zp", # Red Hot Chili Peppers - Snow (Hey Oh) (Lyrics)
+    "https://youtu.be/LKnoKkp9xgs?si=pGoAd_GKHfP5klAs", # Rock Mafia ft Miley Cyrus - The Big Bang (lyrics)
+    "https://youtu.be/iSC4P1i9zmE?si=rMws0aVL8tEoqWAO", # M83 - Midnight City (Lyrics)
+    "https://youtu.be/VmdQ16aYER4?si=GhelQHnqpmKmwNDT", # moanday - Blue Ceiling
+    "https://youtu.be/jaLVvEhCo6g?si=8EVCjCBKPkeor7Vg", # DRAMA - 3AM (Official Video)
+    "https://youtu.be/JAne46Ob0wI?si=pA5ehYyCVPlV2rIq", # DRAMA - Don't Hold Back
+    "https://youtu.be/3U74JBrwgW4?si=VA_bSBHdZ-UiDTsp", # DRAMA - Walk Away
+    "https://youtu.be/Vzvt757rp2g?si=sy1BvPqJa2EF0c_v", # DRAMA - Forever And A Day
+    "https://youtu.be/p-Z3YrHJ1sU?si=RqRQo75VKatDOnkC", # Edward Maya & Vika Jigulina - Stereo Love (Official Music Video)
+    "https://youtu.be/3CV0KcWM7Ns?si=sOHPrYl5YcgLIxaT", # Solardo ft. Eli Brown - XTC (Felix Ryder Radio Edit)
+    "https://youtu.be/ALUOS0aLAQ8?si=RB0JzunANxl7pI8L", # 9TS BABY X I LUV U BABY
+    "https://youtu.be/BQaqCIW0RT0?si=B6K9aBodClMEGTAn", # Chemical Love feat Nomi Ruiz - Animal Feelings
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
