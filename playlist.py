@@ -308,20 +308,20 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/3CV0KcWM7Ns?si=sOHPrYl5YcgLIxaT", # Solardo ft. Eli Brown - XTC (Felix Ryder Radio Edit)
     "https://youtu.be/ALUOS0aLAQ8?si=RB0JzunANxl7pI8L", # 9TS BABY X I LUV U BABY
     "https://youtu.be/BQaqCIW0RT0?si=B6K9aBodClMEGTAn", # Chemical Love feat Nomi Ruiz - Animal Feelings
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/GmWvt0hmHe4?si=1GsmwoSg9gpiIa9J", # CANNONS - Mood Ring (Blue Motel Remix)
+    "https://youtu.be/sE3J9uWJfQY?si=qBSjOqt6677b3ELA", # The Hip Abduction ft. Trevor Hall - 'Pacific Coast Highway (Reggae Remix by Johnny Cosmic)'
+    "https://youtu.be/eMQuofsOOzo?si=uQcWBGbQ-LdXxXRh", # Calvin Harris - Stay With Me (Official Video) ft Justin Timberlake, Halsey & Pharrell
+    "https://youtu.be/NFj0WT2bcXo?si=41_vZ5BmxNj_TUVc", # Omah Lay with Justin Bieber - "Attention (Disclosure Remix)" Official Lyric Video
+    "https://youtu.be/4yYfWfUbn_c?si=mSaVjl012PeHIHkj", # Diplo & Miguel - Don't Forget My Love (CID Remix) [Official Full Stream]
+    "https://youtu.be/Pr85ZoFkCcs?si=0eobQGeFJhfr8uRp", # Swedish House Mafia - Heaven Takes You Home (Lyrics)
+    "https://youtu.be/c6bkIZH_7oc?si=yEoHBkfDr31VIKTP", # What It Feels Like (Owen Norton Remix)
+    "https://youtu.be/aikaQwoVUxk?si=lxjW6NKeO_kznhqt", # MARO & NASAYA - 'I SEE IT COMING' (Official Video)
+    "https://youtu.be/6PZTTVToHEE?si=i_LkkCQFB_xC_ZLZ", # Nick Pes - I Want To (Music Video)
+    "https://youtu.be/iu8r3qAK7Gs?si=CmJzHVhuwgybSmty", # Wolves Still Cry (Classixx Remix)
+    "https://youtu.be/Mwg1c1jOwXM?si=bnI5gRVj2uJ5ZKBo", # The Knocks - All About You (feat. Foster the People) [Official Music Video]
+    "https://youtu.be/IbJrp3iW_Z4?si=Z3khLDhXi_kcEn34", # neek - i'll choose u (urchin remix) - (official audio)
+    "https://youtu.be/4yXk4SatD5Q?si=bEpvk0ZPgkJZS2EL", # Petit Biscuit & Diplo - Pick Your Battles (VIP Mix)
+    "https://youtu.be/796h8z2SgEg?si=Hg-e2g-4gkiMy6lf", # Penguin Prison - Better (RAC Mix)
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
