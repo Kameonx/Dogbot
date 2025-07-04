@@ -90,11 +90,17 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'cookiefile': 'cookies.txt',
             'prefer_ffmpeg': True,
             'keepvideo': False,
-            'user_agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'socket_timeout': 30,  # Conservative timeout
-            'retries': 5,  # More retries for better reliability
-            'fragment_retries': 5,
-            'retry_sleep': 1,
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'socket_timeout': 45,  # Longer timeout for TLS stability
+            'retries': 8,  # More retries for network resilience
+            'fragment_retries': 8,
+            'retry_sleep': 3,  # Longer sleep between retries
+            'http_chunk_size': 10485760,  # 10MB chunks for better streaming
+            # Network stability options
+            'sleep_interval': 1,
+            'max_sleep_interval': 5,
+            'sleep_interval_requests': 1,
+            'sleep_interval_subtitles': 1,
         }
 
         # For cloud deployment (Render.com), use minimal FFmpeg options
@@ -127,12 +133,18 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             # - No reconnect_delay_max (not in older FFmpeg) 
             # - No fflags +discardcorrupt (might not be supported)
             # - No protocol_whitelist (might cause issues)
-            # Only using the most basic, universally supported options
+            # Enhanced for TLS connection stability and YouTube streaming
             before_options = (
                 '-reconnect 1 '
-                '-rw_timeout 20000000 '  # 20 second timeout for better stability
-                '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" '
-                '-loglevel warning '  # Less verbose logging
+                '-reconnect_at_eof 1 '
+                '-reconnect_streamed 1 '
+                '-reconnect_delay_max 5 '
+                '-rw_timeout 30000000 '  # 30 second timeout for better stability
+                '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" '
+                '-headers "Accept-Language: en-US,en;q=0.9" '
+                '-multiple_requests 1 '
+                '-seekable 0 '
+                '-loglevel error '
             )
             
             # Simplified output options - maximum compatibility with all FFmpeg versions
@@ -213,7 +225,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         if loop is None:
             loop = asyncio.get_event_loop()
             
-        # Simple fallback - try with better quality settings
+        # Simple fallback - try with better quality settings and enhanced network resilience
         try:
             ytdl_simple = yt_dlp.YoutubeDL({
                 'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
@@ -221,6 +233,10 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 'no_warnings': True,
                 'cookiefile': 'cookies.txt',  # Use cookies file for fallback too
                 'prefer_ffmpeg': True,
+                'socket_timeout': 60,  # Longer timeout for fallback
+                'retries': 10,  # More aggressive retries for fallback
+                'fragment_retries': 10,
+                'retry_sleep': 2,
             })
             
             def extract_simple():
@@ -237,14 +253,18 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in fallback data")
                 
-            # Conservative fallback FFmpeg options
+            # Enhanced fallback FFmpeg options for TLS stability
             source = discord.FFmpegPCMAudio(
                 data['url'],
                 before_options=(
                     '-reconnect 1 '
-                    '-rw_timeout 20000000 '  # 20 second timeout for better stability
-                    '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" '
-                    '-loglevel warning'  # Less verbose logging
+                    '-reconnect_at_eof 1 '
+                    '-reconnect_streamed 1 '
+                    '-reconnect_delay_max 5 '
+                    '-rw_timeout 30000000 '
+                    '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" '
+                    '-multiple_requests 1 '
+                    '-loglevel error'
                 ),
                 options='-vn'
             )
@@ -830,8 +850,9 @@ class MusicBot:
                         continue
                     
                     # Handle network errors more patiently - don't skip songs too quickly
-                    elif any(keyword in error_str for keyword in ['tls', 'ssl', 'certificate', 'connection reset', 'network', 'timeout', 'input/output', 'broken pipe', 'end of file']):
-                        print(f"[NETWORK_ERROR] Network error detected, retrying with patience...")
+                    elif any(keyword in error_str for keyword in ['tls', 'ssl', 'certificate', 'connection reset', 'network', 'timeout', 'input/output', 'broken pipe', 'end of file', 'io error', 'pull function']):
+                        print(f"[NETWORK_ERROR] Network/TLS error detected: {source_error}")
+                        print(f"[NETWORK_ERROR] This may be due to YouTube throttling or network instability")
                         
                         # Track network errors for this guild
                         current_time = asyncio.get_event_loop().time()
@@ -845,16 +866,16 @@ class MusicBot:
                         
                         # Only skip songs if we have extremely persistent issues (raised threshold)
                         error_count = self.network_error_count.get(guild_id, 0)
-                        if error_count >= 8:  # Even more patient - allow 8 attempts before skipping
-                            print(f"[NETWORK_ERROR] Extremely persistent network errors ({error_count}), reluctantly skipping this song")
+                        if error_count >= 12:  # Very patient for TLS errors - allow 12 attempts before skipping
+                            print(f"[NETWORK_ERROR] Extremely persistent TLS/network errors ({error_count}), reluctantly skipping this song")
                             current_pos = self.shuffle_positions.get(guild_id, 0)
                             self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, MUSIC_PLAYLISTS))
                             self.network_error_count[guild_id] = 0  # Reset counter
                         
                         retries += 1
-                        # Give even more time for network recovery, especially on cloud platforms
-                        wait_time = min(5 + (error_count * 1), 15)  # Up to 15 seconds for very problematic songs
-                        print(f"[NETWORK_ERROR] Waiting {wait_time} seconds for network recovery...")
+                        # Give even more time for TLS/network recovery, especially on cloud platforms
+                        wait_time = min(8 + (error_count * 2), 25)  # Up to 25 seconds for very problematic TLS connections
+                        print(f"[NETWORK_ERROR] Waiting {wait_time} seconds for TLS/network recovery...")
                         await asyncio.sleep(wait_time)
                         continue
                     else:
@@ -871,9 +892,10 @@ class MusicBot:
                         error_str = str(error).lower()
                         print(f'🎵 Player error: {error}')
                         
-                        # Check if this is a network-related error during playback
-                        if any(keyword in error_str for keyword in ['input/output error', 'end of file', 'connection', 'network', 'broken pipe']):
-                            print(f"[NETWORK_ERROR] Network error during playback, will auto-advance to next song")
+                        # Enhanced TLS/network error detection during playback
+                        if any(keyword in error_str for keyword in ['input/output error', 'end of file', 'connection', 'network', 'broken pipe', 'tls', 'ssl', 'connection reset', 'io error', 'pull function']):
+                            print(f"[NETWORK_ERROR] TLS/Network error during playback: {error}")
+                            print(f"[NETWORK_ERROR] This is likely due to YouTube connection issues, will auto-advance to next song")
                             # Mark this as a normal finish so auto-advance triggers
                         else:
                             print(f"[PLAYER_ERROR] Non-network player error: {error}")
@@ -894,6 +916,12 @@ class MusicBot:
                     if (self.is_playing.get(guild_id, False) and 
                         not self.manual_skip_in_progress.get(guild_id, False)):
                         
+                        # Add brief delay for TLS errors to let connection stabilize
+                        delay = 0.0
+                        if error and any(keyword in str(error).lower() for keyword in ['tls', 'ssl', 'connection reset', 'io error', 'pull function']):
+                            delay = 2.0  # 2 second delay for TLS errors
+                            print(f"[AUTO-ADVANCE] TLS error detected, waiting {delay}s before next song")
+                        
                         print(f"[AUTO-ADVANCE] Moving to next song automatically")
                         # Move to next position in shuffle (thread-safe)
                         current_shuffle_pos = self.shuffle_positions.get(guild_id, 0)
@@ -911,10 +939,11 @@ class MusicBot:
                         # Schedule next song to play without blocking (ensures infinite loop)
                         async def play_next_song():
                             try:
-                                # Instant transitions for seamless music experience
-                                delay = 0.2 if error and any(keyword in str(error).lower() for keyword in ['network', 'input/output', 'connection']) else 0.0
-                                if delay > 0:
-                                    await asyncio.sleep(delay)
+                                # Enhanced delay for TLS/network issues
+                                if error and any(keyword in str(error).lower() for keyword in ['tls', 'ssl', 'connection reset', 'io error', 'pull function']):
+                                    await asyncio.sleep(delay)  # Use the TLS delay from above
+                                elif error and any(keyword in str(error).lower() for keyword in ['network', 'input/output', 'connection']):
+                                    await asyncio.sleep(0.5)  # Brief delay for other network errors
                                 
                                 # Simple check - if we're still playing, continue
                                 if self.is_playing.get(guild_id, False):
