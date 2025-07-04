@@ -63,7 +63,7 @@ YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3"
 class YouTubeAudioSource(discord.PCMVolumeTransformer):
     """Audio source for YouTube streaming using yt-dlp"""
     
-    def __init__(self, source, *, data, volume=0.5):
+    def __init__(self, source, *, data, volume=0.7):  # Increased volume for Bluetooth speakers
         super().__init__(source, volume)
         self.data = data
         self.title = data.get('title')
@@ -75,7 +75,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         
         ytdl_format_options = {
-            'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio[acodec=opus]/bestaudio',  # Prefer opus/webm for stability
+            # Prefer high-quality m4a/aac for better Bluetooth compatibility over opus/webm
+            'format': 'bestaudio[ext=m4a][acodec=aac]/bestaudio[acodec=aac]/bestaudio[ext=mp4]/bestaudio[ext=webm]/bestaudio',
             'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
             'restrictfilenames': True,
             'noplaylist': True,
@@ -91,7 +92,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'prefer_ffmpeg': True,
             'keepvideo': False,
             'user_agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'http_chunk_size': 524288,  # Smaller 512KB chunks for better network stability
+            # Larger chunks for better quality on stable connections
+            'http_chunk_size': 1048576,  # 1MB chunks for better audio quality
             'socket_timeout': 60,  # Increased timeout for better network reliability
             'retries': 10,  # More retries for cloud reliability
             'fragment_retries': 10,  # More fragment retries
@@ -125,16 +127,28 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             print(f"Creating audio source from: {filename}")
             print(f"Stream mode: {stream}")
             
-            # Simplified FFmpeg options for Render.com web service compatibility
-            # Using minimal options to avoid conflicts with default settings
+            # Enhanced FFmpeg options for better Bluetooth audio quality
+            # Optimized for AAC/M4A sources with better Bluetooth codec compatibility
             before_options = (
                 '-reconnect 1 '
                 '-rw_timeout 20000000 '
                 '-loglevel fatal '
+                '-fflags +discardcorrupt '  # Handle corrupted packets better
+                '-analyzeduration 2147483647 '  # Better stream analysis
+                '-probesize 2147483647 '  # Better stream probing
             )
             
-            # Let Discord.py handle audio format - avoid duplicate options
-            options = '-vn'
+            # Enhanced audio processing for Bluetooth compatibility
+            # Force higher sample rate and bitrate for better quality
+            options = (
+                '-vn '  # No video
+                '-ac 2 '  # Force stereo
+                '-ar 48000 '  # High sample rate (48kHz) for better quality
+                '-ab 320k '  # Force high bitrate (320kbps) for quality
+                '-acodec pcm_s16le '  # High-quality PCM encoding for Discord
+                '-f s16le '  # Force 16-bit signed little-endian format
+                '-bufsize 512k '  # Audio buffer size for smooth playback
+            )
             
             # Create the audio source with enhanced network stability
             source = discord.FFmpegPCMAudio(
@@ -643,15 +657,17 @@ class MusicBot:
         if voice_client.is_playing() or voice_client.is_paused():
             print(f"[NEXT] Instant stopping current audio for manual skip...")
             voice_client.stop()
-            # No wait time - instant transition
+            # Brief wait to ensure stop is processed
+            await asyncio.sleep(0.2)
         
         if self.is_playing.get(ctx.guild.id, False):
-            # Use skip_cleanup=True since we already did instant cleanup above
+            # Use skip_cleanup=True since we already did cleanup above
             await self._play_current_song(ctx.guild.id, skip_cleanup=True)
         else:
             await ctx.send(f"⏭️ Next song queued. Use `!start` to play.")
         
-        # Clear manual skip flag instantly
+        # Clear manual skip flag after a longer delay to avoid race conditions
+        await asyncio.sleep(1.0)  # Give time for the old song's callback to finish
         self.manual_skip_in_progress[ctx.guild.id] = False
     
     async def previous_song(self, ctx):
@@ -687,16 +703,18 @@ class MusicBot:
         if voice_client.is_playing() or voice_client.is_paused():
             print(f"[PREVIOUS] Instant stopping current audio for manual skip...")
             voice_client.stop()
-            # No wait time - instant transition
+            # Brief wait to ensure stop is processed
+            await asyncio.sleep(0.2)
         
         if self.is_playing.get(ctx.guild.id, False):
             await ctx.send(f"⏮️ Going back to previous song...")
-            # Use skip_cleanup=True since we already did instant cleanup above
+            # Use skip_cleanup=True since we already did cleanup above
             await self._play_current_song(ctx.guild.id, skip_cleanup=True)
         else:
             await ctx.send(f"⏮️ Previous song queued. Use `!start` to play.")
         
-        # Clear manual skip flag instantly
+        # Clear manual skip flag after a longer delay to avoid race conditions
+        await asyncio.sleep(1.0)  # Give time for the old song's callback to finish
         self.manual_skip_in_progress[ctx.guild.id] = False
     
     async def get_current_song_info(self, ctx):
@@ -904,9 +922,19 @@ class MusicBot:
                         print(f"[MEMORY] Player cleanup error: {cleanup_error}")
                     
                     # ALWAYS auto-advance if we're supposed to be playing (more aggressive continuation)
-                    # BUT ONLY if no manual skip is in progress (prevents race conditions)
+                    # BUT ONLY if no manual skip is in progress AND no other song is already playing
                     if (self.is_playing.get(guild_id, False) and 
                         not self.manual_skip_in_progress.get(guild_id, False)):
+                        
+                        # Additional safety check - make sure voice client isn't already playing something else
+                        try:
+                            if guild_id in self.voice_clients:
+                                current_voice_client = self.voice_clients[guild_id]
+                                if current_voice_client.is_playing():
+                                    print(f"[AUTO-ADVANCE] Voice client already playing new song, skipping auto-advance")
+                                    return
+                        except Exception as voice_check_error:
+                            print(f"[AUTO-ADVANCE] Error checking voice client status: {voice_check_error}")
                         
                         # Enhanced delay logic for different error types
                         delay = 0.0
@@ -1280,11 +1308,13 @@ class MusicBot:
             await ctx.send(f"❌ Failed to load URL: {str(e)[:100]}...")
             return
 
-        # Instant cleanup of any existing audio - no delays
+        # Clean stop of any existing audio for smooth transition
         if voice_client.is_playing() or voice_client.is_paused():
-            print(f"[SPECIFIC_URL] Instantly stopping current audio...")
+            print(f"[SPECIFIC_URL] Cleanly stopping current audio for smooth transition...")
             voice_client.stop()
-            # No delay - instant override
+            # Give time for clean audio stop to prevent choppy overlap
+            await asyncio.sleep(1.0)
+            print(f"[SPECIFIC_URL] Audio cleanly stopped, ready for new song")
         
         # Temporarily disable shuffled playlist auto-play but remember state
         original_playing_state = self.is_playing.get(ctx.guild.id, False)
@@ -2309,735 +2339,53 @@ async def audiotest(ctx):
     embed.set_footer(text="Use this to debug why you might not hear audio")
     await ctx.send(embed=embed)
 
-# AI and Chat Commands
 @bot.command()
-async def ask(ctx, *, question):
-    """Ask AI a question (no memory)"""
-    response = await get_ai_response(str(ctx.author.id), question)
-    await ctx.send(response)
-
-@bot.command()
-async def chat(ctx, *, message):
-    """Chat with AI (with memory)"""
-    user_id = str(ctx.author.id)
-    user_name = ctx.author.display_name
-    channel_id = str(ctx.channel.id)
-    
-    response = await get_ai_response_with_history(user_id, message)
-    
-    # Save to chat history
-    await save_chat_history(user_id, user_name, channel_id, message, response)
-    
-    await ctx.send(response)
-
-@bot.command()
-async def undo(ctx):
-    """Undo last action"""
-    user_id = str(ctx.author.id)
-    channel_id = str(ctx.channel.id)
-    
-    success, message = await undo_last_action(channel_id, user_id)
-    
-    if success:
-        await ctx.send(f"↩️ {message}")
-    else:
-        await ctx.send(f"❌ {message}")
-
-@bot.command()
-async def redo(ctx):
-    """Redo last undone action"""
-    user_id = str(ctx.author.id)
-    channel_id = str(ctx.channel.id)
-    
-    success, message = await redo_last_undo(channel_id, user_id)
-    
-    if success:
-        await ctx.send(f"↪️ {message}")
-    else:
-        await ctx.send(f"❌ {message}")
-    
-# Utility Commands
-@bot.command()
-async def poll(ctx, *, question):
-    """Create a poll"""
-    embed = discord.Embed(
-        title="📊 Poll",
-        description=question,
-        color=discord.Color.blue()
-    )
-    embed.set_footer(text=f"Poll created by {ctx.author.display_name}")
-    
-    message = await ctx.send(embed=embed)
-    await message.add_reaction("👍")
-    await message.add_reaction("👎")
-
-@bot.command()
-async def say(ctx, *, message):
-    """Make the bot say something"""
-    await ctx.message.delete()  # Delete the command message
-    await ctx.send(message)
-
-@bot.command()
-async def ytdlstatus(ctx):
-    """Show YouTube API configuration (Admin/Moderator only)"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    embed = discord.Embed(
-        title="🔧 YouTube Configuration Status",
-        color=discord.Color.blue()
-    )
-    
-    # Check YouTube API
-    if youtube_api_key:
-        embed.add_field(name="YouTube API Key", value="✅ Configured", inline=True)
-    else:
-        embed.add_field(name="YouTube API Key", value="❌ Not Set", inline=True)
-    
-    # Check yt-dlp
-    try:
-        import yt_dlp
-        embed.add_field(name="yt-dlp", value="✅ Available", inline=True)
-    except ImportError:
-        embed.add_field(name="yt-dlp", value="❌ Not Installed", inline=True)
-    
-    # Check FFmpeg
-    try:
-        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
-        if result.returncode == 0:
-            embed.add_field(name="FFmpeg", value="✅ Available", inline=True)
-        else:
-            embed.add_field(name="FFmpeg", value="⚠️ Error", inline=True)
-    except:
-        embed.add_field(name="FFmpeg", value="❌ Not Found", inline=True)
-    
-    await ctx.send(embed=embed)
-
-@bot.command()
-async def help(ctx):
-    embed = discord.Embed(
-        title="🐶 Dog Bot Commands", 
-        description="Here are all available commands:",
-        color=discord.Color.blue()
-    )
-    embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` / `!skip` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` / `!queue` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` / `!np` - Show current song info", inline=False)
-    
-    embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
-
-    # Add note about modhelp for admins/moderators
-    if has_admin_or_moderator_role(ctx):
-        embed.add_field(name="👑 Admin/Moderator", value="`!modhelp` - View admin/moderator commands", inline=False)
-
-    await ctx.send(embed=embed)
-
-@bot.command()
-async def modhelp(ctx):
-    """Admin/Moderator only help command"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    embed = discord.Embed(
-        title="👑 Admin/Moderator Commands", 
-        description="Commands available to Admins and Moderators:",
-        color=discord.Color.gold()
-    )
-    
-    embed.add_field(
-        name="🎭 Role Assignment", 
-        value="`!assigndogsrole @user` - Assign Dogs role\n"
-              "`!assigncatsrole @user` - Assign Cats role\n"
-              "`!assignlizardsrole @user` - Assign Lizards role\n"
-              "`!assignpvprole @user` - Assign PVP role", 
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🚫 Role Removal", 
-        value="`!removedogsrolefrom @user` - Remove Dogs role\n"
-              "`!removecatsrolefrom @user` - Remove Cats role\n"
-              "`!removelizardsrolefrom @user` - Remove Lizards role\n"
-              "`!removepvprolefrom @user` - Remove PVP role", 
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🎵 Advanced Music", 
-        value="`!loop` - Show infinite loop status\n"
-              "`!reshuffle` - Generate new shuffle order\n"
-              "`!voicefix` - Fix voice connection issues\n"
-              "`!reconnect` - Force reconnect to voice channel\n"
-              "`!volume` - Check current volume\n"
-              "`!volume <0-100>` - Set volume percentage\n"
-              "`!audiotest` - Debug audio issues", 
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🔧 Testing & Diagnostics", 
-        value="`!test` - Test bot functionality\n"
-              "`!ytdlstatus` - Show YouTube API configuration", 
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🗳️ Utility Commands", 
-        value="`!poll <question>` - Create a poll\n"
-              "`!say <message>` - Make the bot say something", 
-        inline=False
-    )
-    
-    embed.set_footer(text="💡 Tip: Use @username or user mentions to specify the target user\n🎵 Music commands are now available to everyone!")
-    await ctx.send(embed=embed)
-
-@bot.command()
-async def dogsrole(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
-    if role:
-        await ctx.author.add_roles(role)
-        await ctx.send(f"🐶 Assigned {role.name} role to {ctx.author.name}!")
-    else:
-        await ctx.send("Dogs role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def catsrole(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
-    if role:
-        await ctx.author.add_roles(role)
-        await ctx.send(f"🐱 Assigned {role.name} role to {ctx.author.name}!")
-    else:
-        await ctx.send("Cats role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def lizardsrole(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
-    if role:
-        await ctx.author.add_roles(role)
-        await ctx.send(f"🦎 Assigned {role.name} role to {ctx.author.name}!")
-    else:
-        await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def pvprole(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
-    if role:
-        await ctx.author.add_roles(role)
-        await ctx.send(f"⚔️ Assigned {role.name} role to {ctx.author.name}!")
-    else:
-        await ctx.send("PVP role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def removedogsrole(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
-    if role:
-        if role in ctx.author.roles:
-            await ctx.author.remove_roles(role)
-            await ctx.send(f"🐶 Removed {role.name} role from {ctx.author.name}!")
-        else:
-            await ctx.send(f"You don't have the {role.name} role to remove.")
-    else:
-        await ctx.send("Dogs role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def removecatsrole(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
-    if role:
-        if role in ctx.author.roles:
-            await ctx.author.remove_roles(role)
-            await ctx.send(f"🐱 Removed {role.name} role from {ctx.author.name}!")
-        else:
-            await ctx.send(f"You don't have the {role.name} role to remove.")
-    else:
-        await ctx.send("Cats role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def removelizardsrole(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
-    if role:
-        if role in ctx.author.roles:
-            await ctx.author.remove_roles(role)
-            await ctx.send(f"🦎 Removed {role.name} role from {ctx.author.name}!")
-        else:
-            await ctx.send(f"You don't have the {role.name} role to remove.")
-    else:
-        await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def removepvprole(ctx):
-    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
-    if role:
-        if role in ctx.author.roles:
-            await ctx.author.remove_roles(role)
-            await ctx.send(f"⚔️ Removed {role.name} role from {ctx.author.name}!")
-        else:
-            await ctx.send(f"You don't have the {role.name} role to remove.")
-    else:
-        await ctx.send("PVP role not found. Please ensure the role exists in this server.")
-
-# Admin/Moderator role assignment commands
-@bot.command()
-async def assigndogsrole(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to assign Dogs role to a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to assign the role to. Usage: `!assigndogsrole @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
-    if role:
-        if role not in member.roles:
-            await member.add_roles(role)
-            await ctx.send(f"🐶 Assigned {role.name} role to {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} already has the {role.name} role.")
-    else:
-        await ctx.send("Dogs role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def assigncatsrole(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to assign Cats role to a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to assign the role to. Usage: `!assigncatsrole @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
-    if role:
-        if role not in member.roles:
-            await member.add_roles(role)
-            await ctx.send(f"🐱 Assigned {role.name} role to {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} already has the {role.name} role.")
-    else:
-        await ctx.send("Cats role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def assignlizardsrole(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to assign Lizards role to a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to assign the role to. Usage: `!assignlizardsrole @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
-    if role:
-        if role not in member.roles:
-            await member.add_roles(role)
-            await ctx.send(f"🦎 Assigned {role.name} role to {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} already has the {role.name} role.")
-    else:
-        await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def assignpvprole(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to assign PVP role to a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to assign the role to. Usage: `!assignpvprole @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
-    if role:
-        if role not in member.roles:
-            await member.add_roles(role)
-            await ctx.send(f"⚔️ Assigned {role.name} role to {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} already has the {role.name} role.")
-    else:
-        await ctx.send("PVP role not found. Please ensure the role exists in this server.")
-
-# Admin/Moderator role removal commands
-@bot.command()
-async def removedogsrolefrom(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to remove Dogs role from a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to remove the role from. Usage: `!removedogsrolefrom @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
-    if role:
-        if role in member.roles:
-            await member.remove_roles(role)
-            await ctx.send(f"🐶 Removed {role.name} role from {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
-    else:
-        await ctx.send("Dogs role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def removecatsrolefrom(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to remove Cats role from a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to remove the role from. Usage: `!removecatsrolefrom @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
-    if role:
-        if role in member.roles:
-            await member.remove_roles(role)
-            await ctx.send(f"🐱 Removed {role.name} role from {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
-    else:
-        await ctx.send("Cats role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def removelizardsrolefrom(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to remove Lizards role from a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to remove the role from. Usage: `!removelizardsrolefrom @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
-    if role:
-        if role in member.roles:
-            await member.remove_roles(role)
-            await ctx.send(f"🦎 Removed {role.name} role from {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
-    else:
-        await ctx.send("Lizards role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
-    """Admin/Moderator command to remove PVP role from a user"""
-    if not has_admin_or_moderator_role(ctx):
-        await ctx.send("❌ You need Admin or Moderator role to use this command.")
-        return
-    
-    if member is None:
-        await ctx.send("❌ Please mention a user to remove the role from. Usage: `!removepvprolefrom @username`")
-        return
-    
-    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
-    if role:
-        if role in member.roles:
-            await member.remove_roles(role)
-            await ctx.send(f"⚔️ Removed {role.name} role from {member.mention}!")
-        else:
-            await ctx.send(f"{member.mention} doesn't have the {role.name} role to remove.")
-    else:
-        await ctx.send("PVP role not found. Please ensure the role exists in this server.")
-
-@bot.command()
-async def voicefix(ctx):
-    """Fix voice connection issues and resync"""
+async def bluetooth(ctx):
+    """Optimize audio settings for Bluetooth speakers"""
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
     
-    guild_id = ctx.guild.id
+    if ctx.guild.id not in music_bot.voice_clients:
+        await ctx.send("❌ I'm not in a voice channel!")
+        return
+    
+    voice_client = music_bot.voice_clients[ctx.guild.id]
     
     embed = discord.Embed(
-        title="🔧 Voice Connection Diagnostics & Fix",
-        color=discord.Color.orange()
+        title="🎧 Bluetooth Audio Optimization",
+        description="Bot is now optimized for Bluetooth speakers with:",
+        color=discord.Color.blue()
     )
     
-    # Check Discord's view of bot's voice state
-    bot_voice_state = ctx.guild.me.voice
-    discord_voice_channel = bot_voice_state.channel.name if bot_voice_state and bot_voice_state.channel else "None"
+    embed.add_field(
+        name="🎵 Audio Quality",
+        value="• High-quality AAC/M4A format preferred\n• 48kHz sample rate\n• 320kbps bitrate\n• Enhanced stereo output",
+        inline=False
+    )
     
-    # Check our voice client record
-    has_voice_client = guild_id in music_bot.voice_clients
-    voice_client_connected = False
-    if has_voice_client:
-        try:
-            voice_client_connected = music_bot.voice_clients[guild_id].is_connected()
-        except:
-            voice_client_connected = False
+    embed.add_field(
+        name="🔊 Volume Settings",
+        value="• Default volume increased to 70%\n• Use `!volume [0-100]` to adjust\n• Consider 80-90% for most Bluetooth speakers",
+        inline=False
+    )
     
-    # Check Discord's native voice clients
-    discord_voice_clients = []
-    for vc in bot.voice_clients:
-        try:
-            # Use getattr with default to safely check guild
-            vc_guild = getattr(vc, 'guild', None)
-            if vc_guild and getattr(vc_guild, 'id', None) == guild_id:
-                discord_voice_clients.append(vc)
-        except Exception:
-            # Skip any voice clients that cause errors
-            continue
+    embed.add_field(
+        name="💡 Bluetooth Tips",
+        value="• Make sure your device is close to the Bluetooth speaker\n• Reduce interference from other devices\n• Check your speaker's codec support (AAC preferred)\n• Some speakers may have slight audio delay",
+        inline=False
+    )
     
-    embed.add_field(name="Discord Voice Channel", value=discord_voice_channel, inline=True)
-    embed.add_field(name="Has Voice Client Record", value="✅ Yes" if has_voice_client else "❌ No", inline=True)
-    embed.add_field(name="Voice Client Connected", value="✅ Yes" if voice_client_connected else "❌ No", inline=True)
-    embed.add_field(name="Total Voice Clients", value=str(len(discord_voice_clients)), inline=True)
+    # Auto-adjust volume if currently playing
+    if voice_client.source:
+        current_vol = voice_client.source.volume
+        if current_vol < 0.8:  # If volume is less than 80%
+            voice_client.source.volume = 0.8  # Set to 80% for Bluetooth
+            embed.add_field(
+                name="🔧 Auto-Adjustment",
+                value="Volume automatically set to 80% for optimal Bluetooth experience",
+                inline=False
+            )
     
-    # Attempt to fix issues
-    fixes_applied = []
-    
-    # Fix 1: Sync voice clients
-    if music_bot._sync_voice_clients(guild_id):
-        fixes_applied.append("✅ Synced voice client records")
-    
-    # Fix 2: If we have a Discord voice connection but no internal record, restore it
-    if not has_voice_client and discord_voice_clients:
-        music_bot.voice_clients[guild_id] = discord_voice_clients[0]
-        fixes_applied.append("✅ Restored internal voice client record")
-    
-    # Fix 3: If music was playing but stopped, restart it
-    was_playing = music_bot.is_playing.get(guild_id, False)
-    if was_playing and guild_id in music_bot.voice_clients:
-        voice_client = music_bot.voice_clients[guild_id]
-        if not voice_client.is_playing() and not voice_client.is_paused():
-            try:
-                await music_bot._play_current_song(guild_id)
-                fixes_applied.append("✅ Restarted music playback")
-            except Exception as e:
-                fixes_applied.append(f"❌ Failed to restart music: {str(e)[:50]}...")
-    
-    if fixes_applied:
-        embed.add_field(name="Fixes Applied", value="\n".join(fixes_applied), inline=False)
-    else:
-        embed.add_field(name="Status", value="🟢 No issues detected", inline=False)
-    
-    embed.set_footer(text="Use this command if music stops randomly or voice commands don't work")
+    embed.set_footer(text="🎧 Enhanced audio settings are now active for better Bluetooth playback")
     await ctx.send(embed=embed)
-
-@bot.command()
-async def reconnect(ctx):
-    """Force reconnect to voice channel if having issues"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    guild_id = ctx.guild.id
-    
-    # Check if user is in a voice channel
-    if not ctx.author.voice:
-        await ctx.send("❌ You need to be in a voice channel to use this command!")
-        return
-    
-    target_channel = ctx.author.voice.channel
-    was_playing = music_bot.is_playing.get(guild_id, False)
-    
-    await ctx.send("🔄 Force reconnecting to voice channel...")
-    
-    try:
-        # Disconnect from current voice channel if connected
-        if guild_id in music_bot.voice_clients:
-            try:
-                await music_bot.voice_clients[guild_id].disconnect()
-                await ctx.send("🔌 Disconnected from old voice channel")
-            except:
-                pass  # Ignore disconnect errors
-            
-            # Clean up state
-            del music_bot.voice_clients[guild_id]
-        
-        # Also try to disconnect any Discord native voice clients
-        for vc in bot.voice_clients:
-            try:
-                vc_guild = getattr(vc, 'guild', None)
-                if vc_guild and getattr(vc_guild, 'id', None) == guild_id:
-                    await vc.disconnect(force=True)
-                    break
-            except:
-                pass
-        
-        # Reconnect immediately
-        voice_client = await target_channel.connect()
-        music_bot.voice_clients[guild_id] = voice_client
-        
-        await ctx.send(f"✅ Reconnected to {target_channel.name}!")
-        
-        # Restart music if it was playing
-        if was_playing:
-            music_bot.is_playing[guild_id] = True
-            await ctx.send("🎵 Restarting music...")
-            await music_bot._play_current_song(guild_id)
-        
-    except Exception as e:
-        await ctx.send(f"❌ Reconnection failed: {str(e)}")
-
-# Web server for Render.com health checks
-async def health_check(request):
-    """Health check endpoint for Render.com"""
-    return web.Response(text="Bot is running!", status=200)
-
-async def bot_status(request):
-    """Enhanced bot status endpoint with detailed information"""
-    status = {
-        "bot_name": "Dogbot",
-        "timestamp": datetime.now().isoformat(),
-        "latency_ms": round(bot.latency * 1000, 2) if bot and bot.is_ready() else None,
-        "voice_connections": 0,
-        "playing_guilds": 0
-    }
-    
-    if bot.is_ready():
-        # Calculate total users safely, filtering out None values
-        total_users = sum(guild.member_count for guild in bot.guilds if guild.member_count is not None)
-        status.update({
-            "status": "online",
-            "guilds": len(bot.guilds),
-            "users": total_users,
-            "user_id": str(bot.user.id) if bot.user else None,
-            "username": bot.user.name if bot.user else None
-        })
-        
-        if music_bot:
-            status["voice_connections"] = len(music_bot.voice_clients)
-            status["playing_guilds"] = sum(1 for playing in music_bot.is_playing.values() if playing)
-            
-            # Add voice client details for debugging
-            voice_details = []
-            for guild_id, voice_client in music_bot.voice_clients.items():
-                try:
-                    detail = {
-                        "guild_id": str(guild_id),
-                        "connected": voice_client.is_connected(),
-                        "playing": voice_client.is_playing(),
-                        "paused": voice_client.is_paused()
-                    }
-                    if hasattr(voice_client, 'channel') and voice_client.channel:
-                        detail["channel"] = voice_client.channel.name
-                    voice_details.append(detail)
-                except Exception as e:
-                    voice_details.append({"guild_id": str(guild_id), "error": str(e)})
-            
-            status["voice_details"] = voice_details
-    else:
-        status.update({
-            "status": "starting",
-            "guilds": 0,
-            "users": 0
-        })
-    
-    return web.json_response(status)
-
-async def start_web_server():
-    """Start the web server for Render.com"""
-    app = web.Application()
-    app.router.add_get('/', health_check)
-    app.router.add_get('/health', health_check)
-    app.router.add_get('/status', bot_status)
-    
-    # Get port from environment variable (Render.com sets this)
-    port = int(os.getenv('PORT', 10000))
-    
-    print(f"[RENDER.COM] Starting web server on port {port}")
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    print(f"[RENDER.COM] Web server started successfully on 0.0.0.0:{port}")
-
-async def main():
-    """Main function to run both bot and web server with enhanced error handling"""
-    print("[RENDER.COM] Starting Dogbot for Render.com deployment...")
-    print(f"[RENDER.COM] Start time: {datetime.now()}")
-    
-    # Validate token
-    if not token:
-        print("[RENDER.COM] ERROR: DISCORD_TOKEN environment variable not set!")
-        return
-    
-    # Start the web server
-    await start_web_server()
-    
-    # Enhanced bot startup with connection monitoring
-    print("[RENDER.COM] Starting Discord bot with connection monitoring...")
-    
-    # Create a task to monitor the bot's overall health
-    async def connection_monitor():
-        """Monitor bot connection and log status"""
-        monitor_count = 0
-        while True:
-            try:
-                await asyncio.sleep(600)  # Every 10 minutes
-                monitor_count += 1
-                
-                print(f"[CONNECTION_MONITOR] Status check #{monitor_count} at {datetime.now()}")
-                print(f"[CONNECTION_MONITOR] Bot ready: {bot.is_ready()}")
-                print(f"[CONNECTION_MONITOR] Latency: {bot.latency:.2f}s")
-                
-                if music_bot:
-                    active_connections = len(music_bot.voice_clients)
-                    playing_guilds = sum(1 for playing in music_bot.is_playing.values() if playing)
-                    print(f"[CONNECTION_MONITOR] Voice connections: {active_connections}, Playing: {playing_guilds}")
-                
-                # Check for potential memory leaks
-                import gc
-                gc.collect()
-                
-            except Exception as e:
-                print(f"[CONNECTION_MONITOR] Error in connection monitor: {e}")
-                await asyncio.sleep(60)
-    
-    # Start connection monitor
-    monitor_task = asyncio.create_task(connection_monitor())
-    
-    try:
-        # Start the bot with better error handling
-        await bot.start(token)
-    except discord.ConnectionClosed as e:
-        print(f"[RENDER.COM] ❌ Discord connection closed: {e}")
-        print(f"[RENDER.COM] Connection closed at: {datetime.now()}")
-        raise
-    except discord.LoginFailure as e:
-        print(f"[RENDER.COM] ❌ Discord login failed: {e}")
-        raise
-    except Exception as e:
-        print(f"[RENDER.COM] ❌ Unexpected error starting bot: {e}")
-        print(f"[RENDER.COM] Error time: {datetime.now()}")
-        import traceback
-        traceback.print_exc()
-        raise
-    finally:
-        # Clean up monitor task
-        if not monitor_task.done():
-            monitor_task.cancel()
-            try:
-                await monitor_task
-            except asyncio.CancelledError:
-                pass
-
-# Start everything
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("[RENDER.COM] Bot stopped by user")
-        print(f"[RENDER.COM] Shutdown time: {datetime.now()}")
-    except discord.ConnectionClosed as e:
-        print(f"[RENDER.COM] ❌ Bot disconnected: {e}")
-        print(f"[RENDER.COM] Disconnect time: {datetime.now()}")
-        print("[RENDER.COM] This may be due to network issues or Discord API problems")
-    except discord.LoginFailure as e:
-        print(f"[RENDER.COM] ❌ Login failed: {e}")
-        print("[RENDER.COM] Check your DISCORD_TOKEN environment variable")
-    except Exception as e:
-        print(f"[RENDER.COM] ❌ Failed to start bot: {e}")
-        print(f"[RENDER.COM] Error time: {datetime.now()}")
-        import traceback
-        traceback.print_exc()
-        # Don't raise here so Render.com can restart the service
-        print("[RENDER.COM] Bot will restart automatically")
