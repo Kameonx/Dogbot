@@ -2032,7 +2032,7 @@ async def on_voice_state_update(member, before, after):
             await asyncio.sleep(1)
             
             # Sync voice client state if music bot exists
-            if music_bot:
+            if music_bot and after.channel:
                 guild_id = after.channel.guild.id
                 # Find the actual voice client and update our records
                 for vc in bot.voice_clients:
