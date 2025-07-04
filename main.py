@@ -76,7 +76,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         
         ytdl_format_options = {
-            'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio[acodec=opus]/bestaudio',  # Prefer opus/webm for stability
+            'format': 'bestaudio/best',  # Even simpler format selection for maximum compatibility
             'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
             'restrictfilenames': True,
             'noplaylist': True,
@@ -86,17 +86,15 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'quiet': True,
             'no_warnings': True,
             'default_search': 'auto',
-            'source_address': '0.0.0.0',
             'extract_flat': False,
             'cookiefile': 'cookies.txt',
             'prefer_ffmpeg': True,
             'keepvideo': False,
             'user_agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'http_chunk_size': 262144,  # Smaller 256KB chunks for better network stability on Render.com
-            'socket_timeout': 30,  # Shorter timeout for faster failure detection
-            'retries': 5,  # Fewer retries for faster error detection
-            'fragment_retries': 5,  # Fewer fragment retries
-            'retry_sleep': 1,  # Shorter sleep between retries
+            'socket_timeout': 30,  # Conservative timeout
+            'retries': 5,  # More retries for better reliability
+            'fragment_retries': 5,
+            'retry_sleep': 1,
         }
 
         # For cloud deployment (Render.com), use minimal FFmpeg options
@@ -123,28 +121,22 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             print(f"Creating audio source from: {filename}")
             print(f"Stream mode: {stream}")
             
-            # Ultra-resilient FFmpeg options optimized for Render.com cloud deployment with TLS fixes
+            # Ultra-conservative FFmpeg options for maximum Render.com compatibility
+            # Removed all potentially unsupported options:
+            # - No reconnect_streamed (not in older FFmpeg)
+            # - No reconnect_delay_max (not in older FFmpeg) 
+            # - No fflags +discardcorrupt (might not be supported)
+            # - No protocol_whitelist (might cause issues)
+            # Only using the most basic, universally supported options
             before_options = (
                 '-reconnect 1 '
-                '-reconnect_streamed 1 '
-                '-reconnect_delay_max 1 '  # Even faster recovery - 1 second max
-                '-reconnect_at_eof 1 '
-                '-multiple_requests 1 '
-                '-rw_timeout 10000000 '  # Reduced to 10 second timeout for even faster failover
-                '-fflags +discardcorrupt+fastseek+genpts+igndts '  # Ignore DTS for better stream handling
-                '-avoid_negative_ts make_zero '
-                '-protocol_whitelist file,http,https,tcp,tls,pipe '  # Add pipe protocol
-                '-tls_verify 0 '  # Disable TLS certificate verification for cloud environments
+                '-rw_timeout 20000000 '  # 20 second timeout for better stability
                 '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" '
-                '-headers "Connection: close" '  # Force connection close to prevent hanging
-                '-loglevel fatal '  # Reduce log verbosity to fatal only for cleaner output
-                '-thread_queue_size 2048 '  # Double the buffer for network stability
-                '-analyzeduration 1000000 '  # Reduce analysis time for faster startup
-                '-probesize 1000000 '  # Reduce probe size for faster startup
+                '-loglevel warning '  # Less verbose logging
             )
             
-            # Simplified output options - let Discord.py handle most configuration
-            options = '-vn -sn'  # No video, no subtitles
+            # Simplified output options - maximum compatibility with all FFmpeg versions
+            options = '-vn'  # Only disable video, let Discord.py handle the rest
             
             # Create the audio source with enhanced network stability
             source = discord.FFmpegPCMAudio(
@@ -198,16 +190,21 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 return await cls.from_url_fallback(url, loop=loop)
             except Exception as fallback_error:
                 print(f"Fallback also failed: {fallback_error}")
-                # Final fallback - get metadata from YouTube API if available
-                if youtube_api:
-                    try:
-                        video_id = youtube_api.extract_video_id(url)
-                        if video_id:
-                            video_details = await youtube_api.get_video_details(video_id)
-                            title = video_details['snippet']['title'] if video_details else 'Unknown Title'
-                            raise ValueError(f"Failed to extract audio from: {title}")
-                    except:
-                        pass
+                # Ultimate fallback - try with absolutely minimal FFmpeg options
+                try:
+                    return await cls.from_url_minimal(url, loop=loop)
+                except Exception as minimal_error:
+                    print(f"Minimal fallback also failed: {minimal_error}")
+                    # Final fallback - get metadata from YouTube API if available
+                    if youtube_api:
+                        try:
+                            video_id = youtube_api.extract_video_id(url)
+                            if video_id:
+                                video_details = await youtube_api.get_video_details(video_id)
+                                title = video_details['snippet']['title'] if video_details else 'Unknown Title'
+                                raise ValueError(f"Failed to extract audio from: {title}")
+                        except:
+                            pass
                 raise ValueError(f"Failed to extract audio from YouTube URL: {str(e)}")
 
     @classmethod
@@ -240,14 +237,14 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in fallback data")
                 
-            # Ultra-optimized FFmpeg options for Render.com cloud deployment
+            # Conservative fallback FFmpeg options
             source = discord.FFmpegPCMAudio(
                 data['url'],
                 before_options=(
-                    '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 1 '
-                    '-rw_timeout 10000000 -fflags +discardcorrupt+fastseek+genpts+igndts '
-                    '-protocol_whitelist file,http,https,tcp,tls,pipe '
-                    '-tls_verify 0 -loglevel fatal -thread_queue_size 2048'
+                    '-reconnect 1 '
+                    '-rw_timeout 20000000 '  # 20 second timeout for better stability
+                    '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" '
+                    '-loglevel warning'  # Less verbose logging
                 ),
                 options='-vn'
             )
@@ -255,6 +252,38 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             
         except Exception as e:
             raise ValueError(f"All extraction methods failed: {str(e)}")
+
+    @classmethod
+    async def from_url_minimal(cls, url, *, loop=None):
+        """Ultimate fallback: use absolutely minimal FFmpeg options for maximum compatibility"""
+        if loop is None:
+            loop = asyncio.get_event_loop()
+        try:
+            ytdl_minimal = yt_dlp.YoutubeDL({
+                'format': 'bestaudio/best',
+                'quiet': True,
+                'no_warnings': True,
+                'cookiefile': 'cookies.txt',
+                'prefer_ffmpeg': True,
+            })
+            def extract_minimal():
+                return ytdl_minimal.extract_info(url, download=False)
+            data = await loop.run_in_executor(None, extract_minimal)
+            if data is None:
+                raise ValueError("No data from minimal extraction")
+            if 'entries' in data and data['entries']:
+                data = data['entries'][0]
+            if not data or 'url' not in data:
+                raise ValueError("No playable URL in minimal data")
+            # Absolutely minimal FFmpeg options
+            source = discord.FFmpegPCMAudio(
+                data['url'],
+                before_options='-loglevel warning',
+                options='-vn'
+            )
+            return cls(source, data=data)
+        except Exception as e:
+            raise ValueError(f"Minimal extraction failed: {str(e)}")
 
 class MusicBot:
     """Music bot functionality"""
@@ -762,7 +791,7 @@ class MusicBot:
                 voice_client.stop()
                 # No delay - instant transition
         
-        max_retries = 3  # Increased retries for better network resilience
+        max_retries = 5  # More retries for better reliability on cloud platforms
         retries = 0
         last_error = None
         
@@ -791,9 +820,9 @@ class MusicBot:
                     error_str = str(source_error).lower()
                     print(f"[RENDER_MUSIC] Failed to create audio source: {source_error}")
                     
-                    # Handle specific network/TLS errors more gracefully with faster recovery
+                    # Handle network errors more patiently - don't skip songs too quickly
                     if any(keyword in error_str for keyword in ['tls', 'ssl', 'certificate', 'connection reset', 'network', 'timeout', 'input/output', 'broken pipe', 'end of file']):
-                        print(f"[NETWORK_ERROR] Network/TLS error detected, fast-skipping to next song...")
+                        print(f"[NETWORK_ERROR] Network error detected, retrying with patience...")
                         
                         # Track network errors for this guild
                         current_time = asyncio.get_event_loop().time()
@@ -802,24 +831,22 @@ class MusicBot:
                         
                         # Reset error count if it's been a while since last error
                         last_error = self.last_error_time.get(guild_id, 0)
-                        if current_time - last_error > 180:  # Reduced to 3 minutes
+                        if current_time - last_error > 300:  # 5 minutes
                             self.network_error_count[guild_id] = 1
                         
-                        # If too many network errors, skip several songs to avoid problematic region
+                        # Only skip songs if we have extremely persistent issues (raised threshold)
                         error_count = self.network_error_count.get(guild_id, 0)
-                        if error_count >= 2:  # More aggressive skipping after just 2 errors
-                            print(f"[NETWORK_ERROR] Multiple network errors ({error_count}), jumping ahead in playlist")
-                            current_pos = self.shuffle_positions.get(guild_id, 0)
-                            # Jump ahead 3-7 songs to avoid problematic content/servers
-                            jump_amount = random.randint(3, 7)
-                            self.shuffle_positions[guild_id] = (current_pos + jump_amount) % len(MUSIC_PLAYLISTS)
-                            self.network_error_count[guild_id] = 0  # Reset counter
-                        else:
+                        if error_count >= 8:  # Even more patient - allow 8 attempts before skipping
+                            print(f"[NETWORK_ERROR] Extremely persistent network errors ({error_count}), reluctantly skipping this song")
                             current_pos = self.shuffle_positions.get(guild_id, 0)
                             self.shuffle_positions[guild_id] = (current_pos + 1) % len(MUSIC_PLAYLISTS)
+                            self.network_error_count[guild_id] = 0  # Reset counter
+                        
                         retries += 1
-                        # Instant recovery for network issues
-                        await asyncio.sleep(0.5 + (error_count * 0.2))  # Minimal delay with slight backoff
+                        # Give even more time for network recovery, especially on cloud platforms
+                        wait_time = min(5 + (error_count * 1), 15)  # Up to 15 seconds for very problematic songs
+                        print(f"[NETWORK_ERROR] Waiting {wait_time} seconds for network recovery...")
+                        await asyncio.sleep(wait_time)
                         continue
                     else:
                         # For other errors, skip to next song instantly
