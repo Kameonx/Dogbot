@@ -602,31 +602,19 @@ class MusicBot:
         # Set manual skip flag to prevent race conditions with auto-advance
         self.manual_skip_in_progress[ctx.guild.id] = True
         
-        # Comprehensive cleanup for manual skip to prevent corrupted audio
+        # Instant cleanup for manual skip - no delays for instant transitions
         if voice_client.is_playing() or voice_client.is_paused():
-            print(f"[NEXT] Stopping current audio for manual skip...")
+            print(f"[NEXT] Instant stopping current audio for manual skip...")
             voice_client.stop()
-            
-            # Wait for voice client to fully stop
-            print(f"[NEXT] Waiting for complete audio cleanup...")
-            await asyncio.sleep(2.0)  # Increased wait time
-            
-            # Double-check that audio is fully stopped
-            retry_count = 0
-            while (voice_client.is_playing() or voice_client.is_paused()) and retry_count < 5:
-                print(f"[NEXT] Audio still playing, forcing stop (attempt {retry_count + 1})")
-                voice_client.stop()
-                await asyncio.sleep(0.5)
-                retry_count += 1
+            # No wait time - instant transition
         
         if self.is_playing.get(ctx.guild.id, False):
-            # Use skip_cleanup=True since we already did comprehensive cleanup above
+            # Use skip_cleanup=True since we already did instant cleanup above
             await self._play_current_song(ctx.guild.id, skip_cleanup=True)
         else:
             await ctx.send(f"⏭️ Next song queued. Use `!start` to play.")
         
-        # Clear manual skip flag after a small delay to ensure playback starts
-        await asyncio.sleep(0.5)
+        # Clear manual skip flag instantly
         self.manual_skip_in_progress[ctx.guild.id] = False
     
     async def previous_song(self, ctx):
@@ -658,32 +646,20 @@ class MusicBot:
         # Set manual skip flag to prevent race conditions with auto-advance
         self.manual_skip_in_progress[ctx.guild.id] = True
         
-        # Comprehensive cleanup for manual skip to prevent corrupted audio
+        # Instant cleanup for manual skip - no delays for instant transitions
         if voice_client.is_playing() or voice_client.is_paused():
-            print(f"[PREVIOUS] Stopping current audio for manual skip...")
+            print(f"[PREVIOUS] Instant stopping current audio for manual skip...")
             voice_client.stop()
-            
-            # Wait for voice client to fully stop
-            print(f"[PREVIOUS] Waiting for complete audio cleanup...")
-            await asyncio.sleep(2.0)  # Increased wait time
-            
-            # Double-check that audio is fully stopped
-            retry_count = 0
-            while (voice_client.is_playing() or voice_client.is_paused()) and retry_count < 5:
-                print(f"[PREVIOUS] Audio still playing, forcing stop (attempt {retry_count + 1})")
-                voice_client.stop()
-                await asyncio.sleep(0.5)
-                retry_count += 1
+            # No wait time - instant transition
         
         if self.is_playing.get(ctx.guild.id, False):
             await ctx.send(f"⏮️ Going back to previous song...")
-            # Use skip_cleanup=True since we already did comprehensive cleanup above
+            # Use skip_cleanup=True since we already did instant cleanup above
             await self._play_current_song(ctx.guild.id, skip_cleanup=True)
         else:
             await ctx.send(f"⏮️ Previous song queued. Use `!start` to play.")
         
-        # Clear manual skip flag after a small delay to ensure playback starts
-        await asyncio.sleep(0.5)
+        # Clear manual skip flag instantly
         self.manual_skip_in_progress[ctx.guild.id] = False
     
     async def get_current_song_info(self, ctx):
@@ -774,17 +750,17 @@ class MusicBot:
         
         # Only clean up if not already done by manual skip commands
         if not skip_cleanup:
-            # Minimal cleanup to reduce delays between songs
+            # Ultra-minimal cleanup for instant transitions
             if voice_client.is_playing() or voice_client.is_paused():
-                print(f"[QUICK_STOP] Fast stopping for next song...")
+                print(f"[INSTANT_STOP] Instant stopping for next song...")
                 voice_client.stop()
-                await asyncio.sleep(0.1)  # Ultra short delay for faster song transitions
+                # No delay - instant transition
         else:
-            # Even with skip_cleanup=True, do a quick safety check
+            # Even with skip_cleanup=True, do instant safety check
             if voice_client.is_playing() or voice_client.is_paused():
-                print(f"[SKIP_CLEANUP] Quick safety check - forcing stop...")
+                print(f"[SKIP_CLEANUP] Instant safety check - forcing stop...")
                 voice_client.stop()
-                await asyncio.sleep(0.05)  # Minimal wait
+                # No delay - instant transition
         
         max_retries = 3  # Increased retries for better network resilience
         retries = 0
@@ -842,15 +818,15 @@ class MusicBot:
                             current_pos = self.shuffle_positions.get(guild_id, 0)
                             self.shuffle_positions[guild_id] = (current_pos + 1) % len(MUSIC_PLAYLISTS)
                         retries += 1
-                        # Much shorter delay for network issues to minimize disruption
-                        await asyncio.sleep(1 + (error_count * 0.5))  # Faster recovery with minimal backoff
+                        # Instant recovery for network issues
+                        await asyncio.sleep(0.5 + (error_count * 0.2))  # Minimal delay with slight backoff
                         continue
                     else:
-                        # For other errors, skip to next song
+                        # For other errors, skip to next song instantly
                         current_pos = self.shuffle_positions.get(guild_id, 0)
                         self.shuffle_positions[guild_id] = (current_pos + 1) % len(MUSIC_PLAYLISTS)
                         retries += 1
-                        await asyncio.sleep(0.2)  # Minimal delay for non-network errors
+                        # No delay for non-network errors - instant skip
                         continue
                 
                 def after_playing(error):
@@ -898,9 +874,10 @@ class MusicBot:
                         # Schedule next song to play without blocking (ensures infinite loop)
                         async def play_next_song():
                             try:
-                                # Much shorter pause between songs for seamless playback
-                                delay = 1.0 if error and any(keyword in str(error).lower() for keyword in ['network', 'input/output', 'connection']) else 0.5
-                                await asyncio.sleep(delay)
+                                # Instant transitions for seamless music experience
+                                delay = 0.2 if error and any(keyword in str(error).lower() for keyword in ['network', 'input/output', 'connection']) else 0.0
+                                if delay > 0:
+                                    await asyncio.sleep(delay)
                                 
                                 # Simple check - if we're still playing, continue
                                 if self.is_playing.get(guild_id, False):
@@ -943,11 +920,11 @@ class MusicBot:
                         print(f"[VOICE_ERROR] No valid voice channel for guild {guild_id}")
                         self.is_playing[guild_id] = False
                         return
-                    # Triple check before playing to avoid "already playing" errors
+                    # Instant check before playing to avoid "already playing" errors
                     if voice_client.is_playing() or voice_client.is_paused():
-                        print(f"[SAFETY_CHECK] Audio still playing before new play attempt, forcing stop...")
+                        print(f"[INSTANT_CHECK] Audio still playing before new play attempt, forcing stop...")
                         voice_client.stop()
-                        await asyncio.sleep(0.2)  # Minimal time for stop to complete
+                        # No delay - instant override
                     
                     voice_client.play(player, after=after_playing)
                     print(f"[CLOUD_MUSIC] Successfully started playing: {player.title}")
