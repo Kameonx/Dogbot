@@ -127,26 +127,16 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             print(f"Creating audio source from: {filename}")
             print(f"Stream mode: {stream}")
             
-            # Ultra-conservative FFmpeg options for maximum Render.com compatibility
-            # Enhanced for TLS connection stability and YouTube streaming
-            # Added DTS error handling to prevent log spam
+            # Simplified FFmpeg options for Render.com web service compatibility
+            # Using minimal options to avoid conflicts with default settings
             before_options = (
                 '-reconnect 1 '
-                '-reconnect_at_eof 1 '
-                '-reconnect_streamed 1 '
-                '-reconnect_delay_max 5 '
-                '-rw_timeout 30000000 '  # 30 second timeout for better stability
-                '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" '
-                '-headers "Accept-Language: en-US,en;q=0.9" '
-                '-multiple_requests 1 '
-                '-seekable 0 '
-                '-fflags +genpts+discardcorrupt '  # Generate PTS and discard corrupt packets
-                '-avoid_negative_ts make_zero '  # Fix timestamp issues
-                '-loglevel fatal '  # Only show fatal errors to reduce log spam
+                '-rw_timeout 20000000 '
+                '-loglevel fatal '
             )
             
-            # Enhanced output options to handle DTS/timing issues
-            options = '-vn -ar 48000 -ac 2 -f s16le -acodec pcm_s16le'  # Force consistent audio format
+            # Let Discord.py handle audio format - avoid duplicate options
+            options = '-vn'
             
             # Create the audio source with enhanced network stability
             source = discord.FFmpegPCMAudio(
@@ -251,22 +241,15 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in fallback data")
                 
-            # Enhanced fallback FFmpeg options for TLS stability and DTS error handling
+            # Enhanced fallback FFmpeg options - minimal for Render.com compatibility
             source = discord.FFmpegPCMAudio(
                 data['url'],
                 before_options=(
                     '-reconnect 1 '
-                    '-reconnect_at_eof 1 '
-                    '-reconnect_streamed 1 '
-                    '-reconnect_delay_max 5 '
-                    '-rw_timeout 30000000 '
-                    '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" '
-                    '-multiple_requests 1 '
-                    '-fflags +genpts+discardcorrupt '
-                    '-avoid_negative_ts make_zero '
+                    '-rw_timeout 20000000 '
                     '-loglevel fatal'
                 ),
-                options='-vn -ar 48000 -ac 2 -f s16le -acodec pcm_s16le'
+                options='-vn'
             )
             return cls(source, data=data)
             
@@ -295,15 +278,15 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 data = data['entries'][0]
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in minimal data")
-            # Minimal FFmpeg options with DTS error suppression
+            # Minimal FFmpeg options for maximum compatibility with Render.com
             source = discord.FFmpegPCMAudio(
                 data['url'],
                 before_options=(
-                    '-fflags +genpts+discardcorrupt '
-                    '-avoid_negative_ts make_zero '
+                    '-reconnect 1 '
+                    '-rw_timeout 20000000 '
                     '-loglevel fatal'
                 ),
-                options='-vn -ar 48000 -ac 2 -f s16le -acodec pcm_s16le'
+                options='-vn'
             )
             return cls(source, data=data)
         except Exception as e:
