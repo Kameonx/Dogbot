@@ -134,7 +134,6 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 '-fflags +discardcorrupt+fastseek+genpts+igndts '  # Ignore DTS for better stream handling
                 '-avoid_negative_ts make_zero '
                 '-protocol_whitelist file,http,https,tcp,tls,pipe '  # Add pipe protocol
-                '-http_persistent 0 '  # Disable persistent connections to avoid TLS issues
                 '-tls_verify 0 '  # Disable TLS certificate verification for cloud environments
                 '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" '
                 '-headers "Connection: close" '  # Force connection close to prevent hanging
@@ -248,7 +247,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                     '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 1 '
                     '-rw_timeout 10000000 -fflags +discardcorrupt+fastseek+genpts+igndts '
                     '-protocol_whitelist file,http,https,tcp,tls,pipe '
-                    '-http_persistent 0 -tls_verify 0 -loglevel fatal -thread_queue_size 2048'
+                    '-tls_verify 0 -loglevel fatal -thread_queue_size 2048'
                 ),
                 options='-vn'
             )
