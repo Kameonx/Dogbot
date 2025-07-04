@@ -1967,31 +1967,85 @@ async def on_message(message):
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    """Track voice state changes to detect when the bot is disconnected"""
+    """Enhanced voice state tracking with automatic reconnection and music resumption"""
     if member == bot.user:
         if before.channel and not after.channel:
             # Bot was disconnected from voice channel
             guild_id = before.channel.guild.id
-            print(f"[VOICE_STATE] Bot was disconnected from {before.channel.name} in guild {guild_id}")
+            channel_name = before.channel.name
+            print(f"[VOICE_DISCONNECT] Bot was disconnected from {channel_name} in guild {guild_id}")
             
-            # Add a small delay to avoid race conditions with reconnection attempts
-            await asyncio.sleep(2)
+            # Add a small delay to avoid race conditions
+            await asyncio.sleep(3)
             
-            # Clean up music bot state if it exists, but be more conservative
+            # Check if music was playing before disconnection
+            was_playing = False
+            current_shuffle_pos = 0
+            
             if music_bot and guild_id in music_bot.voice_clients:
-                print(f"[VOICE_STATE] Cleaning up music bot state for guild {guild_id}")
-                # Clean up voice client reference
+                was_playing = music_bot.is_playing.get(guild_id, False)
+                current_shuffle_pos = music_bot.shuffle_positions.get(guild_id, 0)
+                
+                print(f"[VOICE_DISCONNECT] Music was {'playing' if was_playing else 'stopped'} before disconnect")
+                
+                # Clean up the disconnected voice client reference
                 del music_bot.voice_clients[guild_id]
-                # Stop playback flag to prevent health check conflicts
+                
+                # Temporarily disable playing flag to prevent conflicts during reconnection
                 if guild_id in music_bot.is_playing:
                     music_bot.is_playing[guild_id] = False
-                # Keep other state (shuffle playlists, positions, etc.) for potential manual reconnection
-                print(f"[VOICE_STATE] State cleaned up, manual reconnection will be required")
+                
+                # Keep shuffle state for resume - DON'T delete it
+                print(f"[VOICE_DISCONNECT] Preserved shuffle state at position {current_shuffle_pos + 1}")
+            
+            # Attempt automatic reconnection if music was playing
+            if was_playing:
+                print(f"[AUTO_RECONNECT] Attempting to reconnect and resume music...")
+                try:
+                    # Try to reconnect to the same channel
+                    voice_client = await before.channel.connect()
+                    print(f"[AUTO_RECONNECT] Successfully reconnected to {channel_name}")
+                    
+                    # Restore music bot state
+                    if music_bot:
+                        music_bot.voice_clients[guild_id] = voice_client
+                        
+                        # Wait a moment for connection to stabilize
+                        await asyncio.sleep(2)
+                        
+                        # Resume music playback
+                        music_bot.is_playing[guild_id] = True
+                        print(f"[AUTO_RECONNECT] Resuming music at shuffle position {current_shuffle_pos + 1}")
+                        
+                        # Start playing current song
+                        asyncio.create_task(music_bot._play_current_song(guild_id))
+                        
+                except Exception as reconnect_error:
+                    print(f"[AUTO_RECONNECT] Failed to reconnect automatically: {reconnect_error}")
+                    print(f"[AUTO_RECONNECT] Manual reconnection will be required")
+        
         elif not before.channel and after.channel:
             # Bot connected to voice channel
-            print(f"[VOICE_STATE] Bot connected to {after.channel.name}")
+            print(f"[VOICE_CONNECT] Bot connected to {after.channel.name}")
+            
             # Add a short delay to let the connection stabilize
             await asyncio.sleep(1)
+            
+            # Sync voice client state if music bot exists
+            if music_bot:
+                guild_id = after.channel.guild.id
+                # Find the actual voice client and update our records
+                for vc in bot.voice_clients:
+                    try:
+                        # Safely check if this voice client belongs to our guild
+                        vc_guild_id = getattr(getattr(vc, 'channel', None), 'guild', None)
+                        if vc_guild_id and getattr(vc_guild_id, 'id', None) == guild_id:
+                            music_bot.voice_clients[guild_id] = vc
+                            print(f"[VOICE_SYNC] Synced voice client for guild {guild_id}")
+                            break
+                    except (AttributeError, TypeError):
+                        # Skip voice clients that don't have the expected attributes
+                        continue
 
 # Helper function to check for admin/moderator permissions
 def has_admin_or_moderator_role(ctx):
