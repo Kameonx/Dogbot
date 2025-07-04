@@ -329,7 +329,7 @@ class MusicBot:
                     if auto_start:
                         await ctx.send("🎵 I'm already in your voice channel! Starting music...")
                         if not self.is_playing.get(ctx.guild.id, False):
-                            await self.play_music(ctx)
+                            await self.play_music(ctx, from_auto_start=True)
                     else:
                         await ctx.send("🎵 I'm already in your voice channel!")
                     return voice_client
@@ -339,7 +339,7 @@ class MusicBot:
                         if auto_start:
                             await ctx.send(f"🎵 Moved to {channel.name} and starting music!")
                             if not self.is_playing.get(ctx.guild.id, False):
-                                await self.play_music(ctx)
+                                await self.play_music(ctx, from_auto_start=True)
                         else:
                             await ctx.send(f"🎵 Moved to {channel.name}!")
                         return voice_client
@@ -365,12 +365,17 @@ class MusicBot:
             self.current_songs[ctx.guild.id] = 0
             self.is_playing[ctx.guild.id] = False
             self.manual_skip_in_progress[ctx.guild.id] = False  # Initialize flag
+            # Initialize queue properties
+            if ctx.guild.id not in self.queued_songs:
+                self.queued_songs[ctx.guild.id] = []
+            if ctx.guild.id not in self.playing_queued_song:
+                self.playing_queued_song[ctx.guild.id] = False
             
             if auto_start:
                 await ctx.send(f"🎵 Joined {channel.name} and starting music in shuffle mode!")
                 # Give a moment for voice client to fully connect
                 await asyncio.sleep(1)
-                await self.play_music(ctx)
+                await self.play_music(ctx, from_auto_start=True)
             else:
                 await ctx.send(f"🎵 Joined {channel.name}! Ready to play music in shuffle mode!")
             return voice_client
@@ -444,10 +449,17 @@ class MusicBot:
         
         print(f"[VOICE_CLEANUP] Cleaned up all voice data for guild {guild_id}")
     
-    async def play_music(self, ctx):
+    async def play_music(self, ctx, from_auto_start=False):
         """Start playing music from the shuffled playlist"""
-        # First try to sync voice clients in case of connection issues
-        if not self._sync_voice_clients(ctx.guild.id):
+        # If called from auto-start, skip the sync check since we just connected
+        if not from_auto_start:
+            # First try to sync voice clients in case of connection issues
+            if not self._sync_voice_clients(ctx.guild.id):
+                await ctx.send("❌ I'm not in a voice channel! Use `!join` first.")
+                return
+        
+        # Get voice client (should exist since we just joined or synced)
+        if ctx.guild.id not in self.voice_clients:
             await ctx.send("❌ I'm not in a voice channel! Use `!join` first.")
             return
             
@@ -460,6 +472,7 @@ class MusicBot:
         
         if not MUSIC_PLAYLISTS:
             await ctx.send("❌ No music playlist configured!")
+            print(f"[PLAY_MUSIC] No songs in MUSIC_PLAYLISTS!")
             return
             
         # Stop current music if playing
@@ -468,15 +481,20 @@ class MusicBot:
             
         # Ensure we have a shuffle playlist
         if ctx.guild.id not in self.shuffle_playlists:
+            print(f"[PLAY_MUSIC] Generating shuffle playlist for guild {ctx.guild.id}")
             self._generate_shuffle_playlist(ctx.guild.id)
+        else:
+            print(f"[PLAY_MUSIC] Using existing shuffle playlist for guild {ctx.guild.id}")
             
         self.is_playing[ctx.guild.id] = True
+        print(f"[PLAY_MUSIC] Set is_playing=True for guild {ctx.guild.id}")
         
         # Get current song info for feedback
         current_pos = self.shuffle_positions.get(ctx.guild.id, 0)
         total_songs = len(MUSIC_PLAYLISTS)
         
         await ctx.send(f"🎵 Starting shuffled music stream... Playing song {current_pos + 1} of shuffle")
+        print(f"[PLAY_MUSIC] Starting playback for guild {ctx.guild.id}, position {current_pos + 1}")
         
         # Start playing the playlist
         await self._play_current_song(ctx.guild.id)
