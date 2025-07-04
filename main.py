@@ -91,11 +91,11 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'prefer_ffmpeg': True,
             'keepvideo': False,
             'user_agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'http_chunk_size': 524288,  # Smaller 512KB chunks for better network stability
-            'socket_timeout': 60,  # Increased timeout for better network reliability
-            'retries': 10,  # More retries for cloud reliability
-            'fragment_retries': 10,  # More fragment retries
-            'retry_sleep': 3,  # Sleep between retries
+            'http_chunk_size': 262144,  # Smaller 256KB chunks for better network stability on Render.com
+            'socket_timeout': 30,  # Shorter timeout for faster failure detection
+            'retries': 5,  # Fewer retries for faster error detection
+            'fragment_retries': 5,  # Fewer fragment retries
+            'retry_sleep': 1,  # Shorter sleep between retries
         }
 
         # For cloud deployment (Render.com), use minimal FFmpeg options
@@ -122,18 +122,27 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             print(f"Creating audio source from: {filename}")
             print(f"Stream mode: {stream}")
             
-            # Enhanced FFmpeg options for maximum network resilience on cloud platforms
+            # Ultra-resilient FFmpeg options optimized for Render.com cloud deployment with TLS fixes
             before_options = (
                 '-reconnect 1 '
                 '-reconnect_streamed 1 '
-                '-reconnect_delay_max 5 '
+                '-reconnect_delay_max 1 '  # Even faster recovery - 1 second max
                 '-reconnect_at_eof 1 '
                 '-multiple_requests 1 '
-                '-rw_timeout 30000000 '  # 30 second timeout in microseconds
-                '-fflags +discardcorrupt+fastseek '  # Discard corrupt packets and seek fast
-                '-avoid_negative_ts make_zero '  # Handle timestamp issues
-                '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" '  # Better user agent
-                '-loglevel warning '  # Reduce FFmpeg log verbosity for cleaner logs
+                '-rw_timeout 10000000 '  # Reduced to 10 second timeout for even faster failover
+                '-fflags +discardcorrupt+fastseek+genpts+igndts '  # Ignore DTS for better stream handling
+                '-avoid_negative_ts make_zero '
+                '-protocol_whitelist file,http,https,tcp,tls,pipe '  # Add pipe protocol
+                '-http_persistent 0 '  # Disable persistent connections to avoid TLS issues
+                '-tls_verify 0 '  # Disable TLS certificate verification for cloud environments
+                '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" '
+                '-headers "Connection: close" '  # Force connection close to prevent hanging
+                '-loglevel fatal '  # Reduce log verbosity to fatal only for cleaner output
+                '-thread_queue_size 2048 '  # Double the buffer for network stability
+                '-analyzeduration 1000000 '  # Reduce analysis time for faster startup
+                '-probesize 1000000 '  # Reduce probe size for faster startup
+                '-max_reload 3 '  # Limit reload attempts
+                '-hls_time 2 '  # Smaller HLS segments for better recovery
             )
             
             # Simplified output options - let Discord.py handle most configuration
@@ -233,13 +242,14 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in fallback data")
                 
-            # Use optimized FFmpeg options for Render.com cloud deployment with enhanced reliability
+            # Ultra-optimized FFmpeg options for Render.com cloud deployment
             source = discord.FFmpegPCMAudio(
                 data['url'],
                 before_options=(
-                    '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 '
-                    '-rw_timeout 30000000 -fflags +discardcorrupt+fastseek '
-                    '-loglevel warning'
+                    '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 1 '
+                    '-rw_timeout 10000000 -fflags +discardcorrupt+fastseek+genpts+igndts '
+                    '-protocol_whitelist file,http,https,tcp,tls,pipe '
+                    '-http_persistent 0 -tls_verify 0 -loglevel fatal -thread_queue_size 2048'
                 ),
                 options='-vn'
             )
@@ -763,19 +773,19 @@ class MusicBot:
         
         # Only clean up if not already done by manual skip commands
         if not skip_cleanup:
-            # Clean up any existing audio BEFORE trying to play new song
+            # Minimal cleanup to reduce delays between songs
             if voice_client.is_playing() or voice_client.is_paused():
-                print(f"[RENDER.COM] Stopping existing audio for clean transition...")
+                print(f"[QUICK_STOP] Fast stopping for next song...")
                 voice_client.stop()
-                await asyncio.sleep(1.0)  # Longer delay for complete cleanup
+                await asyncio.sleep(0.1)  # Ultra short delay for faster song transitions
         else:
-            # Even with skip_cleanup=True, do a final safety check to prevent audio overlap
+            # Even with skip_cleanup=True, do a quick safety check
             if voice_client.is_playing() or voice_client.is_paused():
-                print(f"[SKIP_CLEANUP] Final safety check - audio still playing, forcing stop...")
+                print(f"[SKIP_CLEANUP] Quick safety check - forcing stop...")
                 voice_client.stop()
-                await asyncio.sleep(0.5)  # Brief wait to ensure stop takes effect
+                await asyncio.sleep(0.05)  # Minimal wait
         
-        max_retries = 2  # Reduced even further to prevent endless loops
+        max_retries = 3  # Increased retries for better network resilience
         retries = 0
         last_error = None
         
@@ -794,19 +804,19 @@ class MusicBot:
                         retries += 1
                         continue
                     
-                print(f"[CLOUD_MUSIC] Attempting to play: {url}")
+                print(f"[RENDER_MUSIC] Attempting to play: {url}")
                 
                 # Create audio source with enhanced error handling
                 try:
                     player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
-                    print(f"[CLOUD_MUSIC] Audio source created successfully: {player.title}")
+                    print(f"[RENDER_MUSIC] Audio source created successfully: {player.title}")
                 except Exception as source_error:
                     error_str = str(source_error).lower()
-                    print(f"[CLOUD_MUSIC] Failed to create audio source: {source_error}")
+                    print(f"[RENDER_MUSIC] Failed to create audio source: {source_error}")
                     
-                    # Handle specific network/TLS errors more gracefully
-                    if any(keyword in error_str for keyword in ['tls', 'ssl', 'certificate', 'connection reset', 'network', 'timeout', 'input/output', 'broken pipe']):
-                        print(f"[NETWORK_ERROR] Network/TLS error detected, trying next song...")
+                    # Handle specific network/TLS errors more gracefully with faster recovery
+                    if any(keyword in error_str for keyword in ['tls', 'ssl', 'certificate', 'connection reset', 'network', 'timeout', 'input/output', 'broken pipe', 'end of file']):
+                        print(f"[NETWORK_ERROR] Network/TLS error detected, fast-skipping to next song...")
                         
                         # Track network errors for this guild
                         current_time = asyncio.get_event_loop().time()
@@ -815,16 +825,16 @@ class MusicBot:
                         
                         # Reset error count if it's been a while since last error
                         last_error = self.last_error_time.get(guild_id, 0)
-                        if current_time - last_error > 300:  # 5 minutes
+                        if current_time - last_error > 180:  # Reduced to 3 minutes
                             self.network_error_count[guild_id] = 1
                         
                         # If too many network errors, skip several songs to avoid problematic region
                         error_count = self.network_error_count.get(guild_id, 0)
-                        if error_count >= 3:
+                        if error_count >= 2:  # More aggressive skipping after just 2 errors
                             print(f"[NETWORK_ERROR] Multiple network errors ({error_count}), jumping ahead in playlist")
                             current_pos = self.shuffle_positions.get(guild_id, 0)
-                            # Jump ahead 5-10 songs to avoid problematic content/servers
-                            jump_amount = random.randint(5, 10)
+                            # Jump ahead 3-7 songs to avoid problematic content/servers
+                            jump_amount = random.randint(3, 7)
                             self.shuffle_positions[guild_id] = (current_pos + jump_amount) % len(MUSIC_PLAYLISTS)
                             self.network_error_count[guild_id] = 0  # Reset counter
                         else:
@@ -832,15 +842,15 @@ class MusicBot:
                             self.shuffle_positions[guild_id] = (current_pos + 1) % len(MUSIC_PLAYLISTS)
                         
                         retries += 1
-                        # Longer delay for network issues to let connection stabilize
-                        await asyncio.sleep(5 + (error_count * 2))  # Increasing delay with error count
+                        # Much shorter delay for network issues to minimize disruption
+                        await asyncio.sleep(1 + (error_count * 0.5))  # Faster recovery with minimal backoff
                         continue
                     else:
                         # For other errors, skip to next song
                         current_pos = self.shuffle_positions.get(guild_id, 0)
                         self.shuffle_positions[guild_id] = (current_pos + 1) % len(MUSIC_PLAYLISTS)
                         retries += 1
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(0.2)  # Minimal delay for non-network errors
                         continue
                 
                 def after_playing(error):
@@ -888,8 +898,8 @@ class MusicBot:
                         # Schedule next song to play without blocking (ensures infinite loop)
                         async def play_next_song():
                             try:
-                                # Longer pause after network errors to let connection stabilize
-                                delay = 5.0 if error and any(keyword in str(error).lower() for keyword in ['network', 'input/output', 'connection']) else 2.0
+                                # Much shorter pause between songs for seamless playback
+                                delay = 1.0 if error and any(keyword in str(error).lower() for keyword in ['network', 'input/output', 'connection']) else 0.5
                                 await asyncio.sleep(delay)
                                 
                                 # Simple check - if we're still playing, continue
@@ -937,7 +947,7 @@ class MusicBot:
                     if voice_client.is_playing() or voice_client.is_paused():
                         print(f"[SAFETY_CHECK] Audio still playing before new play attempt, forcing stop...")
                         voice_client.stop()
-                        await asyncio.sleep(1.5)  # Give time for stop to complete
+                        await asyncio.sleep(0.2)  # Minimal time for stop to complete
                     
                     voice_client.play(player, after=after_playing)
                     print(f"[CLOUD_MUSIC] Successfully started playing: {player.title}")
