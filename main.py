@@ -911,19 +911,28 @@ class MusicBot:
                         
                         # Enhanced delay logic for different error types
                         delay = 0.0
+                        advance_mode = "normal"
+                        
                         if error:
                             error_lower = str(error).lower()
                             if any(keyword in error_lower for keyword in ['tls', 'ssl', 'connection reset', 'pull function', 'reset by peer']):
                                 delay = 3.0  # Longer delay for TLS errors
+                                advance_mode = "TLS error recovery"
                                 print(f"[TLS_RECOVERY] TLS connection error detected, waiting {delay}s for recovery")
                             elif any(keyword in error_lower for keyword in ['network', 'input/output', 'connection', 'io error']):
                                 delay = 1.5  # Medium delay for network errors
+                                advance_mode = "network error recovery"
                                 print(f"[NETWORK_RECOVERY] Network error detected, waiting {delay}s for recovery")
                             else:
                                 delay = 0.5  # Brief delay for other errors
+                                advance_mode = "error recovery"
                                 print(f"[ERROR_RECOVERY] Other error detected, waiting {delay}s before retry")
+                        else:
+                            # Normal song completion - no delay needed
+                            delay = 0.0
+                            advance_mode = "normal"
                         
-                        print(f"[AUTO-ADVANCE] Moving to next song automatically (error recovery mode)")
+                        print(f"[AUTO-ADVANCE] Moving to next song automatically ({advance_mode} mode)")
                         # Move to next position in shuffle (thread-safe)
                         current_shuffle_pos = self.shuffle_positions.get(guild_id, 0)
                         next_shuffle_pos = current_shuffle_pos + 1
@@ -944,13 +953,19 @@ class MusicBot:
                                 if delay > 0:
                                     print(f"[RECOVERY_DELAY] Waiting {delay}s for connection stabilization...")
                                     await asyncio.sleep(delay)
+                                else:
+                                    # For normal completion, still add a tiny delay to prevent race conditions
+                                    await asyncio.sleep(0.1)
                                 
                                 # Enhanced verification - ensure we're still supposed to be playing
                                 if self.is_playing.get(guild_id, False) and not self.manual_skip_in_progress.get(guild_id, False):
-                                    print(f"[RECOVERY_CONTINUE] Starting next song after error recovery")
+                                    if error:
+                                        print(f"[RECOVERY_CONTINUE] Starting next song after error recovery")
+                                    else:
+                                        print(f"[NORMAL_CONTINUE] Starting next song after normal completion")
                                     await self._play_current_song(guild_id)
                                 else:
-                                    print(f"[RECOVERY_ABORT] Playback was stopped during recovery delay")
+                                    print(f"[ADVANCE_ABORT] Playback was stopped during transition")
                             except Exception as e:
                                 print(f"❌ Error playing next song during recovery: {e}")
                                 # Enhanced recovery attempt - try one more time with longer delay
