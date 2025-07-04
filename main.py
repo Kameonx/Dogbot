@@ -142,7 +142,6 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 '-analyzeduration 1000000 '  # Reduce analysis time for faster startup
                 '-probesize 1000000 '  # Reduce probe size for faster startup
                 '-max_reload 3 '  # Limit reload attempts
-                '-hls_time 2 '  # Smaller HLS segments for better recovery
             )
             
             # Simplified output options - let Discord.py handle most configuration
@@ -396,8 +395,8 @@ class MusicBot:
             voice_client = await channel.connect()
             print(f"[VOICE] Successfully connected to {channel.name}")
             
-            # Add delay to ensure connection is stable
-            await asyncio.sleep(2)
+            # Add longer delay to ensure connection is stable on Render.com
+            await asyncio.sleep(4)
             
             # Verify connection is still active
             if not voice_client.is_connected():
@@ -428,8 +427,8 @@ class MusicBot:
             
             if auto_start:
                 await ctx.send(f"🎵 Joined {channel.name} and starting music in shuffle mode!")
-                # Give more time for voice client to fully stabilize
-                await asyncio.sleep(3)
+                # Give more time for voice client to fully stabilize on cloud platforms
+                await asyncio.sleep(5)
                 await self.play_music(ctx, from_auto_start=True)
             else:
                 await ctx.send(f"🎵 Joined {channel.name}! Ready to play music in shuffle mode!")
@@ -549,7 +548,10 @@ class MusicBot:
         current_pos = self.shuffle_positions.get(ctx.guild.id, 0)
         total_songs = len(MUSIC_PLAYLISTS)
         
-        await ctx.send(f"🎵 Starting shuffled music stream... Playing song {current_pos + 1} of shuffle")
+        if from_auto_start:
+            await ctx.send(f"🎵 **AUTO-STARTING MUSIC!** 🔀 Shuffled playlist ready with {total_songs} songs!")
+        else:
+            await ctx.send(f"🎵 Starting shuffled music stream... Playing song {current_pos + 1} of shuffle")
         print(f"[PLAY_MUSIC] Starting playback for guild {ctx.guild.id}, position {current_pos + 1}")
         
         # Start playing the playlist
