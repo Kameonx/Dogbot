@@ -1161,30 +1161,40 @@ class MusicBot:
             title = 'Unknown Title'
         
         await ctx.send(f"🎵 Now Playing: {title}")
+        
         # Create audio source for specific URL
-        player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
+        try:
+            player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
+        except Exception as e:
+            await ctx.send(f"❌ Failed to load URL: {str(e)[:100]}...")
+            return
 
-        # Clean up any existing audio for a clean start
+        # Instant cleanup of any existing audio - no delays
         if voice_client.is_playing() or voice_client.is_paused():
+            print(f"[SPECIFIC_URL] Instantly stopping current audio...")
             voice_client.stop()
-            await asyncio.sleep(0.5)
+            # No delay - instant override
         
         # Temporarily disable shuffled playlist auto-play
         was_playing = was_playing_playlist
         self.is_playing[ctx.guild.id] = False
         
-        # Play the specific track with resume callback
+        # Play the specific track with instant resume callback
         def after_specific(error):
             if error:
                 print(f"Error playing specific URL: {error}")
-            elif was_playing:
-                # Resume shuffled playlist immediately
+            
+            # Always try to resume playlist if it was playing before (instant resume)
+            if was_playing:
+                print(f"[SPECIFIC_URL] Instantly resuming shuffled playlist...")
                 async def resume_playlist():
                     self.is_playing[ctx.guild.id] = True
+                    # No delay - instant resume to shuffled playlist
                     await self._play_current_song(ctx.guild.id)
                 asyncio.run_coroutine_threadsafe(resume_playlist(), self.bot.loop)
         
         voice_client.play(player, after=after_specific)
+        print(f"[SPECIFIC_URL] Started playing specific URL: {title}")
         return
     
     async def get_playback_status(self, ctx):
