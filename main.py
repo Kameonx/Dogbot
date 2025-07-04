@@ -1175,23 +1175,45 @@ class MusicBot:
             voice_client.stop()
             # No delay - instant override
         
-        # Temporarily disable shuffled playlist auto-play
-        was_playing = was_playing_playlist
+        # Temporarily disable shuffled playlist auto-play but remember state
+        original_playing_state = self.is_playing.get(ctx.guild.id, False)
         self.is_playing[ctx.guild.id] = False
         
-        # Play the specific track with instant resume callback
+        # Play the specific track with intelligent resume callback
         def after_specific(error):
             if error:
-                print(f"Error playing specific URL: {error}")
+                print(f"[SPECIFIC_URL] Error playing specific URL: {error}")
+            else:
+                print(f"[SPECIFIC_URL] Specific URL finished playing successfully")
             
-            # Always try to resume playlist if it was playing before (instant resume)
-            if was_playing:
-                print(f"[SPECIFIC_URL] Instantly resuming shuffled playlist...")
+            # Always try to resume playlist if it was playing before OR if user had auto-start enabled
+            should_resume = original_playing_state or was_playing_playlist
+            
+            if should_resume:
+                print(f"[SPECIFIC_URL] Resuming shuffled playlist (was_playing={original_playing_state}, had_playlist={was_playing_playlist})...")
+                
                 async def resume_playlist():
-                    self.is_playing[ctx.guild.id] = True
-                    # No delay - instant resume to shuffled playlist
-                    await self._play_current_song(ctx.guild.id)
+                    try:
+                        # Re-enable playlist mode
+                        self.is_playing[ctx.guild.id] = True
+                        
+                        # Ensure we have a valid shuffle playlist
+                        if ctx.guild.id not in self.shuffle_playlists:
+                            self._generate_shuffle_playlist(ctx.guild.id)
+                        
+                        # Resume from current shuffle position - instant resume
+                        await self._play_current_song(ctx.guild.id)
+                        print(f"[SPECIFIC_URL] Successfully resumed shuffled playlist")
+                        
+                    except Exception as resume_error:
+                        print(f"[SPECIFIC_URL] Failed to resume playlist: {resume_error}")
+                        # If resume fails, ensure playing state is correct
+                        self.is_playing[ctx.guild.id] = False
+                
+                # Schedule playlist resume
                 asyncio.run_coroutine_threadsafe(resume_playlist(), self.bot.loop)
+            else:
+                print(f"[SPECIFIC_URL] Not resuming playlist (was not playing before)")
         
         voice_client.play(player, after=after_specific)
         print(f"[SPECIFIC_URL] Started playing specific URL: {title}")
