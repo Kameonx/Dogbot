@@ -273,12 +273,12 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/I-4p8CQODqc?si=ERbQTJ5sgkhVfoUL", # Fire & Gold (Ship Wrek Remix)
     "https://youtu.be/OSI6JJaz35I?si=U8mjs5DsQyClNDyE", # Never
     "https://youtu.be/ymIseyI4OHU?si=qGFB971jtWPf07AX", # Major Lazer - Get Free ft. Amber (What So Not Remix)
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/hDbNhfvbHns?si=JjjQYLy5cUFqQA-7", # Flume - Numb & Getting Colder feat Kucka (Baauer Remix)
+    "https://youtu.be/fE7FTfpsb-w?si=ly8ommm6Sctbro3v", # Alison Wonderland - Take It To Reality (Official Video) ft. SAFIA
+    "https://youtu.be/94Rq2TX0wj4?si=233Z-lP67iZKqg6y", # Martin Solveig & GTA - Intoxicated (Official Music Video)
+    "https://youtu.be/GfCPFk8lyhM?si=WqyPZsvxpkVjMDXV", # ZHU x Skrillex x THEY. - Working For It 006 [Premiere]
+    "https://youtu.be/CfsuDaKce90?si=-44i1jEpv59a5wEs", # Faith In House (Detlef Remix)
+    "https://youtu.be/PvX9dt5Mats?si=hY98kV09mXdnbMRr", # Novacaine
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
