@@ -133,6 +133,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 '-fflags +discardcorrupt+fastseek '  # Discard corrupt packets and seek fast
                 '-avoid_negative_ts make_zero '  # Handle timestamp issues
                 '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" '  # Better user agent
+                '-loglevel warning '  # Reduce FFmpeg log verbosity for cleaner logs
             )
             
             # Simplified output options - let Discord.py handle most configuration
@@ -237,7 +238,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 data['url'],
                 before_options=(
                     '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 '
-                    '-rw_timeout 30000000 -fflags +discardcorrupt+fastseek'
+                    '-rw_timeout 30000000 -fflags +discardcorrupt+fastseek '
+                    '-loglevel warning'
                 ),
                 options='-vn'
             )
