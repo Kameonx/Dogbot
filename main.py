@@ -128,12 +128,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             print(f"Stream mode: {stream}")
             
             # Ultra-conservative FFmpeg options for maximum Render.com compatibility
-            # Removed all potentially unsupported options:
-            # - No reconnect_streamed (not in older FFmpeg)
-            # - No reconnect_delay_max (not in older FFmpeg) 
-            # - No fflags +discardcorrupt (might not be supported)
-            # - No protocol_whitelist (might cause issues)
             # Enhanced for TLS connection stability and YouTube streaming
+            # Added DTS error handling to prevent log spam
             before_options = (
                 '-reconnect 1 '
                 '-reconnect_at_eof 1 '
@@ -144,11 +140,13 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 '-headers "Accept-Language: en-US,en;q=0.9" '
                 '-multiple_requests 1 '
                 '-seekable 0 '
-                '-loglevel error '
+                '-fflags +genpts+discardcorrupt '  # Generate PTS and discard corrupt packets
+                '-avoid_negative_ts make_zero '  # Fix timestamp issues
+                '-loglevel fatal '  # Only show fatal errors to reduce log spam
             )
             
-            # Simplified output options - maximum compatibility with all FFmpeg versions
-            options = '-vn'  # Only disable video, let Discord.py handle the rest
+            # Enhanced output options to handle DTS/timing issues
+            options = '-vn -ar 48000 -ac 2 -f s16le -acodec pcm_s16le'  # Force consistent audio format
             
             # Create the audio source with enhanced network stability
             source = discord.FFmpegPCMAudio(
@@ -253,7 +251,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in fallback data")
                 
-            # Enhanced fallback FFmpeg options for TLS stability
+            # Enhanced fallback FFmpeg options for TLS stability and DTS error handling
             source = discord.FFmpegPCMAudio(
                 data['url'],
                 before_options=(
@@ -264,9 +262,11 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                     '-rw_timeout 30000000 '
                     '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" '
                     '-multiple_requests 1 '
-                    '-loglevel error'
+                    '-fflags +genpts+discardcorrupt '
+                    '-avoid_negative_ts make_zero '
+                    '-loglevel fatal'
                 ),
-                options='-vn'
+                options='-vn -ar 48000 -ac 2 -f s16le -acodec pcm_s16le'
             )
             return cls(source, data=data)
             
@@ -295,11 +295,15 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 data = data['entries'][0]
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in minimal data")
-            # Absolutely minimal FFmpeg options
+            # Minimal FFmpeg options with DTS error suppression
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-loglevel warning',
-                options='-vn'
+                before_options=(
+                    '-fflags +genpts+discardcorrupt '
+                    '-avoid_negative_ts make_zero '
+                    '-loglevel fatal'
+                ),
+                options='-vn -ar 48000 -ac 2 -f s16le -acodec pcm_s16le'
             )
             return cls(source, data=data)
         except Exception as e:
