@@ -253,6 +253,8 @@ class MusicBot:
         self.shuffle_playlists = {}  # guild_id -> shuffled_playlist
         self.shuffle_positions = {}  # guild_id -> current_position_in_shuffle
         self.manual_skip_in_progress = {}  # guild_id -> bool (prevents race conditions)
+        self.queued_songs = {}  # guild_id -> list of queued song URLs
+        self.playing_queued_song = {}  # guild_id -> bool (tracks if currently playing a queued song)
     
     def _generate_shuffle_playlist(self, guild_id):
         """Generate a new shuffled playlist for the guild"""
@@ -273,7 +275,18 @@ class MusicBot:
             print(f"🔄 Playlist regenerated during playback - continuous music ensured")
     
     def _get_current_song_url(self, guild_id):
-        """Get the current song URL from the shuffled playlist"""
+        """Get the current song URL - prioritizes queued songs, then shuffled playlist"""
+        # Check if there are queued songs first
+        if guild_id in self.queued_songs and self.queued_songs[guild_id]:
+            queued_url = self.queued_songs[guild_id].pop(0)  # Get first queued song
+            self.playing_queued_song[guild_id] = True
+            print(f"🎵 Playing queued song: {queued_url}")
+            return queued_url
+        
+        # Reset queued song flag if no more queued songs
+        self.playing_queued_song[guild_id] = False
+        
+        # Continue with normal shuffled playlist
         if guild_id not in self.shuffle_playlists or not self.shuffle_playlists[guild_id]:
             self._generate_shuffle_playlist(guild_id)
         
@@ -1075,9 +1088,6 @@ class MusicBot:
         
         voice_client.play(player, after=after_specific)
         return
-
-    # NOTE: play_specific_url method disabled - was causing issues
-    # Use !add <url> then !start instead for now
     
     async def get_playback_status(self, ctx):
         """Show current playback and auto-repeat status"""
@@ -1751,6 +1761,14 @@ async def next(ctx):
     await music_bot.next_song(ctx)
 
 @bot.command()
+async def skip(ctx):
+    """Skip to next song (alias for !next)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.next_song(ctx)
+
+@bot.command()
 async def previous(ctx):
     """Go to previous song"""
     if not music_bot:
@@ -1773,6 +1791,14 @@ async def play(ctx, *, url=None):
 @bot.command()
 async def playlist(ctx):
     """Show current playlist"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.show_playlist(ctx)
+
+@bot.command()
+async def queue(ctx):
+    """Show current playlist (alias for !playlist)"""
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
@@ -1802,6 +1828,14 @@ async def nowplaying(ctx):
         return
     await music_bot.get_current_song_info(ctx)
 
+@bot.command()
+async def np(ctx):
+    """Show current song info (alias for !nowplaying)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.get_current_song_info(ctx)
+    
 @bot.command()
 async def status(ctx):
     """Debug voice channel status"""
@@ -2013,7 +2047,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n`!test` - Test bot functionality\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` - Show current song info\n`!status` - Show playback and auto-repeat status", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` / `!skip` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` / `!queue` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` / `!np` - Show current song info", inline=False)
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
 
@@ -2351,7 +2385,7 @@ async def voicefix(ctx):
     bot_voice_state = ctx.guild.me.voice
     discord_voice_channel = bot_voice_state.channel.name if bot_voice_state and bot_voice_state.channel else "None"
     
-    # Check our internal voice client records
+    # Check our voice client record
     has_voice_client = guild_id in music_bot.voice_clients
     voice_client_connected = False
     if has_voice_client:
