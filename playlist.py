@@ -10,7 +10,6 @@ MUSIC_PLAYLISTS = [
     "https://www.youtube.com/watch?v=Zi_XLOBDo_Y",  # Michael Jackson - Billie Jean
     "https://www.youtube.com/watch?v=A_MjCqQoLLA",  # The Beatles - Hey Jude
     "https://youtu.be/96ZzJP1psKg?si=dwMnHI4FuBILY60s", # Ella baila sola Ángel Aispuro - Ver. Extendida
-    "https://www.youtube.com/watch?v=3MAxltiSJUE",  # Calvin Harris & Rag'n'Bone Man - Stay With Me
     "https://youtu.be/P3cffdsEXXw?si=P_QyVqHDivCvOCw4", # Harry Styles - Golden (Official Video)
     "https://youtu.be/bd-MRcTbx7k?si=AvvPPqRO3ECaoJY3", # Cannons – Golden (Harry Styles Cover) 
     "https://youtu.be/1VGfW2n01nM?si=08Bk2WydIGVGyiM9", # Daddy - Devin Townsend · Ché Aimee Dorval
