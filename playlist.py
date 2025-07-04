@@ -279,10 +279,10 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/GfCPFk8lyhM?si=WqyPZsvxpkVjMDXV", # ZHU x Skrillex x THEY. - Working For It 006 [Premiere]
     "https://youtu.be/CfsuDaKce90?si=-44i1jEpv59a5wEs", # Faith In House (Detlef Remix)
     "https://youtu.be/PvX9dt5Mats?si=hY98kV09mXdnbMRr", # Novacaine
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/rMru767xALE?si=iFq3XcnWf9PCYZYc", # LORDFUBU - NEVER LEAVE YOU LONELY [1000DEGREEZ]
+    "https://youtu.be/IC_UIfqNyWk?si=qGrBh70G_zRrkBu-", # Femi Tahiru - Home (Official Music Video)
+    "https://youtu.be/D92tgxVvWd0?si=oV4dD5JiWub8ware", # K-391 - Earth
+    "https://youtu.be/bafd5CsNk0M?si=kA0vcprrTUK8dGee", # ROY KNOX - Lost In Sound (Magic Free Release)
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
