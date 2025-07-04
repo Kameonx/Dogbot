@@ -130,13 +130,9 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 '-reconnect_at_eof 1 '
                 '-multiple_requests 1 '
                 '-rw_timeout 30000000 '  # 30 second timeout in microseconds
-                '-analyzeduration 0 '  # Skip analysis to start faster
-                '-probesize 32768 '  # Small probe size for faster startup
                 '-fflags +discardcorrupt+fastseek '  # Discard corrupt packets and seek fast
                 '-avoid_negative_ts make_zero '  # Handle timestamp issues
-                '-thread_queue_size 512 '  # Larger thread queue for stability
                 '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" '  # Better user agent
-                '-prefer_ipv4 1 '  # Prefer IPv4 for stability
             )
             
             # Simplified output options - let Discord.py handle most configuration
@@ -241,8 +237,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 data['url'],
                 before_options=(
                     '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 '
-                    '-rw_timeout 30000000 -analyzeduration 0 -probesize 32768 '
-                    '-fflags +discardcorrupt+fastseek -thread_queue_size 512'
+                    '-rw_timeout 30000000 -fflags +discardcorrupt+fastseek'
                 ),
                 options='-vn'
             )
@@ -808,7 +803,7 @@ class MusicBot:
                     print(f"[CLOUD_MUSIC] Failed to create audio source: {source_error}")
                     
                     # Handle specific network/TLS errors more gracefully
-                    if any(keyword in error_str for keyword in ['tls', 'ssl', 'certificate', 'connection reset', 'network', 'timeout', 'input/output']):
+                    if any(keyword in error_str for keyword in ['tls', 'ssl', 'certificate', 'connection reset', 'network', 'timeout', 'input/output', 'broken pipe']):
                         print(f"[NETWORK_ERROR] Network/TLS error detected, trying next song...")
                         
                         # Track network errors for this guild
@@ -852,7 +847,7 @@ class MusicBot:
                         print(f'🎵 Player error: {error}')
                         
                         # Check if this is a network-related error during playback
-                        if any(keyword in error_str for keyword in ['input/output error', 'end of file', 'connection', 'network']):
+                        if any(keyword in error_str for keyword in ['input/output error', 'end of file', 'connection', 'network', 'broken pipe']):
                             print(f"[NETWORK_ERROR] Network error during playback, will auto-advance to next song")
                             # Mark this as a normal finish so auto-advance triggers
                         else:
@@ -923,6 +918,19 @@ class MusicBot:
                 
                 # Enhanced play method with better error detection and handling
                 try:
+                    # Final connection stability check before playing
+                    if not voice_client.is_connected():
+                        print(f"[VOICE_ERROR] Voice client disconnected before playing for guild {guild_id}")
+                        self.is_playing[guild_id] = False
+                        return
+                    
+                    # Additional check - make sure Discord can receive audio
+                    if hasattr(voice_client, 'channel') and voice_client.channel:
+                        print(f"[VOICE_CHECK] Connected to {voice_client.channel.name}, starting playback...")
+                    else:
+                        print(f"[VOICE_ERROR] No valid voice channel for guild {guild_id}")
+                        self.is_playing[guild_id] = False
+                        return
                     # Triple check before playing to avoid "already playing" errors
                     if voice_client.is_playing() or voice_client.is_paused():
                         print(f"[SAFETY_CHECK] Audio still playing before new play attempt, forcing stop...")
