@@ -63,11 +63,12 @@ YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3"
 class YouTubeAudioSource(discord.PCMVolumeTransformer):
     """Audio source for YouTube streaming using yt-dlp"""
     
-    def __init__(self, source, *, data, volume=0.5):
+    def __init__(self, source, *, data, volume=0.8):  # Increased default volume to 80%
         super().__init__(source, volume)
         self.data = data
         self.title = data.get('title')
         self.url = data.get('url')
+        print(f"[VOLUME] Audio source created with volume: {volume}")
 
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=True):
@@ -141,7 +142,6 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 '-thread_queue_size 2048 '  # Double the buffer for network stability
                 '-analyzeduration 1000000 '  # Reduce analysis time for faster startup
                 '-probesize 1000000 '  # Reduce probe size for faster startup
-                '-max_reload 3 '  # Limit reload attempts
             )
             
             # Simplified output options - let Discord.py handle most configuration
@@ -842,7 +842,6 @@ class MusicBot:
                         else:
                             current_pos = self.shuffle_positions.get(guild_id, 0)
                             self.shuffle_positions[guild_id] = (current_pos + 1) % len(MUSIC_PLAYLISTS)
-                        
                         retries += 1
                         # Much shorter delay for network issues to minimize disruption
                         await asyncio.sleep(1 + (error_count * 0.5))  # Faster recovery with minimal backoff
@@ -953,6 +952,8 @@ class MusicBot:
                     
                     voice_client.play(player, after=after_playing)
                     print(f"[CLOUD_MUSIC] Successfully started playing: {player.title}")
+                    print(f"[DEBUG] Voice client playing status: {voice_client.is_playing()}")
+                    print(f"[DEBUG] Voice client connected: {voice_client.is_connected()}")
                     return  # Success! Exit the retry loop
                     
                 except Exception as play_error:
@@ -1716,7 +1717,7 @@ async def on_ready():
         else:
             print("[RENDER.COM] FFmpeg: Available but returned error")
     except FileNotFoundError:
-        print("[RENDER.COM] FFmpeg: NOT FOUND")
+               print("[RENDER.COM] FFmpeg: NOT FOUND")
     except Exception as e:
         print(f"[RENDER.COM] FFmpeg: Error checking - {e}")
     
@@ -2078,6 +2079,81 @@ async def reshuffle(ctx):
     else:
         await ctx.send("❌ No active shuffle playlist found!")
 
+@bot.command()
+async def volume(ctx, vol: Optional[int] = None):
+    """Check or set the music volume (0-100)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    if ctx.guild.id not in music_bot.voice_clients:
+        await ctx.send("❌ I'm not in a voice channel!")
+        return
+    
+    voice_client = music_bot.voice_clients[ctx.guild.id]
+    
+    if vol is None:
+        # Just check current volume
+        if voice_client.source:
+            current_vol = int(voice_client.source.volume * 100)
+            await ctx.send(f"🔊 Current volume: {current_vol}%")
+        else:
+            await ctx.send("🔊 No audio source active")
+        return
+    
+    # Set volume
+    if vol < 0 or vol > 100:
+        await ctx.send("❌ Volume must be between 0 and 100!")
+        return
+    
+    if voice_client.source:
+        voice_client.source.volume = vol / 100.0
+        await ctx.send(f"🔊 Volume set to {vol}%")
+    else:
+        await ctx.send("❌ No audio source active to adjust volume")
+
+@bot.command()
+async def audiotest(ctx):
+    """Test audio playback with debug info"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    if ctx.guild.id not in music_bot.voice_clients:
+        await ctx.send("❌ I'm not in a voice channel!")
+        return
+    
+    voice_client = music_bot.voice_clients[ctx.guild.id]
+    
+    embed = discord.Embed(
+        title="🔊 Audio Debug Test",
+        color=discord.Color.blue()
+    )
+    
+    # Voice client status
+    embed.add_field(name="Connected", value="✅ Yes" if voice_client.is_connected() else "❌ No", inline=True)
+    embed.add_field(name="Playing", value="▶️ Yes" if voice_client.is_playing() else "⏸️ No", inline=True)
+    embed.add_field(name="Paused", value="⏸️ Yes" if voice_client.is_paused() else "▶️ No", inline=True)
+    
+    # Channel info
+    if voice_client.is_connected():
+        embed.add_field(name="Channel", value=voice_client.channel.name, inline=True)
+        embed.add_field(name="Channel Members", value=len(voice_client.channel.members), inline=True)
+    
+    # Volume info
+    if voice_client.source:
+        volume = int(voice_client.source.volume * 100)
+        embed.add_field(name="Volume", value=f"{volume}%", inline=True)
+    else:
+        embed.add_field(name="Volume", value="No audio source", inline=True)
+    
+    # Bot's audio state
+    is_playing = music_bot.is_playing.get(ctx.guild.id, False)
+    embed.add_field(name="Bot State", value="🔄 Playing" if is_playing else "⏹️ Stopped", inline=True)
+    
+    embed.set_footer(text="Use this to debug why you might not hear audio")
+    await ctx.send(embed=embed)
+
 # AI and Chat Commands
 @bot.command()
 async def ask(ctx, *, question):
@@ -2191,7 +2267,7 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n`!test` - Test bot functionality\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` / `!skip` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` / `!queue` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` / `!np` - Show current song info", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` / `!skip` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` / `!queue` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` / `!np` - Show current song info\n`!volume` - Check current volume\n`!volume <0-100>` - Set volume percentage\n`!audiotest` - Debug audio issues", inline=False)
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
 
