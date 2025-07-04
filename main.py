@@ -687,10 +687,20 @@ class MusicBot:
     
     async def _play_current_song(self, guild_id, skip_cleanup=False):
         """Play the current song (helper method for next/previous)"""
-        if guild_id not in self.voice_clients or not self.is_playing.get(guild_id, False):
+        print(f"[PLAY_CURRENT] Starting _play_current_song for guild {guild_id}")
+        print(f"[PLAY_CURRENT] voice_clients has guild: {guild_id in self.voice_clients}")
+        print(f"[PLAY_CURRENT] is_playing for guild: {self.is_playing.get(guild_id, False)}")
+        
+        if guild_id not in self.voice_clients:
+            print(f"[PLAY_CURRENT] ❌ No voice client for guild {guild_id}")
+            return
+            
+        if not self.is_playing.get(guild_id, False):
+            print(f"[PLAY_CURRENT] ❌ is_playing is False for guild {guild_id}")
             return
             
         voice_client = self.voice_clients[guild_id]
+        print(f"[PLAY_CURRENT] Got voice client: {voice_client}")
         
         # Check if voice client is still connected - improved detection
         if not voice_client or not hasattr(voice_client, 'is_connected') or not voice_client.is_connected():
