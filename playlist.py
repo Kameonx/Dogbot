@@ -322,25 +322,25 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/IbJrp3iW_Z4?si=Z3khLDhXi_kcEn34", # neek - i'll choose u (urchin remix) - (official audio)
     "https://youtu.be/4yXk4SatD5Q?si=bEpvk0ZPgkJZS2EL", # Petit Biscuit & Diplo - Pick Your Battles (VIP Mix)
     "https://youtu.be/796h8z2SgEg?si=Hg-e2g-4gkiMy6lf", # Penguin Prison - Better (RAC Mix)
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/wxhxP1PumbQ?si=Km926Ispk7xOAsgZ", # Close To You
+    "https://youtu.be/6mn7OonJfk4?si=ilhYzvbVxNmFmcxK", # John Summit - Human (ft. Echoes) (Lyric Visualiser)
+    "https://youtu.be/EcjCJ7GMaJY?si=84I3hLshCbwMM4xY", # Dom Dolla - Strangers (with Mansionair) (Nora En Pure Remix)
+    "https://youtu.be/G-JpNkoPHfo?si=CM5LS-2phvndJaLY", # Dawg Yawp - "I Wanna Be A Dawg"
+    "https://youtu.be/EAVop3YSebQ?si=c9TPjjx9kaq768y6", # Incubus - Aqueous Transmission (from Look Alive)
+    "https://youtu.be/-kG7RlDD7tg?si=3J7L0a5xwTmL5YS7", # Tayc - N'y pense plus
+    "https://youtu.be/LZ2kSbSrDLs?si=PNHcmGz7EijmmeeY", # Cannons - Hurricane (Official Video)
+    "https://youtu.be/mISWjpK4XME?si=GtzLb5Alc6Av9R0U", # Bipolar Sunshine - TOO YOUNG (Visualiser)
+    "https://youtu.be/tGl82UpQai8?si=m54e771xQMRcId_3", # Tinashe - Boss (Ryan Hemsworth Remix)
+    "https://youtu.be/pVLmZMjxfjw?si=tJpX4A9ak3JplCUU", # Eiffel 65 - Blue (KNY Factory Remix)
+    "https://youtu.be/tqnAVXxCHFw?si=cAC8n2C700LXKM1e", # Lorde - Team (Elephante Remix)
+    "https://youtu.be/-y7scgdP6_s?si=ylNxb0SYzdQRfWnp", # Ginger & The Ghost - One Type of Dark (Ta-ku Remix)
+    "https://youtu.be/QCxSB6JS_0A?si=STzvkJHNTFXTfTrI", # AlunaGeorge - Best Be Believing (Ta-Ku Remix)
+    "https://youtu.be/hvLVYQfJap4?si=S2vjA6W5IP1s9rgt", # Ferry Corsten featuring Jenny Wahlström "Many Ways" (Official Video)
+    "https://youtu.be/4cQwjQHe-Ow?si=xbGMhXWpnpYhqTm9", # Cash Cash - Take Me Home ft. Bebe Rexha (Fareoh Remix)
+    "https://youtu.be/vmhqY7Pe6T8?si=3mhuw_oKIkpDFrKC", # Bastille - Pompeii (Kat Krazy Radio Mix)
+    "https://youtu.be/u1JasCPIl28?si=XP4ks6J5fsOZM5NK", # Iggy Azalea - Bounce LYRICS
+    "https://youtu.be/zXt56MB-3vc?si=ktHSC48BnQZReBvL", # UB40 - Red Red Wine (Official Video HD Remastered)
+    "https://youtu.be/i3aL0up-v28?si=SMa_qjg4qbOSdlNB", # Lana Del Rey Blue Jeans ft. Azealia Banks (Smims&Belle Remix)
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
