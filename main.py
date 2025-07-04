@@ -122,7 +122,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             print(f"Creating audio source from: {filename}")
             print(f"Stream mode: {stream}")
             
-            # Enhanced FFmpeg options for better network error handling and cloud stability
+            # Enhanced FFmpeg options for maximum network resilience on cloud platforms
             before_options = (
                 '-reconnect 1 '
                 '-reconnect_streamed 1 '
@@ -130,8 +130,13 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 '-reconnect_at_eof 1 '
                 '-multiple_requests 1 '
                 '-rw_timeout 30000000 '  # 30 second timeout in microseconds
-                '-fflags +discardcorrupt '  # Discard corrupt packets
-                '-avoid_negative_ts make_zero'  # Handle timestamp issues
+                '-analyzeduration 0 '  # Skip analysis to start faster
+                '-probesize 32768 '  # Small probe size for faster startup
+                '-fflags +discardcorrupt+fastseek '  # Discard corrupt packets and seek fast
+                '-avoid_negative_ts make_zero '  # Handle timestamp issues
+                '-thread_queue_size 512 '  # Larger thread queue for stability
+                '-user_agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" '  # Better user agent
+                '-prefer_ipv4 1 '  # Prefer IPv4 for stability
             )
             
             # Simplified output options - let Discord.py handle most configuration
@@ -231,10 +236,14 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in fallback data")
                 
-            # Use optimized FFmpeg options for Render.com cloud deployment
+            # Use optimized FFmpeg options for Render.com cloud deployment with enhanced reliability
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+                before_options=(
+                    '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 '
+                    '-rw_timeout 30000000 -analyzeduration 0 -probesize 32768 '
+                    '-fflags +discardcorrupt+fastseek -thread_queue_size 512'
+                ),
                 options='-vn'
             )
             return cls(source, data=data)
@@ -255,6 +264,8 @@ class MusicBot:
         self.manual_skip_in_progress = {}  # guild_id -> bool (prevents race conditions)
         self.queued_songs = {}  # guild_id -> list of queued song URLs
         self.playing_queued_song = {}  # guild_id -> bool (tracks if currently playing a queued song)
+        self.network_error_count = {}  # guild_id -> count of recent network errors
+        self.last_error_time = {}  # guild_id -> timestamp of last network error
     
     def _generate_shuffle_playlist(self, guild_id):
         """Generate a new shuffled playlist for the guild"""
@@ -403,6 +414,10 @@ class MusicBot:
                 self.queued_songs[guild_id] = []
             if guild_id not in self.playing_queued_song:
                 self.playing_queued_song[guild_id] = False
+            
+            # Reset network error tracking for fresh start
+            self.network_error_count[guild_id] = 0
+            self.last_error_time[guild_id] = 0
             
             if auto_start:
                 await ctx.send(f"🎵 Joined {channel.name} and starting music in shuffle mode!")
@@ -793,12 +808,35 @@ class MusicBot:
                     print(f"[CLOUD_MUSIC] Failed to create audio source: {source_error}")
                     
                     # Handle specific network/TLS errors more gracefully
-                    if any(keyword in error_str for keyword in ['tls', 'ssl', 'certificate', 'connection reset', 'network', 'timeout']):
+                    if any(keyword in error_str for keyword in ['tls', 'ssl', 'certificate', 'connection reset', 'network', 'timeout', 'input/output']):
                         print(f"[NETWORK_ERROR] Network/TLS error detected, trying next song...")
-                        current_pos = self.shuffle_positions.get(guild_id, 0)
-                        self.shuffle_positions[guild_id] = (current_pos + 1) % len(MUSIC_PLAYLISTS)
+                        
+                        # Track network errors for this guild
+                        current_time = asyncio.get_event_loop().time()
+                        self.network_error_count[guild_id] = self.network_error_count.get(guild_id, 0) + 1
+                        self.last_error_time[guild_id] = current_time
+                        
+                        # Reset error count if it's been a while since last error
+                        last_error = self.last_error_time.get(guild_id, 0)
+                        if current_time - last_error > 300:  # 5 minutes
+                            self.network_error_count[guild_id] = 1
+                        
+                        # If too many network errors, skip several songs to avoid problematic region
+                        error_count = self.network_error_count.get(guild_id, 0)
+                        if error_count >= 3:
+                            print(f"[NETWORK_ERROR] Multiple network errors ({error_count}), jumping ahead in playlist")
+                            current_pos = self.shuffle_positions.get(guild_id, 0)
+                            # Jump ahead 5-10 songs to avoid problematic content/servers
+                            jump_amount = random.randint(5, 10)
+                            self.shuffle_positions[guild_id] = (current_pos + jump_amount) % len(MUSIC_PLAYLISTS)
+                            self.network_error_count[guild_id] = 0  # Reset counter
+                        else:
+                            current_pos = self.shuffle_positions.get(guild_id, 0)
+                            self.shuffle_positions[guild_id] = (current_pos + 1) % len(MUSIC_PLAYLISTS)
+                        
                         retries += 1
-                        await asyncio.sleep(3)  # Longer delay for network issues
+                        # Longer delay for network issues to let connection stabilize
+                        await asyncio.sleep(5 + (error_count * 2))  # Increasing delay with error count
                         continue
                     else:
                         # For other errors, skip to next song
@@ -810,7 +848,15 @@ class MusicBot:
                 
                 def after_playing(error):
                     if error:
+                        error_str = str(error).lower()
                         print(f'🎵 Player error: {error}')
+                        
+                        # Check if this is a network-related error during playback
+                        if any(keyword in error_str for keyword in ['input/output error', 'end of file', 'connection', 'network']):
+                            print(f"[NETWORK_ERROR] Network error during playback, will auto-advance to next song")
+                            # Mark this as a normal finish so auto-advance triggers
+                        else:
+                            print(f"[PLAYER_ERROR] Non-network player error: {error}")
                     else:
                         print(f"🎵 Song finished playing normally for guild {guild_id}")
                     
@@ -845,7 +891,9 @@ class MusicBot:
                         # Schedule next song to play without blocking (ensures infinite loop)
                         async def play_next_song():
                             try:
-                                await asyncio.sleep(2.0)  # Reasonable pause for Render.com
+                                # Longer pause after network errors to let connection stabilize
+                                delay = 5.0 if error and any(keyword in str(error).lower() for keyword in ['network', 'input/output', 'connection']) else 2.0
+                                await asyncio.sleep(delay)
                                 
                                 # Simple check - if we're still playing, continue
                                 if self.is_playing.get(guild_id, False):
@@ -1229,10 +1277,10 @@ class MusicBot:
             return False
 
     async def voice_health_check(self):
-        """Conservative health check that only monitors and logs, does not auto-reconnect"""
+        """Conservative health check that monitors playback and handles network issues gracefully"""
         while True:
             try:
-                await asyncio.sleep(120)  # Even less aggressive - every 2 minutes
+                await asyncio.sleep(120)  # Every 2 minutes - less aggressive
                 
                 for guild_id in list(self.voice_clients.keys()):
                     if not self.is_playing.get(guild_id, False):
@@ -1252,8 +1300,8 @@ class MusicBot:
                     current_time = asyncio.get_event_loop().time()
                     last_restart = getattr(self, last_restart_key, 0)
                     
-                    # Don't restart too frequently (minimum 5 minutes between restarts)
-                    if current_time - last_restart < 300:
+                    # Don't restart too frequently (minimum 8 minutes between restarts for network stability)
+                    if current_time - last_restart < 480:
                         continue
                     
                     # Check if voice client is still connected but DO NOT auto-reconnect
@@ -1267,9 +1315,9 @@ class MusicBot:
                     
                     # Only restart music if voice client is connected but not playing
                     elif not voice_client.is_playing() and not voice_client.is_paused():
-                        # Wait longer before considering it stuck
-                        print(f"[HEALTH_CHECK] Detected stopped playback for guild {guild_id}, waiting 20s...")
-                        await asyncio.sleep(20)
+                        # Wait even longer before considering it stuck (network delays)
+                        print(f"[HEALTH_CHECK] Detected stopped playback for guild {guild_id}, waiting 30s for network recovery...")
+                        await asyncio.sleep(30)
                         
                         # Triple-check that it's still stuck and no manual operations started
                         if (voice_client.is_connected() and 
@@ -1277,20 +1325,23 @@ class MusicBot:
                             not self.manual_skip_in_progress.get(guild_id, False) and
                             self.is_playing.get(guild_id, False)):
                             
-                            print(f"[HEALTH_CHECK] Music confirmed stuck for guild {guild_id}, gentle restart...")
+                            print(f"[HEALTH_CHECK] Music confirmed stuck for guild {guild_id}, attempting gentle restart...")
                             try:
                                 setattr(self, last_restart_key, current_time)
+                                # Try advancing to next song instead of replaying current one (network issues)
+                                current_pos = self.shuffle_positions.get(guild_id, 0)
+                                self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, [1]))
                                 await self._play_current_song(guild_id)
                                 print(f"[HEALTH_CHECK] Successfully restarted music for guild {guild_id}")
                             except Exception as e:
                                 print(f"[HEALTH_CHECK] Failed to restart music for guild {guild_id}: {e}")
-                                # After multiple failures, consider stopping to prevent endless loops
+                                # After failure, be even more conservative 
                                 failure_count_key = f"failure_count_{guild_id}"
                                 failure_count = getattr(self, failure_count_key, 0) + 1
                                 setattr(self, failure_count_key, failure_count)
                                 
-                                if failure_count >= 2:  # Reduced threshold
-                                    print(f"[HEALTH_CHECK] Too many failures for guild {guild_id}, stopping playback")
+                                if failure_count >= 1:  # Single failure threshold for network stability
+                                    print(f"[HEALTH_CHECK] Network issues detected for guild {guild_id}, pausing health check")
                                     self.is_playing[guild_id] = False
                                     setattr(self, failure_count_key, 0)  # Reset for next session
                 
