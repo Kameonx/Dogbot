@@ -1981,6 +1981,32 @@ async def chat(ctx, *, message):
     
     await ctx.send(response)
 
+@bot.command()
+async def undo(ctx):
+    """Undo last action"""
+    user_id = str(ctx.author.id)
+    channel_id = str(ctx.channel.id)
+    
+    success, message = await undo_last_action(channel_id, user_id)
+    
+    if success:
+        await ctx.send(f"↩️ {message}")
+    else:
+        await ctx.send(f"❌ {message}")
+
+@bot.command()
+async def redo(ctx):
+    """Redo last undone action"""
+    user_id = str(ctx.author.id)
+    channel_id = str(ctx.channel.id)
+    
+    success, message = await redo_last_undo(channel_id, user_id)
+    
+    if success:
+        await ctx.send(f"↪️ {message}")
+    else:
+        await ctx.send(f"❌ {message}")
+    
 # Utility Commands
 @bot.command()
 async def poll(ctx, *, question):
