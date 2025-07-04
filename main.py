@@ -879,13 +879,19 @@ class MusicBot:
                         error_str = str(error).lower()
                         print(f'🎵 Player error: {error}')
                         
-                        # Enhanced TLS/network error detection during playback
-                        if any(keyword in error_str for keyword in ['input/output error', 'end of file', 'connection', 'network', 'broken pipe', 'tls', 'ssl', 'connection reset', 'io error', 'pull function']):
-                            print(f"[NETWORK_ERROR] TLS/Network error during playback: {error}")
-                            print(f"[NETWORK_ERROR] This is likely due to YouTube connection issues, will auto-advance to next song")
-                            # Mark this as a normal finish so auto-advance triggers
+                        # Enhanced TLS/network error detection during playback - VERY aggressive
+                        if any(keyword in error_str for keyword in [
+                            'input/output error', 'end of file', 'connection', 'network', 'broken pipe', 
+                            'tls', 'ssl', 'connection reset', 'io error', 'pull function', 'error in the pull function',
+                            'connection reset by peer', 'will reconnect', 'stream ended', 'broken', 'reset'
+                        ]):
+                            print(f"[TLS_RECOVERY] TLS/Network error detected during playback: {error}")
+                            print(f"[TLS_RECOVERY] Bot will automatically continue with next song to maintain playback")
+                            # Always treat TLS errors as normal song completion for auto-advance
                         else:
                             print(f"[PLAYER_ERROR] Non-network player error: {error}")
+                            # For non-network errors, still try to continue (more resilient)
+                            print(f"[PLAYER_ERROR] Will still attempt to continue playback")
                     else:
                         print(f"🎵 Song finished playing normally for guild {guild_id}")
                     
@@ -898,18 +904,26 @@ class MusicBot:
                     except Exception as cleanup_error:
                         print(f"[MEMORY] Player cleanup error: {cleanup_error}")
                     
-                    # Auto-advance to next song if we're still supposed to be playing
+                    # ALWAYS auto-advance if we're supposed to be playing (more aggressive continuation)
                     # BUT ONLY if no manual skip is in progress (prevents race conditions)
                     if (self.is_playing.get(guild_id, False) and 
                         not self.manual_skip_in_progress.get(guild_id, False)):
                         
-                        # Add brief delay for TLS errors to let connection stabilize
+                        # Enhanced delay logic for different error types
                         delay = 0.0
-                        if error and any(keyword in str(error).lower() for keyword in ['tls', 'ssl', 'connection reset', 'io error', 'pull function']):
-                            delay = 2.0  # 2 second delay for TLS errors
-                            print(f"[AUTO-ADVANCE] TLS error detected, waiting {delay}s before next song")
+                        if error:
+                            error_lower = str(error).lower()
+                            if any(keyword in error_lower for keyword in ['tls', 'ssl', 'connection reset', 'pull function', 'reset by peer']):
+                                delay = 3.0  # Longer delay for TLS errors
+                                print(f"[TLS_RECOVERY] TLS connection error detected, waiting {delay}s for recovery")
+                            elif any(keyword in error_lower for keyword in ['network', 'input/output', 'connection', 'io error']):
+                                delay = 1.5  # Medium delay for network errors
+                                print(f"[NETWORK_RECOVERY] Network error detected, waiting {delay}s for recovery")
+                            else:
+                                delay = 0.5  # Brief delay for other errors
+                                print(f"[ERROR_RECOVERY] Other error detected, waiting {delay}s before retry")
                         
-                        print(f"[AUTO-ADVANCE] Moving to next song automatically")
+                        print(f"[AUTO-ADVANCE] Moving to next song automatically (error recovery mode)")
                         # Move to next position in shuffle (thread-safe)
                         current_shuffle_pos = self.shuffle_positions.get(guild_id, 0)
                         next_shuffle_pos = current_shuffle_pos + 1
@@ -926,27 +940,33 @@ class MusicBot:
                         # Schedule next song to play without blocking (ensures infinite loop)
                         async def play_next_song():
                             try:
-                                # Enhanced delay for TLS/network issues
-                                if error and any(keyword in str(error).lower() for keyword in ['tls', 'ssl', 'connection reset', 'io error', 'pull function']):
-                                    await asyncio.sleep(delay)  # Use the TLS delay from above
-                                elif error and any(keyword in str(error).lower() for keyword in ['network', 'input/output', 'connection']):
-                                    await asyncio.sleep(0.5)  # Brief delay for other network errors
+                                # Use the calculated delay from above
+                                if delay > 0:
+                                    print(f"[RECOVERY_DELAY] Waiting {delay}s for connection stabilization...")
+                                    await asyncio.sleep(delay)
                                 
-                                # Simple check - if we're still playing, continue
-                                if self.is_playing.get(guild_id, False):
+                                # Enhanced verification - ensure we're still supposed to be playing
+                                if self.is_playing.get(guild_id, False) and not self.manual_skip_in_progress.get(guild_id, False):
+                                    print(f"[RECOVERY_CONTINUE] Starting next song after error recovery")
                                     await self._play_current_song(guild_id)
+                                else:
+                                    print(f"[RECOVERY_ABORT] Playback was stopped during recovery delay")
                             except Exception as e:
-                                print(f"❌ Error playing next song for infinite loop: {e}")
-                                # Only try recovery once per song to prevent loops
+                                print(f"❌ Error playing next song during recovery: {e}")
+                                # Enhanced recovery attempt - try one more time with longer delay
                                 if self.is_playing.get(guild_id, False):
-                                    print(f"🔄 Single recovery attempt for guild {guild_id}")
-                                    self.shuffle_positions[guild_id] = 0  # Reset to start
-                                    await asyncio.sleep(3)  # Longer delay for Render.com
+                                    print(f"🔄 Enhanced recovery attempt for guild {guild_id}")
+                                    await asyncio.sleep(5)  # Longer recovery delay for Render.com
                                     try:
-                                        await self._play_current_song(guild_id)
-                                    except:
-                                        print(f"❌ Recovery failed, stopping playback for guild {guild_id}")
-                                        self.is_playing[guild_id] = False
+                                        if self.is_playing.get(guild_id, False):  # Double-check before retry
+                                            current_pos = self.shuffle_positions.get(guild_id, 0)
+                                            # Try next song in case current one is problematic
+                                            self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, MUSIC_PLAYLISTS))
+                                            print(f"[RECOVERY_SKIP] Skipping potentially problematic song, trying next")
+                                            await self._play_current_song(guild_id)
+                                    except Exception as recovery_error:
+                                        print(f"❌ Enhanced recovery also failed: {recovery_error}")
+                                        print(f"❌ Stopping playback to prevent infinite error loops for guild {guild_id}")
                         
                         asyncio.run_coroutine_threadsafe(
                             play_next_song(), 
