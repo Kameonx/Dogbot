@@ -820,8 +820,17 @@ class MusicBot:
                     error_str = str(source_error).lower()
                     print(f"[RENDER_MUSIC] Failed to create audio source: {source_error}")
                     
+                    # Handle video unavailable errors - skip immediately and continue
+                    if any(keyword in error_str for keyword in ['video is unavailable', 'private video', 'video has been removed', 'this video is not available']):
+                        print(f"[VIDEO_UNAVAILABLE] Video unavailable, skipping to next song: {url}")
+                        current_pos = self.shuffle_positions.get(guild_id, 0)
+                        self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, MUSIC_PLAYLISTS))
+                        # Don't increment retries for unavailable videos - just continue to next song
+                        await asyncio.sleep(0.5)  # Brief pause before trying next song
+                        continue
+                    
                     # Handle network errors more patiently - don't skip songs too quickly
-                    if any(keyword in error_str for keyword in ['tls', 'ssl', 'certificate', 'connection reset', 'network', 'timeout', 'input/output', 'broken pipe', 'end of file']):
+                    elif any(keyword in error_str for keyword in ['tls', 'ssl', 'certificate', 'connection reset', 'network', 'timeout', 'input/output', 'broken pipe', 'end of file']):
                         print(f"[NETWORK_ERROR] Network error detected, retrying with patience...")
                         
                         # Track network errors for this guild
@@ -839,7 +848,7 @@ class MusicBot:
                         if error_count >= 8:  # Even more patient - allow 8 attempts before skipping
                             print(f"[NETWORK_ERROR] Extremely persistent network errors ({error_count}), reluctantly skipping this song")
                             current_pos = self.shuffle_positions.get(guild_id, 0)
-                            self.shuffle_positions[guild_id] = (current_pos + 1) % len(MUSIC_PLAYLISTS)
+                            self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, MUSIC_PLAYLISTS))
                             self.network_error_count[guild_id] = 0  # Reset counter
                         
                         retries += 1
@@ -849,11 +858,12 @@ class MusicBot:
                         await asyncio.sleep(wait_time)
                         continue
                     else:
-                        # For other errors, skip to next song instantly
+                        # For other extraction errors, skip to next song
+                        print(f"[EXTRACTION_ERROR] Skipping to next song due to extraction error: {source_error}")
                         current_pos = self.shuffle_positions.get(guild_id, 0)
-                        self.shuffle_positions[guild_id] = (current_pos + 1) % len(MUSIC_PLAYLISTS)
-                        retries += 1
-                        # No delay for non-network errors - instant skip
+                        self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, MUSIC_PLAYLISTS))
+                        # Brief delay for other errors
+                        await asyncio.sleep(1)
                         continue
                 
                 def after_playing(error):
@@ -1005,28 +1015,51 @@ class MusicBot:
                 error_str = str(e).lower()
                 print(f"[ERROR] Playing music from {current_url}: {e}")
                 last_error = e
+                
+                # Handle unavailable video errors - skip immediately
+                if any(keyword in error_str for keyword in ['video is unavailable', 'private video', 'video has been removed', 'this video is not available']):
+                    print(f"[VIDEO_UNAVAILABLE] Video unavailable, skipping to next song: {current_url}")
+                    current_pos = self.shuffle_positions.get(guild_id, 0)
+                    self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, MUSIC_PLAYLISTS))
+                    # Don't increment retries for unavailable videos
+                    await asyncio.sleep(0.5)
+                    continue
+                
                 retries += 1
                 
                 # Handle network errors by skipping more aggressively
                 if any(keyword in error_str for keyword in ['tls', 'ssl', 'network', 'connection', 'timeout']):
                     print(f"[NETWORK_SKIP] Network error detected, skipping to next song")
                     current_pos = self.shuffle_positions.get(guild_id, 0)
-                    self.shuffle_positions[guild_id] = (current_pos + 1) % len(MUSIC_PLAYLISTS)
+                    self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, MUSIC_PLAYLISTS))
                     await asyncio.sleep(3)  # Longer delay for network issues
                 else:
                     # Skip to next song and try again (without regenerating shuffle every time)
                     current_shuffle_pos = self.shuffle_positions.get(guild_id, 0)
-                    next_shuffle_pos = (current_shuffle_pos + 1) % len(MUSIC_PLAYLISTS)
+                    next_shuffle_pos = (current_shuffle_pos + 1) % len(self.shuffle_playlists.get(guild_id, MUSIC_PLAYLISTS))
                     self.shuffle_positions[guild_id] = next_shuffle_pos
                     
                     # Add a delay before retrying
                     await asyncio.sleep(2)
         
-        # If we exhausted all retries, stop gracefully instead of infinite recovery
+        # If we exhausted all retries, try to continue with next song instead of stopping
         if self.is_playing.get(guild_id, False):
-            print(f"❌ Failed to play any songs after {max_retries} attempts for guild {guild_id}")
-            print(f"❌ Stopping playback to prevent infinite loops")
-            self.is_playing[guild_id] = False
+            print(f"❌ Failed to play current song after {max_retries} attempts for guild {guild_id}")
+            print(f"🔄 Attempting to continue with next song instead of stopping playback")
+            
+            # Move to next song and try once more
+            current_pos = self.shuffle_positions.get(guild_id, 0)
+            self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, MUSIC_PLAYLISTS))
+            
+            # Try one more song before giving up
+            try:
+                await asyncio.sleep(2)  # Brief pause before trying next song
+                await self._play_current_song(guild_id)
+                return  # Success with next song
+            except Exception as final_error:
+                print(f"❌ Final recovery attempt also failed: {final_error}")
+                print(f"❌ Stopping playback to prevent infinite loops for guild {guild_id}")
+                self.is_playing[guild_id] = False
     
     async def add_song(self, ctx, url):
         """Add a song to the playlist"""
