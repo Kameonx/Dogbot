@@ -2301,8 +2301,8 @@ async def help(ctx):
         description="Here are all available commands:",
         color=discord.Color.blue()
     )
-    embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n`!test` - Test bot functionality\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
-    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` / `!skip` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` / `!queue` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` / `!np` - Show current song info\n`!volume` - Check current volume\n`!volume <0-100>` - Set volume percentage\n`!audiotest` - Debug audio issues", inline=False)
+    embed.add_field(name="🐕 Basic", value="`!hello` - Greet the bot\n`!help` - Show this help\n\n🤖 **AI Commands:**\n`!ask <question>` - Ask AI anything\n`!chat <message>` - Chat with AI (with memory)\n`!undo` - Undo last action\n`!redo` - Redo last undone action", inline=False)
+    embed.add_field(name="🎵 Music Bot", value="`!join` - Join voice channel and auto-start music\n`!leave` - Leave voice channel\n`!start` - Start/resume music\n`!stop` - Stop music\n`!next` / `!skip` - Skip to next song\n`!previous` - Go to previous song\n`!play` - Resume current playlist\n`!play <youtube_link>` - Play specific song immediately (returns to playlist after)\n`!playlist` / `!queue` - Show current playlist\n`!add <youtube_url>` - Add song to playlist\n`!remove <youtube_url>` - Remove song from playlist\n`!nowplaying` / `!np` - Show current song info", inline=False)
     
     embed.add_field(name="🎭 Roles", value="`!catsrole` - Get Cats role\n`!dogsrole` - Get Dogs role\n`!lizardsrole` - Get Lizards role\n`!pvprole` - Get PVP role\n`!remove<role>` - Remove any role (e.g., `!removecatsrole`)", inline=False)
 
@@ -2344,8 +2344,21 @@ async def modhelp(ctx):
     )
     
     embed.add_field(
-        name="🔧 YouTube Configuration", 
-        value="`!ytdlstatus` - Show YouTube API configuration", 
+        name="🎵 Advanced Music", 
+        value="`!loop` - Show infinite loop status\n"
+              "`!reshuffle` - Generate new shuffle order\n"
+              "`!voicefix` - Fix voice connection issues\n"
+              "`!reconnect` - Force reconnect to voice channel\n"
+              "`!volume` - Check current volume\n"
+              "`!volume <0-100>` - Set volume percentage\n"
+              "`!audiotest` - Debug audio issues", 
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🔧 Testing & Diagnostics", 
+        value="`!test` - Test bot functionality\n"
+              "`!ytdlstatus` - Show YouTube API configuration", 
         inline=False
     )
     
@@ -2353,15 +2366,6 @@ async def modhelp(ctx):
         name="🗳️ Utility Commands", 
         value="`!poll <question>` - Create a poll\n"
               "`!say <message>` - Make the bot say something", 
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🎵 Advanced Music", 
-        value="`!loop` - Show infinite loop status\n"
-              "`!reshuffle` - Generate new shuffle order\n"
-              "`!voicefix` - Fix voice connection issues\n"
-              "`!reconnect` - Force reconnect to voice channel", 
         inline=False
     )
     
