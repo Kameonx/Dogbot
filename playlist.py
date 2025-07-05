@@ -6,7 +6,7 @@ MUSIC_PLAYLISTS = [
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/w5RBa2uNdAk?si=anJaCS9xteC87cUF", # BOOGIE T.RIO - Dear Weed Man (Ganja White Night Remix) | Music Video | Animation
     "https://youtu.be/aNPuB-kCsmo?si=V_ILeVWa_haPXvWs", # AVAION - Keep On Dancing (Official Video)
     "https://youtu.be/9KiFRB1aVI4?si=hcsfVOtXsUc2DCJ9", # AVAION - Hope (Official Video)
     "https://youtu.be/hlwtfhloxlg?si=EfM3YfjlP_mU31EI", # AVAION, oskar med k - Can't find you (Lyrics)
