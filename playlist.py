@@ -6,6 +6,76 @@ MUSIC_PLAYLISTS = [
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "https://youtu.be/whQPnOcnxuI?si=UUOkcig8Sf00MAe3", # Ganja White Night - Rockstar (Wobble Rocks IV Introduction) | Animation | 2025
+    "https://youtu.be/WaBG-p05NJg?si=mSVPX_70i9rfbQ5m", # Ganja White Night - Wobble Jam | Music video | Animation
+    "https://youtu.be/7K50gOshkvY?si=J8sNrvLKvcnhgfIf", # Ganja White Night x Truth - Bassline Don | Music video | Animation
+    "https://youtu.be/gBAhlvFFKJw?si=ox22AiA65P18hgQ7", # Ganja White Night x Wooli x Amidy - Rise Up | Official Music Video | Animation | 2024
+    "https://youtu.be/9cUANFY_6yY?si=mnI4eU2agwrjnOja", # Ganja White Night x LSDREAM x Probcause - Magic Frog | Official Music Video | Animation | 2025
+    "https://youtu.be/nk9GFvtFP74?si=MJbaLfUxjzCxX2rQ", # Ganja White Night - Chak Chel | Music Video | Animation
+    "https://youtu.be/khMSU031Or0?si=BlFCipuNdPzRmFml", # Ganja White Night x Subtronics - Headband | Music Video | Animation
+    "https://youtu.be/xUj2lp1hoss?si=lLdp0WTg1nT9wuT8", # Ganja White Night - The One | Music Video | Animation
+    "https://youtu.be/QvNTiBCxS_E?si=1zifUwvbr01kuXAV", # Ganja White Night x Apashe - Flute Chillum | Music Video | Animation
+    "https://youtu.be/jT_f2QBhbvo?si=m11I7nNfZ-ZmWQVT", # Ganja White Night x Boogie T - Up | Music Video | Animation
+    "https://youtu.be/lWGepdgYq0M?si=-R1EcAApq8fOvvEb", # Ganja White Night x Caspa - Mr. Fix It | Music Video | Animation
+    "https://youtu.be/UuTsDYuu9ig?si=c_Aa489tv1WHxCsM", # Ganja White Night - Ferity VIP | Music Video | Animation
+    "https://youtu.be/EoiULVgGFPw?si=DsAwpLJiUSxe6avX", # Ganja White Night - Narnia | Music Video | Animation | Dark Wobble | 2021
+    "https://youtu.be/USNwrDM6SkA?si=upoBsYF3x_hdEL3J", # Ganja White Night x PEEKABOO - Mitosis | Official Music Video | Animation | 2022
+    "https://youtu.be/BSz1j_y35ro?si=1ObrNDyISB3oGDCR", # Trampsta & Heavy Drop - Toxibombs (Video)
+    "https://youtu.be/jT_f2QBhbvo?si=C7lldwwmS_oFg1DS", # Ganja White Night x Boogie T - Up | Music Video | Animation
+    "https://youtu.be/8lXZXdJwSv4?si=uXLCR_4qGkSZqPuU", # Ganja White Night, Liquid Stranger - Jungle Juice
+    "https://youtu.be/os_yEOfSGJM?si=nTAmReK300BLTNbz", # GRiZ x Ganja White Night - Ease Your Mind | Official Music Video | Animation | 2021
+    "https://youtu.be/MY7SytvTYjA?si=3ohsSjMYwZb03Rxp", # Ganja White Night - Trinity | Single | Music Video | Animation | Dark Wobble | 2021
+    "https://youtu.be/0QqFTv8T9os?si=6D9o4vhHG01I33dO", # Ganja White Night - Shipwreck | Music Video | Animation | Dark Wobble | 2021
     "https://youtu.be/w5RBa2uNdAk?si=anJaCS9xteC87cUF", # BOOGIE T.RIO - Dear Weed Man (Ganja White Night Remix) | Music Video | Animation
     "https://youtu.be/aNPuB-kCsmo?si=V_ILeVWa_haPXvWs", # AVAION - Keep On Dancing (Official Video)
     "https://youtu.be/9KiFRB1aVI4?si=hcsfVOtXsUc2DCJ9", # AVAION - Hope (Official Video)
