@@ -60,6 +60,26 @@ pvp_role_name = "PVP"
 # YouTube Data API v3 Configuration
 YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3"
 
+# HTTP Server for Render.com health checks
+async def health_check(request):
+    """Health check endpoint for Render.com"""
+    return web.Response(text="Bot is running!", status=200)
+
+async def start_http_server():
+    """Start HTTP server for Render.com port binding"""
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    
+    # Use PORT environment variable or default to 8080
+    port = int(os.getenv('PORT', 8080))
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"🌐 HTTP server started on port {port} for Render.com")
+
 class YouTubeAudioSource(discord.PCMVolumeTransformer):
     """Audio source for YouTube streaming using yt-dlp"""
     
@@ -75,8 +95,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         
         ytdl_format_options = {
-            # Prefer high-quality m4a/aac for better Bluetooth compatibility over opus/webm
-            'format': 'bestaudio[ext=m4a][acodec=aac]/bestaudio[acodec=aac]/bestaudio[ext=mp4]/bestaudio[ext=webm]/bestaudio',
+            # Optimized format selection for Render.com's FFmpeg
+            'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
             'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
             'restrictfilenames': True,
             'noplaylist': True,
@@ -91,16 +111,19 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'cookiefile': 'cookies.txt',
             'prefer_ffmpeg': True,
             'keepvideo': False,
-            'user_agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            # Larger chunks for better quality on stable connections
-            'http_chunk_size': 1048576,  # 1MB chunks for better audio quality
-            'socket_timeout': 60,  # Increased timeout for better network reliability
-            'retries': 10,  # More retries for cloud reliability
-            'fragment_retries': 10,  # More fragment retries
-            'retry_sleep': 3,  # Sleep between retries
-            'max_sleep_interval': 5,
-            'sleep_interval_requests': 1,
-            'sleep_interval_subtitles': 1,
+            # More conservative settings for cloud stability
+            'user_agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'http_chunk_size': 512000,  # Smaller chunks for cloud stability
+            'socket_timeout': 30,  # Shorter timeout to avoid hanging
+            'retries': 15,  # More retries for cloud reliability
+            'fragment_retries': 15,  # More fragment retries
+            'retry_sleep': 2,  # Shorter sleep between retries
+            'max_sleep_interval': 3,
+            'sleep_interval_requests': 0.5,
+            'sleep_interval_subtitles': 0.5,
+            # Additional stability options for cloud deployment
+            'geo_bypass': True,
+            'geo_bypass_country': 'US',
         }
 
         # For cloud deployment (Render.com), use minimal FFmpeg options
@@ -127,27 +150,29 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             print(f"Creating audio source from: {filename}")
             print(f"Stream mode: {stream}")
             
-            # Enhanced FFmpeg options for better Bluetooth audio quality
-            # Optimized for AAC/M4A sources with better Bluetooth codec compatibility
+            # Enhanced FFmpeg options optimized for Render.com's FFmpeg
             before_options = (
                 '-reconnect 1 '
-                '-rw_timeout 20000000 '
-                '-loglevel fatal '
-                '-fflags +discardcorrupt '  # Handle corrupted packets better
-                '-analyzeduration 2147483647 '  # Better stream analysis
-                '-probesize 2147483647 '  # Better stream probing
+                '-reconnect_streamed 1 '
+                '-reconnect_delay_max 5 '
+                '-rw_timeout 15000000 '
+                '-loglevel error '
+                '-fflags +discardcorrupt+genpts '
+                '-analyzeduration 1000000 '
+                '-probesize 1000000 '
+                '-multiple_requests 1 '
+                '-http_persistent 0 '
             )
             
-            # Enhanced audio processing for Bluetooth compatibility
-            # Force higher sample rate and bitrate for better quality
+            # Simplified audio processing for cloud compatibility
             options = (
                 '-vn '  # No video
                 '-ac 2 '  # Force stereo
-                '-ar 48000 '  # High sample rate (48kHz) for better quality
-                '-ab 320k '  # Force high bitrate (320kbps) for quality
-                '-acodec pcm_s16le '  # High-quality PCM encoding for Discord
-                '-f s16le '  # Force 16-bit signed little-endian format
-                '-bufsize 512k '  # Audio buffer size for smooth playback
+                '-ar 48000 '  # High sample rate
+                '-ab 128k '  # Conservative bitrate for stability
+                '-acodec pcm_s16le '  # Reliable PCM encoding
+                '-f s16le '  # Standard format
+                '-bufsize 64k '  # Smaller buffer for cloud
             )
             
             # Create the audio source with enhanced network stability
@@ -225,18 +250,19 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         if loop is None:
             loop = asyncio.get_event_loop()
             
-        # Simple fallback - try with better quality settings and enhanced network resilience
+        # Simple fallback with cloud-optimized settings
         try:
             ytdl_simple = yt_dlp.YoutubeDL({
-                'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
+                'format': 'bestaudio[ext=webm]/bestaudio',
                 'quiet': True,
                 'no_warnings': True,
-                'cookiefile': 'cookies.txt',  # Use cookies file for fallback too
+                'cookiefile': 'cookies.txt',
                 'prefer_ffmpeg': True,
-                'socket_timeout': 60,  # Longer timeout for fallback
-                'retries': 10,  # More aggressive retries for fallback
-                'fragment_retries': 10,
-                'retry_sleep': 2,
+                'socket_timeout': 20,  # Shorter timeout for cloud
+                'retries': 8,  # Fewer retries for faster fallback
+                'fragment_retries': 8,
+                'retry_sleep': 1,  # Faster retry for cloud
+                'geo_bypass': True,
             })
             
             def extract_simple():
@@ -253,15 +279,16 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in fallback data")
                 
-            # Enhanced fallback FFmpeg options - minimal for Render.com compatibility
+            # Enhanced fallback FFmpeg options - optimized for Render.com
             source = discord.FFmpegPCMAudio(
                 data['url'],
                 before_options=(
                     '-reconnect 1 '
-                    '-rw_timeout 20000000 '
-                    '-loglevel fatal'
+                    '-reconnect_delay_max 3 '
+                    '-rw_timeout 10000000 '
+                    '-loglevel error'
                 ),
-                options='-vn'
+                options='-vn -ac 2 -ar 48000 -ab 96k'
             )
             return cls(source, data=data)
             
@@ -280,6 +307,9 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 'no_warnings': True,
                 'cookiefile': 'cookies.txt',
                 'prefer_ffmpeg': True,
+                'socket_timeout': 15,  # Very short for minimal fallback
+                'retries': 5,  # Minimal retries
+                'geo_bypass': True,
             })
             def extract_minimal():
                 return ytdl_minimal.extract_info(url, download=False)
@@ -290,15 +320,15 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 data = data['entries'][0]
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in minimal data")
-            # Minimal FFmpeg options for maximum compatibility with Render.com
+            # Minimal FFmpeg options optimized for Render.com cloud deployment
             source = discord.FFmpegPCMAudio(
                 data['url'],
                 before_options=(
                     '-reconnect 1 '
-                    '-rw_timeout 20000000 '
-                    '-loglevel fatal'
+                    '-rw_timeout 8000000 '
+                    '-loglevel error'
                 ),
-                options='-vn'
+                options='-vn -ac 2 -ar 44100'
             )
             return cls(source, data=data)
         except Exception as e:
@@ -896,70 +926,73 @@ class MusicBot:
                         error_str = str(error).lower()
                         print(f'🎵 Player error: {error}')
                         
-                        # Enhanced TLS/network error detection during playback - VERY aggressive
+                        # Enhanced TLS/network error detection for cloud deployment
                         if any(keyword in error_str for keyword in [
                             'input/output error', 'end of file', 'connection', 'network', 'broken pipe', 
                             'tls', 'ssl', 'connection reset', 'io error', 'pull function', 'error in the pull function',
                             'connection reset by peer', 'will reconnect', 'stream ended', 'broken', 'reset'
                         ]):
-                            print(f"[TLS_RECOVERY] TLS/Network error detected during playback: {error}")
-                            print(f"[TLS_RECOVERY] Bot will automatically continue with next song to maintain playback")
-                            # Always treat TLS errors as normal song completion for auto-advance
+                            print(f"[CLOUD_RECOVERY] Network/TLS error detected (common on cloud): {error}")
+                            print(f"[CLOUD_RECOVERY] Treating as normal completion to maintain continuous playback")
                         else:
-                            print(f"[PLAYER_ERROR] Non-network player error: {error}")
-                            # For non-network errors, still try to continue (more resilient)
-                            print(f"[PLAYER_ERROR] Will still attempt to continue playback")
+                            print(f"[PLAYER_ERROR] Non-network error: {error}")
                     else:
                         print(f"🎵 Song finished playing normally for guild {guild_id}")
                     
-                    # Clean up player object to free memory on Render.com
+                    # Enhanced memory cleanup for cloud deployment
                     try:
                         if hasattr(player, 'cleanup'):
                             player.cleanup()
                         elif hasattr(player, 'source') and hasattr(player.source, 'cleanup'):
                             player.source.cleanup()
+                        # Force garbage collection in cloud environment
+                        import gc
+                        gc.collect()
                     except Exception as cleanup_error:
                         print(f"[MEMORY] Player cleanup error: {cleanup_error}")
                     
-                    # ALWAYS auto-advance if we're supposed to be playing (more aggressive continuation)
-                    # BUT ONLY if no manual skip is in progress AND no other song is already playing
+                    # Auto-advance logic with cloud-specific improvements
                     if (self.is_playing.get(guild_id, False) and 
                         not self.manual_skip_in_progress.get(guild_id, False)):
                         
-                        # Additional safety check - make sure voice client isn't already playing something else
+                        # Check voice client status before advancing
                         try:
                             if guild_id in self.voice_clients:
                                 current_voice_client = self.voice_clients[guild_id]
+                                
+                                # Don't advance if already playing or if disconnected
                                 if current_voice_client.is_playing():
-                                    print(f"[AUTO-ADVANCE] Voice client already playing new song, skipping auto-advance")
+                                    print(f"[AUTO-ADVANCE] Voice client already playing, skipping auto-advance")
+                                    return
+                                elif not current_voice_client.is_connected():
+                                    print(f"[AUTO-ADVANCE] Voice client disconnected, stopping playback")
+                                    self.is_playing[guild_id] = False
                                     return
                         except Exception as voice_check_error:
                             print(f"[AUTO-ADVANCE] Error checking voice client status: {voice_check_error}")
                         
-                        # Enhanced delay logic for different error types
+                        # Cloud-optimized delay logic for different error types
                         delay = 0.0
                         advance_mode = "normal"
                         
                         if error:
                             error_lower = str(error).lower()
                             if any(keyword in error_lower for keyword in ['tls', 'ssl', 'connection reset', 'pull function', 'reset by peer']):
-                                delay = 3.0  # Longer delay for TLS errors
-                                advance_mode = "TLS error recovery"
-                                print(f"[TLS_RECOVERY] TLS connection error detected, waiting {delay}s for recovery")
+                                delay = 2.0  # Shorter delay for cloud TLS recovery
+                                advance_mode = "TLS recovery"
                             elif any(keyword in error_lower for keyword in ['network', 'input/output', 'connection', 'io error']):
-                                delay = 1.5  # Medium delay for network errors
-                                advance_mode = "network error recovery"
-                                print(f"[NETWORK_RECOVERY] Network error detected, waiting {delay}s for recovery")
+                                delay = 1.0  # Quick recovery for network errors
+                                advance_mode = "network recovery"
                             else:
                                 delay = 0.5  # Brief delay for other errors
                                 advance_mode = "error recovery"
-                                print(f"[ERROR_RECOVERY] Other error detected, waiting {delay}s before retry")
                         else:
-                            # Normal song completion - no delay needed
+                            # Normal song completion - instant transition
                             delay = 0.0
                             advance_mode = "normal"
                         
                         print(f"[AUTO-ADVANCE] Moving to next song automatically ({advance_mode} mode)")
+                        
                         # Move to next position in shuffle (thread-safe)
                         current_shuffle_pos = self.shuffle_positions.get(guild_id, 0)
                         next_shuffle_pos = current_shuffle_pos + 1
@@ -973,19 +1006,19 @@ class MusicBot:
                         self.shuffle_positions[guild_id] = next_shuffle_pos
                         print(f"⏭️ Auto-advancing to shuffle position {next_shuffle_pos + 1} for continuous playback")
                         
-                        # Schedule next song to play without blocking (ensures infinite loop)
+                        # Schedule next song with cloud-optimized delay handling
                         async def play_next_song():
                             try:
-                                # Use the calculated delay from above
+                                # Apply calculated delay for recovery
                                 if delay > 0:
-                                    print(f"[RECOVERY_DELAY] Waiting {delay}s for connection stabilization...")
                                     await asyncio.sleep(delay)
-                                else:
-                                    # For normal completion, still add a tiny delay to prevent race conditions
-                                    await asyncio.sleep(0.1)
-                                    await asyncio.sleep(0.1)
                                 
-                                # Enhanced verification - ensure we're still supposed to be playing
+                                # Verify we're still supposed to be playing before continuing
+                                if (guild_id in self.voice_clients and 
+                                    self.is_playing.get(guild_id, False) and 
+                                    not self.manual_skip_in_progress.get(guild_id, False)):
+                                    
+                                    await self._play_current_song(guild_id)
                                 if self.is_playing.get(guild_id, False) and not self.manual_skip_in_progress.get(guild_id, False):
                                     if error:
                                         print(f"[RECOVERY_CONTINUE] Starting next song after error recovery")
@@ -1449,77 +1482,111 @@ class MusicBot:
             return False
 
     async def voice_health_check(self):
-        """Conservative health check that monitors playback and handles network issues gracefully"""
+        """Enhanced health check with auto-reconnection for cloud deployment stability"""
+        reconnection_attempts = {}  # guild_id -> attempt_count
+        last_reconnection_time = {}  # guild_id -> timestamp
+        
         while True:
             try:
-                await asyncio.sleep(120)  # Every 2 minutes - less aggressive
+                current_time = asyncio.get_event_loop().time()
                 
                 for guild_id in list(self.voice_clients.keys()):
-                    if not self.is_playing.get(guild_id, False):
-                        continue  # Skip if not supposed to be playing
-                    
-                    voice_client = self.voice_clients.get(guild_id)
-                    if not voice_client:
-                        continue
-                    
-                    # Check if we're in a problematic state first
-                    if self.manual_skip_in_progress.get(guild_id, False):
-                        print(f"[HEALTH_CHECK] Skipping guild {guild_id} - manual operation in progress")
-                        continue
-                    
-                    # Track the last time we tried to restart for this guild
-                    last_restart_key = f"last_restart_{guild_id}"
-                    current_time = asyncio.get_event_loop().time()
-                    last_restart = getattr(self, last_restart_key, 0)
-                    
-                    # Don't restart too frequently (minimum 8 minutes between restarts for network stability)
-                    if current_time - last_restart < 480:
-                        continue
-                    
-                    # Check if voice client is still connected but DO NOT auto-reconnect
-                    if not voice_client.is_connected():
-                        print(f"[HEALTH_CHECK] Voice client disconnected for guild {guild_id} - cleaning up state")
-                        # Clean up our state but don't try to reconnect automatically
-                        self.is_playing[guild_id] = False
-                        if guild_id in self.voice_clients:
-                            del self.voice_clients[guild_id]
-                        continue
-                    
-                    # Only restart music if voice client is connected but not playing
-                    elif not voice_client.is_playing() and not voice_client.is_paused():
-                        # Wait even longer before considering it stuck (network delays)
-                        print(f"[HEALTH_CHECK] Detected stopped playback for guild {guild_id}, waiting 30s for network recovery...")
-                        await asyncio.sleep(30)
+                    try:
+                        voice_client = self.voice_clients[guild_id]
                         
-                        # Triple-check that it's still stuck and no manual operations started
-                        if (voice_client.is_connected() and 
-                            not voice_client.is_playing() and not voice_client.is_paused() and 
-                            not self.manual_skip_in_progress.get(guild_id, False) and
-                            self.is_playing.get(guild_id, False)):
+                        # Enhanced connection validation
+                        if not voice_client or not hasattr(voice_client, 'is_connected'):
+                            print(f"[HEALTH_CHECK] Invalid voice client for guild {guild_id}")
+                            continue
                             
-                            print(f"[HEALTH_CHECK] Music confirmed stuck for guild {guild_id}, attempting gentle restart...")
-                            try:
-                                setattr(self, last_restart_key, current_time)
-                                # Try advancing to next song instead of replaying current one (network issues)
-                                current_pos = self.shuffle_positions.get(guild_id, 0)
-                                self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, [1]))
-                                await self._play_current_song(guild_id)
-                                print(f"[HEALTH_CHECK] Successfully restarted music for guild {guild_id}")
-                            except Exception as e:
-                                print(f"[HEALTH_CHECK] Failed to restart music for guild {guild_id}: {e}")
-                                # After failure, be even more conservative 
-                                failure_count_key = f"failure_count_{guild_id}"
-                                failure_count = getattr(self, failure_count_key, 0) + 1
-                                setattr(self, failure_count_key, failure_count)
+                        if not voice_client.is_connected():
+                            print(f"[HEALTH_CHECK] Voice client disconnected for guild {guild_id}")
+                            
+                            # Check if we should attempt auto-reconnection
+                            should_reconnect = self.is_playing.get(guild_id, False)
+                            attempts = reconnection_attempts.get(guild_id, 0)
+                            last_attempt = last_reconnection_time.get(guild_id, 0)
+                            
+                            # Only attempt reconnection if:
+                            # 1. We were supposed to be playing
+                            # 2. We haven't exceeded max attempts (3 for cloud stability)
+                            # 3. At least 60 seconds have passed since last attempt
+                            if (should_reconnect and attempts < 3 and 
+                                current_time - last_attempt > 60):
                                 
-                                if failure_count >= 1:  # Single failure threshold for network stability
-                                    print(f"[HEALTH_CHECK] Network issues detected for guild {guild_id}, pausing health check")
-                                    self.is_playing[guild_id] = False
-                                    setattr(self, failure_count_key, 0)  # Reset for next session
+                                print(f"[AUTO_RECONNECT] Attempting auto-reconnection for guild {guild_id} (attempt {attempts + 1}/3)")
+                                
+                                try:
+                                    # Try to find the guild and a suitable voice channel
+                                    guild = self.bot.get_guild(guild_id)
+                                    if guild and hasattr(voice_client, 'channel') and voice_client.channel:
+                                        # Attempt to reconnect to the same channel
+                                        new_voice_client = await voice_client.channel.connect()
+                                        self.voice_clients[guild_id] = new_voice_client
+                                        
+                                        # Reset attempt counter on successful reconnection
+                                        reconnection_attempts[guild_id] = 0
+                                        
+                                        print(f"[AUTO_RECONNECT] Successfully reconnected to {voice_client.channel.name}")
+                                        
+                                        # Resume playback after short delay
+                                        await asyncio.sleep(3)
+                                        await self._play_current_song(guild_id)
+                                        
+                                except Exception as reconnect_error:
+                                    print(f"[AUTO_RECONNECT] Failed to reconnect: {reconnect_error}")
+                                    reconnection_attempts[guild_id] = attempts + 1
+                                    last_reconnection_time[guild_id] = current_time
+                                    
+                                    # If max attempts reached, stop trying and clean up
+                                    if reconnection_attempts[guild_id] >= 3:
+                                        print(f"[AUTO_RECONNECT] Max attempts reached for guild {guild_id}, giving up")
+                                        self.is_playing[guild_id] = False
+                                        if guild_id in self.voice_clients:
+                                            del self.voice_clients[guild_id]
+                            else:
+                                # If not reconnecting, clean up immediately
+                                print(f"[HEALTH_CHECK] Cleaning up disconnected voice client for guild {guild_id}")
+                                self.is_playing[guild_id] = False
+                                if guild_id in self.voice_clients:
+                                    del self.voice_clients[guild_id]
+                            
+                            continue
+                        
+                        # Reset reconnection attempts if connection is stable
+                        if guild_id in reconnection_attempts:
+                            reconnection_attempts[guild_id] = 0
+                        
+                        # Check if playback should be active but isn't (less aggressive)
+                        if self.is_playing.get(guild_id, False):
+                            if not voice_client.is_playing() and not voice_client.is_paused():
+                                # Only restart if no manual operations are in progress
+                                if not self.manual_skip_in_progress.get(guild_id, False):
+                                    print(f"[HEALTH_CHECK] Playback stopped for guild {guild_id}, restarting...")
+                                    await asyncio.sleep(2)  # Brief delay for network recovery
+                                    
+                                    # Double-check before restarting
+                                    if (guild_id in self.voice_clients and 
+                                        self.voice_clients[guild_id].is_connected() and
+                                        self.is_playing.get(guild_id, False) and
+                                        not self.voice_clients[guild_id].is_playing() and
+                                        not self.manual_skip_in_progress.get(guild_id, False)):
+                                        
+                                        try:
+                                            await self._play_current_song(guild_id)
+                                        except Exception as restart_error:
+                                            print(f"[HEALTH_CHECK] Failed to restart playback: {restart_error}")
+                        
+                    except Exception as guild_error:
+                        print(f"[HEALTH_CHECK] Error checking guild {guild_id}: {guild_error}")
+                        continue
+                
+                # Sleep for 90 seconds between health checks (less aggressive for cloud)
+                await asyncio.sleep(90)
                 
             except Exception as e:
-                print(f"[HEALTH_CHECK] Error in voice health check: {e}")
-                await asyncio.sleep(30)  # Wait before retrying after error
+                print(f"[HEALTH_CHECK] Error in health check loop: {e}")
+                await asyncio.sleep(45)  # Shorter sleep on error
     
     # ...existing code...
 @bot.command()
@@ -1689,6 +1756,7 @@ async def init_database():
         # Migration: Add user_id and action_type columns to existing undo_stack if they don't exist
         try:
             await db.execute("ALTER TABLE undo_stack ADD COLUMN user_id TEXT")
+
         except:
             pass  # Column already exists
         
@@ -1843,6 +1911,12 @@ async def on_ready():
     else:
         print("We are ready to go in, but bot.user is None")
     
+    # Start HTTP server for Render.com port binding
+    try:
+        await start_http_server()
+    except Exception as e:
+        print(f"❌ Failed to start HTTP server: {e}")
+    
     # Cloud environment diagnostics for Render.com
     print("="*50)
     print("[RENDER.COM] Environment Diagnostics:")
@@ -1892,6 +1966,10 @@ async def on_ready():
     # Start voice health check task
     asyncio.create_task(music_bot.voice_health_check())
     print("Voice health check started")
+
+    # Start HTTP server for health checks
+    if os.getenv('RENDER_SERVICE_NAME'):
+        await start_http_server()
 
 @bot.event
 async def on_disconnect():
