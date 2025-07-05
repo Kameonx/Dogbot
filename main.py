@@ -387,9 +387,9 @@ async def on_ready():
     music_bot = MusicBot(bot)
     print("Music bot initialized")
     
-    # Start voice health check task
-    asyncio.create_task(music_bot.voice_health_check())
-    print("Voice health check started")
+    # Voice health check disabled for stability
+    # asyncio.create_task(music_bot.voice_health_check())
+    # print("Voice health check started")
 
 @bot.event
 async def on_disconnect():
@@ -450,36 +450,13 @@ async def on_message(message):
     # Just process commands, don't handle them manually here
     await bot.process_commands(message)
 
-@bot.event
-async def on_voice_state_update(member, before, after):
-    """Track voice state changes to detect when the bot is disconnected"""
-    if member == bot.user:
-        if before.channel and not after.channel:
-            # Bot was disconnected from voice channel
-            guild_id = before.channel.guild.id
-            print(f"[VOICE_STATE] Bot was disconnected from {before.channel.name} in guild {guild_id}")
-            
-            # Add a small delay to avoid race conditions with reconnection attempts
-            await asyncio.sleep(2)
-            
-            # Clean up music bot state if it exists, but be more conservative
-            if music_bot and guild_id in music_bot.voice_clients:
-                print(f"[VOICE_STATE] Cleaning up music bot state for guild {guild_id}")
-                # Clean up voice client reference
-                del music_bot.voice_clients[guild_id]
-                # Stop playback flag to prevent health check conflicts
-                if guild_id in music_bot.is_playing:
-                    music_bot.is_playing[guild_id] = False
-                # Clear specific URL flag on disconnect
-                if guild_id in music_bot.playing_specific_url:
-                    music_bot.playing_specific_url[guild_id] = False
-                # Keep other state (shuffle playlists, positions, etc.) for potential manual reconnection
-                print(f"[VOICE_STATE] State cleaned up, manual reconnection will be required")
-        elif not before.channel and after.channel:
-            # Bot connected to voice channel
-            print(f"[VOICE_STATE] Bot connected to {after.channel.name}")
-            # Add a short delay to let the connection stabilize
-            await asyncio.sleep(1)
+# Commented out to prevent unwanted disconnections/reconnect loops
+# @bot.event
+# async def on_voice_state_update(member, before, after):
+#     """Track voice state changes to detect when the bot is disconnected"""
+#     if member == bot.user:
+#         return  # No action, rely on built-in reconnect
+#     # ...voice state update logic disabled for stability...
 
 # Helper function to check for admin/moderator permissions
 def has_admin_or_moderator_role(ctx):
