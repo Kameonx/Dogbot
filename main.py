@@ -63,22 +63,42 @@ YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3"
 # HTTP Server for Render.com health checks
 async def health_check(request):
     """Health check endpoint for Render.com"""
-    return web.Response(text="Bot is running!", status=200)
+    status = {
+        "status": "healthy",
+        "bot_ready": bot.is_ready() if bot else False,
+        "timestamp": datetime.now().isoformat(),
+        "service": "dogbot-music"
+    }
+    return web.json_response(status, status=200)
+
+async def root_endpoint(request):
+    """Root endpoint for Render.com port detection"""
+    return web.Response(text="🤖 DogBot Music Service is running!\n🎵 Discord music bot ready for action.", status=200)
 
 async def start_http_server():
     """Start HTTP server for Render.com port binding"""
     app = web.Application()
-    app.router.add_get('/', health_check)
+    app.router.add_get('/', root_endpoint)
     app.router.add_get('/health', health_check)
+    app.router.add_get('/status', health_check)  # Additional endpoint for status
+    app.router.add_get('/ping', root_endpoint)   # Additional endpoint for ping
     
-    # Use PORT environment variable or default to 8080
-    port = int(os.getenv('PORT', 8080))
+    # Use PORT environment variable (default 10000 for Render.com)
+    port = int(os.getenv('PORT', 10000))
     
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    print(f"🌐 HTTP server started on port {port} for Render.com")
+    try:
+        runner = web.AppRunner(app)
+        await runner.setup()
+        # Bind to 0.0.0.0 as required by Render.com - CRITICAL
+        site = web.TCPSite(runner, '0.0.0.0', port)
+        await site.start()
+        print(f"🌐 HTTP server bound to 0.0.0.0:{port} for Render.com")
+        print(f"🔗 Service should be accessible at your-service.onrender.com")
+        return True
+    except Exception as e:
+        print(f"❌ CRITICAL: Failed to bind HTTP server to 0.0.0.0:{port} - {e}")
+        print(f"💡 This will cause Render.com deployment to fail!")
+        return False
 
 class YouTubeAudioSource(discord.PCMVolumeTransformer):
     """Audio source for YouTube streaming using yt-dlp"""
@@ -1015,7 +1035,7 @@ class MusicBot:
                                 
                                 # Verify we're still supposed to be playing before continuing
                                 if (guild_id in self.voice_clients and 
-                                    self.is_playing.get(guild_id, False) and 
+                                    self.is_playing.get(guild_id, False) and
                                     not self.manual_skip_in_progress.get(guild_id, False)):
                                     
                                     await self._play_current_song(guild_id)
@@ -1911,11 +1931,23 @@ async def on_ready():
     else:
         print("We are ready to go in, but bot.user is None")
     
-    # Start HTTP server for Render.com port binding
+    # Start HTTP server for Render.com port binding - CRITICAL for deployment
+    print("🚀 Starting HTTP server for Render.com...")
+    port = os.getenv('PORT', '10000')
+    print(f"📡 Attempting to bind to 0.0.0.0:{port}")
+    
     try:
-        await start_http_server()
+        server_started = await start_http_server()
+        if server_started:
+            print("✅ HTTP server started successfully - Render.com port binding complete")
+            print("🎯 Render.com should now detect the open port")
+        else:
+            print("❌ CRITICAL: Failed to start HTTP server - deployment WILL fail")
+            print("🚨 This is a blocking issue for Render.com deployment")
     except Exception as e:
-        print(f"❌ Failed to start HTTP server: {e}")
+        print(f"❌ CRITICAL error starting HTTP server: {e}")
+        print("🚨 This will cause Render.com to timeout and fail deployment")
+        # Still continue - don't crash the entire bot
     
     # Cloud environment diagnostics for Render.com
     print("="*50)
@@ -1927,6 +1959,10 @@ async def on_ready():
         print(f"[RENDER.COM] Service Name: {render_service}")
     else:
         print("[RENDER.COM] Not detected (running locally?)")
+    
+    # Log the PORT binding for debugging
+    port = os.getenv('PORT', '10000')
+    print(f"[RENDER.COM] PORT environment variable: {port}")
     
     # Check FFmpeg availability
     try:
@@ -2467,3 +2503,19 @@ async def bluetooth(ctx):
     
     embed.set_footer(text="🎧 Enhanced audio settings are now active for better Bluetooth playback")
     await ctx.send(embed=embed)
+
+# Main execution - Start the Discord bot
+if __name__ == "__main__":
+    try:
+        print("🚀 Starting DogBot Music Service...")
+        print(f"🔑 Discord token configured: {'✅' if token else '❌'}")
+        
+        # Music bot will be initialized in on_ready event
+        # Start bot - this will trigger on_ready() which starts the HTTP server
+        bot.run(token)
+        
+    except KeyboardInterrupt:
+        print("\n👋 Bot shutdown requested by user")
+    except Exception as e:
+        print(f"❌ Critical error starting bot: {e}")
+        raise
