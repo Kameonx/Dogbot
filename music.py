@@ -1029,81 +1029,61 @@ class MusicBot:
             self.is_playing[ctx.guild.id] = True
             await ctx.send("🎵 Will start shuffled playlist after this song finishes!")
         
-        await ctx.send(f"🎵 Now Playing: {url}")
-        
         # Create audio source for specific URL
         try:
             player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
+            # Send now playing with video title instead of URL
+            await ctx.send(f"🎵 Now Playing: \"{player.title}\"")
         except Exception as e:
             await ctx.send(f"❌ Failed to load URL: {str(e)[:100]}...")
             return
 
         # Clean stop of any existing audio for smooth transition
         if voice_client.is_playing() or voice_client.is_paused():
-            print(f"[SPECIFIC_URL] Cleanly stopping current audio for smooth transition...")
+            print(f"[SPECIFIC_URL] Stopping current audio for smooth transition...")
             voice_client.stop()
-            # Give time for clean audio stop to prevent choppy overlap
-            await asyncio.sleep(1.0)
-            print(f"[SPECIFIC_URL] Audio cleanly stopped, ready for new song")
+            # Wait until audio fully stops to prevent overlap
+            while voice_client.is_playing() or voice_client.is_paused():
+                await asyncio.sleep(0.1)
+            print(f"[SPECIFIC_URL] Current audio fully stopped")
         else:
-            print(f"[SPECIFIC_URL] No audio currently playing, proceeding with new song")
-        
-        # Temporarily disable shuffled playlist auto-play but remember state
-        original_playing_state = self.is_playing.get(ctx.guild.id, False)
+            print(f"[SPECIFIC_URL] No audio currently playing")
+
+        # Disable playlist playback and set flag for specific URL
         self.is_playing[ctx.guild.id] = False
-        
-        # Set flag to prevent playlist interference during specific URL playback
         self.playing_specific_url[ctx.guild.id] = True
         print(f"[SPECIFIC_URL] Set playing_specific_url flag for guild {ctx.guild.id}")
-        
-        # Capture guild_id for callback closure
+
+        # Capture guild_id and original playing state for callback
         guild_id = ctx.guild.id
-        
-        # Play the specific track with intelligent resume callback
+        was_playing = was_playing_playlist
+
+        # Define callback to resume playlist if it was playing
         def after_specific(error):
-            # Clear the specific URL flag first
+            # Clear the specific URL flag
             self.playing_specific_url[guild_id] = False
             print(f"[SPECIFIC_URL] Cleared playing_specific_url flag for guild {guild_id}")
-            
+
             if error:
                 print(f"[SPECIFIC_URL] Error playing specific URL: {error}")
             else:
-                print(f"[SPECIFIC_URL] Specific URL finished playing successfully")
-            
-            # Always try to resume playlist if it was playing before OR if user had auto-start enabled
-            should_resume = original_playing_state or was_playing_playlist
-            
-            if should_resume:
-                print(f"[SPECIFIC_URL] Resuming shuffled playlist...")
-                
-                async def resume_playlist():
-                    try:
-                        # Re-enable playlist mode
-                        self.is_playing[guild_id] = True
-                        
-                        # Ensure we have a valid shuffle playlist
-                        if guild_id not in self.shuffle_playlists:
-                            self._generate_shuffle_playlist(guild_id)
-                        
-                        # Resume from current shuffle position - instant resume
-                        await self._play_current_song(guild_id)
-                        print(f"[SPECIFIC_URL] Successfully resumed shuffled playlist")
-                        
-                    except Exception as resume_error:
-                        print(f"[SPECIFIC_URL] Failed to resume playlist: {resume_error}")
-                        # If resume fails, ensure playing state is correct
-                        self.is_playing[guild_id] = False
-                
-                # Schedule playlist resume
-                asyncio.run_coroutine_threadsafe(resume_playlist(), self.bot.loop)
-            else:
-                print(f"[SPECIFIC_URL] Not resuming playlist (was not playing before)")
-        
+                print(f"[SPECIFIC_URL] Specific URL finished playing")
+
+            # Resume playlist if it was playing before
+            if was_playing:
+                print(f"[SPECIFIC_URL] Resuming playlist after specific URL")
+                self.is_playing[guild_id] = True
+                asyncio.run_coroutine_threadsafe(
+                    self._play_current_song(guild_id),
+                    self.bot.loop
+                )
+
+        # Play the specific track
         try:
             voice_client.play(player, after=after_specific)
-            print(f"[SPECIFIC_URL] Started playing specific URL")
+            print(f"[SPECIFIC_URL] Started playing specific URL {url}")
         except Exception as play_error:
-            # If play fails, clear the flag immediately
+            # Clear flag on failure
             self.playing_specific_url[guild_id] = False
             print(f"[SPECIFIC_URL] Failed to start playback: {play_error}")
             await ctx.send(f"❌ Failed to start playback: {str(play_error)[:100]}...")
