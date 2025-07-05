@@ -6,9 +6,13 @@ services:
     startCommand: python main.py
     plan: free
     healthCheckPath: /health
+    autoDeploy: true
+    scaling:
+      minInstances: 1
+      maxInstances: 1
     envVars:
       - key: PORT
-        value: 10000
+        value: 8080
       - key: DISCORD_TOKEN
         sync: false
       - key: VENICE_API_KEY
