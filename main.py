@@ -35,11 +35,14 @@ print(f"Opus loaded: {discord.opus.is_loaded()}")
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
 venice_api_key = os.getenv('VENICE_API_KEY')
+youtube_api_key = os.getenv('YOUTUBE_API_KEY')
 
 if token is None:
     raise ValueError("DISCORD_TOKEN environment variable not set")
 if venice_api_key is None:
     print("Warning: VENICE_API_KEY not set. AI features will be disabled.")
+if youtube_api_key is None:
+    print("Warning: YOUTUBE_API_KEY not set. YouTube API features will be disabled.")
 
 handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
 intents = discord.Intents.default()
@@ -47,7 +50,6 @@ intents.message_content = True
 intents.members = True
 intents.voice_states = True  # Needed for voice state tracking
 
-# Bot configuration - simplified for better voice stability
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 dogs_role_name = "Dogs"
@@ -55,45 +57,8 @@ cats_role_name = "Cats"
 lizards_role_name = "Lizards"
 pvp_role_name = "PVP"
 
-# HTTP Server for Render.com health checks
-async def health_check(request):
-    """Health check endpoint for Render.com"""
-    status = {
-        "status": "healthy",
-        "bot_ready": bot.is_ready() if bot else False,
-        "timestamp": datetime.now().isoformat(),
-        "service": "dogbot-music"
-    }
-    return web.json_response(status, status=200)
-
-async def root_endpoint(request):
-    """Root endpoint for Render.com port detection"""
-    return web.Response(text="🤖 DogBot Music Service is running!\n🎵 Discord music bot ready for action.", status=200)
-
-async def start_http_server():
-    """Start HTTP server for Render.com port binding"""
-    app = web.Application()
-    app.router.add_get('/', root_endpoint)
-    app.router.add_get('/health', health_check)
-    app.router.add_get('/status', health_check)  # Additional endpoint for status
-    app.router.add_get('/ping', root_endpoint)   # Additional endpoint for ping
-    
-    # Use PORT environment variable (default 10000 for Render.com)
-    port = int(os.getenv('PORT', 10000))
-    
-    try:
-        runner = web.AppRunner(app)
-        await runner.setup()
-        # Bind to 0.0.0.0 as required by Render.com - CRITICAL
-        site = web.TCPSite(runner, '0.0.0.0', port)
-        await site.start()
-        print(f"🌐 HTTP server bound to 0.0.0.0:{port} for Render.com")
-        print(f"🔗 Service should be accessible at your-service.onrender.com")
-        return True
-    except Exception as e:
-        print(f"❌ CRITICAL: Failed to bind HTTP server to 0.0.0.0:{port} - {e}")
-        print(f"💡 This will cause Render.com deployment to fail!")
-        return False
+# YouTube Data API v3 Configuration
+YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3"
 
 class YouTubeAudioSource(discord.PCMVolumeTransformer):
     """Audio source for YouTube streaming using yt-dlp"""
@@ -110,8 +75,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         
         ytdl_format_options = {
-            # Optimized format selection for Render.com's FFmpeg
-            'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
+            # Prefer high-quality m4a/aac for better Bluetooth compatibility over opus/webm
+            'format': 'bestaudio[ext=m4a][acodec=aac]/bestaudio[acodec=aac]/bestaudio[ext=mp4]/bestaudio[ext=webm]/bestaudio',
             'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
             'restrictfilenames': True,
             'noplaylist': True,
@@ -126,19 +91,16 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'cookiefile': 'cookies.txt',
             'prefer_ffmpeg': True,
             'keepvideo': False,
-            # More conservative settings for cloud stability
-            'user_agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'http_chunk_size': 512000,  # Smaller chunks for cloud stability
-            'socket_timeout': 30,  # Shorter timeout to avoid hanging
-            'retries': 15,  # More retries for cloud reliability
-            'fragment_retries': 15,  # More fragment retries
-            'retry_sleep': 2,  # Shorter sleep between retries
-            'max_sleep_interval': 3,
-            'sleep_interval_requests': 0.5,
-            'sleep_interval_subtitles': 0.5,
-            # Additional stability options for cloud deployment
-            'geo_bypass': True,
-            'geo_bypass_country': 'US',
+            'user_agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            # Larger chunks for better quality on stable connections
+            'http_chunk_size': 1048576,  # 1MB chunks for better audio quality
+            'socket_timeout': 60,  # Increased timeout for better network reliability
+            'retries': 10,  # More retries for cloud reliability
+            'fragment_retries': 10,  # More fragment retries
+            'retry_sleep': 3,  # Sleep between retries
+            'max_sleep_interval': 5,
+            'sleep_interval_requests': 1,
+            'sleep_interval_subtitles': 1,
         }
 
         # For cloud deployment (Render.com), use minimal FFmpeg options
@@ -165,29 +127,27 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             print(f"Creating audio source from: {filename}")
             print(f"Stream mode: {stream}")
             
-            # Enhanced FFmpeg options optimized for Render.com's FFmpeg
+            # Enhanced FFmpeg options for better Bluetooth audio quality
+            # Optimized for AAC/M4A sources with better Bluetooth codec compatibility
             before_options = (
                 '-reconnect 1 '
-                '-reconnect_streamed 1 '
-                '-reconnect_delay_max 5 '
-                '-rw_timeout 15000000 '
-                '-loglevel error '
-                '-fflags +discardcorrupt+genpts '
-                '-analyzeduration 1000000 '
-                '-probesize 1000000 '
-                '-multiple_requests 1 '
-                '-http_persistent 0 '
+                '-rw_timeout 20000000 '
+                '-loglevel fatal '
+                '-fflags +discardcorrupt '  # Handle corrupted packets better
+                '-analyzeduration 2147483647 '  # Better stream analysis
+                '-probesize 2147483647 '  # Better stream probing
             )
             
-            # Simplified audio processing for cloud compatibility
+            # Enhanced audio processing for Bluetooth compatibility
+            # Force higher sample rate and bitrate for better quality
             options = (
                 '-vn '  # No video
                 '-ac 2 '  # Force stereo
-                '-ar 48000 '  # High sample rate
-                '-ab 128k '  # Conservative bitrate for stability
-                '-acodec pcm_s16le '  # Reliable PCM encoding
-                '-f s16le '  # Standard format
-                '-bufsize 64k '  # Smaller buffer for cloud
+                '-ar 48000 '  # High sample rate (48kHz) for better quality
+                '-ab 320k '  # Force high bitrate (320kbps) for quality
+                '-acodec pcm_s16le '  # High-quality PCM encoding for Discord
+                '-f s16le '  # Force 16-bit signed little-endian format
+                '-bufsize 512k '  # Audio buffer size for smooth playback
             )
             
             # Create the audio source with enhanced network stability
@@ -247,7 +207,17 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                     return await cls.from_url_minimal(url, loop=loop)
                 except Exception as minimal_error:
                     print(f"Minimal fallback also failed: {minimal_error}")
-                    raise ValueError(f"Failed to extract audio from YouTube URL: {str(e)}")
+                    # Final fallback - get metadata from YouTube API if available
+                    if youtube_api:
+                        try:
+                            video_id = youtube_api.extract_video_id(url)
+                            if video_id:
+                                video_details = await youtube_api.get_video_details(video_id)
+                                title = video_details['snippet']['title'] if video_details else 'Unknown Title'
+                                raise ValueError(f"Failed to extract audio from: {title}")
+                        except:
+                            pass
+                raise ValueError(f"Failed to extract audio from YouTube URL: {str(e)}")
 
     @classmethod
     async def from_url_fallback(cls, url, *, loop=None):
@@ -255,19 +225,18 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         if loop is None:
             loop = asyncio.get_event_loop()
             
-        # Simple fallback with cloud-optimized settings
+        # Simple fallback - try with better quality settings and enhanced network resilience
         try:
             ytdl_simple = yt_dlp.YoutubeDL({
-                'format': 'bestaudio[ext=webm]/bestaudio',
+                'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio',
                 'quiet': True,
                 'no_warnings': True,
-                'cookiefile': 'cookies.txt',
+                'cookiefile': 'cookies.txt',  # Use cookies file for fallback too
                 'prefer_ffmpeg': True,
-                'socket_timeout': 20,  # Shorter timeout for cloud
-                'retries': 8,  # Fewer retries for faster fallback
-                'fragment_retries': 8,
-                'retry_sleep': 1,  # Faster retry for cloud
-                'geo_bypass': True,
+                'socket_timeout': 60,  # Longer timeout for fallback
+                'retries': 10,  # More aggressive retries for fallback
+                'fragment_retries': 10,
+                'retry_sleep': 2,
             })
             
             def extract_simple():
@@ -284,16 +253,15 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in fallback data")
                 
-            # Enhanced fallback FFmpeg options - optimized for Render.com
+            # Enhanced fallback FFmpeg options - minimal for Render.com compatibility
             source = discord.FFmpegPCMAudio(
                 data['url'],
                 before_options=(
                     '-reconnect 1 '
-                    '-reconnect_delay_max 3 '
-                    '-rw_timeout 10000000 '
-                    '-loglevel error'
+                    '-rw_timeout 20000000 '
+                    '-loglevel fatal'
                 ),
-                options='-vn -ac 2 -ar 48000 -ab 96k'
+                options='-vn'
             )
             return cls(source, data=data)
             
@@ -312,9 +280,6 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 'no_warnings': True,
                 'cookiefile': 'cookies.txt',
                 'prefer_ffmpeg': True,
-                'socket_timeout': 15,  # Very short for minimal fallback
-                'retries': 5,  # Minimal retries
-                'geo_bypass': True,
             })
             def extract_minimal():
                 return ytdl_minimal.extract_info(url, download=False)
@@ -325,15 +290,15 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 data = data['entries'][0]
             if not data or 'url' not in data:
                 raise ValueError("No playable URL in minimal data")
-            # Minimal FFmpeg options optimized for Render.com cloud deployment
+            # Minimal FFmpeg options for maximum compatibility with Render.com
             source = discord.FFmpegPCMAudio(
                 data['url'],
                 before_options=(
                     '-reconnect 1 '
-                    '-rw_timeout 8000000 '
-                    '-loglevel error'
+                    '-rw_timeout 20000000 '
+                    '-loglevel fatal'
                 ),
-                options='-vn -ac 2 -ar 44100'
+                options='-vn'
             )
             return cls(source, data=data)
         except Exception as e:
@@ -354,131 +319,174 @@ class MusicBot:
         self.playing_queued_song = {}  # guild_id -> bool (tracks if currently playing a queued song)
         self.network_error_count = {}  # guild_id -> count of recent network errors
         self.last_error_time = {}  # guild_id -> timestamp of last network error
-        # Voice error tracking for recovery
-        self.voice_error_tracker = {}
     
-    async def handle_voice_error(self, guild_id, error_type, error_msg):
-        """Handle voice connection errors with recovery logic"""
-        current_time = datetime.now().timestamp()
-        
-        # Initialize error tracking for guild
-        if guild_id not in self.voice_error_tracker:
-            self.voice_error_tracker[guild_id] = {
-                'error_count': 0,
-                'last_error_time': 0,
-                'recovery_attempts': 0
-            }
-        
-        tracker = self.voice_error_tracker[guild_id]
-        
-        # Reset counter if enough time has passed (10 minutes)
-        if current_time - tracker['last_error_time'] > 600:
-            tracker['error_count'] = 0
-            tracker['recovery_attempts'] = 0
-        
-        tracker['error_count'] += 1
-        tracker['last_error_time'] = current_time
-        
-        print(f"[VOICE_ERROR] Guild {guild_id} - {error_type}: {error_msg}")
-        print(f"[VOICE_ERROR] Error count: {tracker['error_count']}, Recovery attempts: {tracker['recovery_attempts']}")
-        
-        # If too many errors, stop trying to recover
-        if tracker['error_count'] > 3:
-            print(f"[VOICE_ERROR] Max errors reached for guild {guild_id}, stopping recovery attempts")
-            return False
-        
-        # Return whether recovery should be attempted
-        return tracker['recovery_attempts'] < 2
-
     def _generate_shuffle_playlist(self, guild_id):
-        """Generate a shuffled playlist for infinite looping"""
+        """Generate a new shuffled playlist for the guild"""
         if not MUSIC_PLAYLISTS:
+            print(f"⚠️ No songs in MUSIC_PLAYLISTS for guild {guild_id}")
             return
         
+        # Filter out any empty or invalid URLs
+        valid_urls = [url for url in MUSIC_PLAYLISTS if url and url.strip() and ('youtube.com' in url or 'youtu.be' in url)]
+        
+        if not valid_urls:
+            print(f"⚠️ No valid YouTube URLs found in playlist for guild {guild_id}")
+            return
+            
         # Create a shuffled copy of the playlist
-        shuffled = MUSIC_PLAYLISTS.copy()
+        shuffled = valid_urls.copy()
         random.shuffle(shuffled)
         
         self.shuffle_playlists[guild_id] = shuffled
         self.shuffle_positions[guild_id] = 0
-        print(f"[SHUFFLE] Generated new shuffle playlist for guild {guild_id} with {len(shuffled)} songs")
+        print(f"🔀 Generated new shuffle playlist for guild {guild_id} with {len(shuffled)} songs")
+        
+        # Ensure continuous playback - if we're currently playing, this is a regeneration
+        if self.is_playing.get(guild_id, False):
+            print(f"🔄 Playlist regenerated during playback - continuous music ensured")
     
     def _get_current_song_url(self, guild_id):
-        """Get the current song URL from the shuffled playlist"""
-        if guild_id not in self.shuffle_playlists:
+        """Get the current song URL - prioritizes queued songs, then shuffled playlist"""
+        # Check if there are queued songs first
+        if guild_id in self.queued_songs and self.queued_songs[guild_id]:
+            queued_url = self.queued_songs[guild_id].pop(0)  # Get first queued song
+            self.playing_queued_song[guild_id] = True
+            print(f"🎵 Playing queued song: {queued_url}")
+            return queued_url
+        
+        # Reset queued song flag if no more queued songs
+        self.playing_queued_song[guild_id] = False
+        
+        # Continue with normal shuffled playlist
+        if guild_id not in self.shuffle_playlists or not self.shuffle_playlists[guild_id]:
             self._generate_shuffle_playlist(guild_id)
         
-        if not self.shuffle_playlists[guild_id]:
+        if guild_id not in self.shuffle_playlists or not self.shuffle_playlists[guild_id]:
+            print(f"⚠️ No songs available for guild {guild_id} - playlist may be empty")
             return None
             
-        current_pos = self.shuffle_positions.get(guild_id, 0)
-        return self.shuffle_playlists[guild_id][current_pos]
+        position = self.shuffle_positions.get(guild_id, 0)
+        playlist = self.shuffle_playlists[guild_id]
+        
+        if position >= len(playlist):
+            # Regenerate shuffle when we reach the end (infinite loop)
+            print(f"🔄 Reached end of playlist, regenerating for infinite loop (guild {guild_id})")
+            self._generate_shuffle_playlist(guild_id)
+            position = 0
+            # Update the position after regeneration
+            self.shuffle_positions[guild_id] = position
+            playlist = self.shuffle_playlists[guild_id]
+        
+        # Ensure position is valid after all checks
+        if position < len(playlist):
+            return playlist[position]
+        else:
+            print(f"⚠️ Position {position} out of bounds for playlist length {len(playlist)} in guild {guild_id}")
+            return None
         
     async def join_voice_channel(self, ctx, auto_start=False):
-        """Join voice channel with enhanced error handling for cloud deployment"""
+        """Join the voice channel of the user who called the command"""
+        if not ctx.author.voice:
+            await ctx.send("❌ You need to be in a voice channel to use this command!")
+            return None
+            
+        channel = ctx.author.voice.channel
         guild_id = ctx.guild.id
         
-        # Rate limiting for join attempts to prevent spam
+        # Add connection cooldown to prevent rapid reconnection attempts
         cooldown_key = f"join_cooldown_{guild_id}"
         current_time = asyncio.get_event_loop().time()
         last_join_attempt = getattr(self, cooldown_key, 0)
         
         # Enforce minimum 10 second cooldown between join attempts
         if current_time - last_join_attempt < 10:
-            await ctx.send("⏳ Please wait before joining again.")
-            return
+            remaining = 10 - (current_time - last_join_attempt)
+            await ctx.send(f"⏳ Please wait {remaining:.1f} seconds before attempting to join again.")
+            return None
         
         setattr(self, cooldown_key, current_time)
         
         if guild_id in self.voice_clients:
             voice_client = self.voice_clients[guild_id]
+            # Check if voice client is still connected
             if voice_client.is_connected():
-                await ctx.send("🎵 Already connected to voice channel!")
-                if auto_start:
-                    await self.play_music(ctx, from_auto_start=True)
-                return
+                if voice_client.channel == channel:
+                    if auto_start:
+                        await ctx.send("🎵 I'm already in your voice channel! Starting music...")
+                        if not self.is_playing.get(guild_id, False):
+                            await self.play_music(ctx, from_auto_start=True)
+                    else:
+                        await ctx.send("🎵 I'm already in your voice channel!")
+                    return voice_client
+                else:
+                    try:
+                        await voice_client.move_to(channel)
+                        if auto_start:
+                            await ctx.send(f"🎵 Moved to {channel.name} and starting music!")
+                            if not self.is_playing.get(guild_id, False):
+                                await self.play_music(ctx, from_auto_start=True)
+                        else:
+                            await ctx.send(f"🎵 Moved to {channel.name}!")
+                        return voice_client
+                    except Exception as e:
+                        print(f"[VOICE] Failed to move to channel {channel.name}: {e}")
+                        # Clean up and try fresh connection
+                        del self.voice_clients[guild_id]
+            else:
+                # Clean up disconnected voice client
+                print(f"[VOICE] Cleaning up disconnected voice client for guild {guild_id}")
+                del self.voice_clients[guild_id]
         
         try:
-            # Get user's voice channel
-            if not ctx.author.voice or not ctx.author.voice.channel:
-                await ctx.send("❌ You need to be in a voice channel first!")
-                return
+            print(f"[VOICE] Attempting to connect to {channel.name} in guild {guild_id}")
+            print(f"[VOICE] Bot has permissions: {channel.permissions_for(ctx.guild.me)}")
+            voice_client = await channel.connect()
+            print(f"[VOICE] Successfully connected to {channel.name}")
+            print(f"[VOICE] Voice client connected status: {voice_client.is_connected()}")
             
-            channel = ctx.author.voice.channel
+            # Add delay to ensure connection is stable
+            await asyncio.sleep(2)
             
-            # Enhanced connection with simplified settings
-            voice_client = await channel.connect(
-                timeout=30.0,
-                reconnect=True
-            )
+            # Verify connection is still active
+            if not voice_client.is_connected():
+                print(f"[VOICE] Connection failed immediately after connect for guild {guild_id}")
+                await ctx.send("❌ Failed to establish stable voice connection. Please try again.")
+                return None
             
-            # Store voice client
+            # Store voice client after verification
             self.voice_clients[guild_id] = voice_client
             
-            await ctx.send(f"🎵 Connected to **{channel.name}**!")
+            # Generate initial shuffle playlist and start at random position
+            self._generate_shuffle_playlist(guild_id)
+            # Start at a random position in the shuffled playlist
+            if self.shuffle_playlists.get(guild_id):
+                self.shuffle_positions[guild_id] = random.randint(0, len(self.shuffle_playlists[guild_id]) - 1)
             
-            # Auto-start music if requested
+            self.current_songs[guild_id] = 0
+            self.is_playing[guild_id] = False
+            self.manual_skip_in_progress[guild_id] = False  # Initialize flag
+            # Initialize queue properties
+            if guild_id not in self.queued_songs:
+                self.queued_songs[guild_id] = []
+            if guild_id not in self.playing_queued_song:
+                self.playing_queued_song[guild_id] = False
+            
+            # Reset network error tracking for fresh start
+            self.network_error_count[guild_id] = 0
+            self.last_error_time[guild_id] = 0
+            
             if auto_start:
-                await ctx.send("🔄 Starting infinite music loop...")
+                await ctx.send(f"🎵 Joined {channel.name} and starting music in shuffle mode!")
+                # Give more time for voice client to fully stabilize
+                await asyncio.sleep(3)
                 await self.play_music(ctx, from_auto_start=True)
-                
-        except Exception as e:
-            # Enhanced error handling with recovery suggestions
-            error_str = str(e).lower()
-            if 'timeout' in error_str:
-                await ctx.send("⏰ Connection timed out. Please try again.")
-            elif 'permission' in error_str or 'forbidden' in error_str:
-                await ctx.send("❌ I don't have permission to join that voice channel!")
-            elif 'channel' in error_str:
-                await ctx.send("❌ Could not connect to voice channel. Please try again.")
             else:
-                await ctx.send(f"❌ Failed to join voice channel: {str(e)[:100]}...")
-            
-            # Clean up failed connection attempt
-            if guild_id in self.voice_clients:
-                del self.voice_clients[guild_id]
-            
-            print(f"[VOICE_JOIN] Error joining voice channel: {e}")
+                await ctx.send(f"🎵 Joined {channel.name}! Ready to play music in shuffle mode!")
+            return voice_client
+        except Exception as e:
+            print(f"[VOICE] Connection failed with error: {e}")
+            await ctx.send(f"❌ Failed to join voice channel: {e}")
+            return None
     
     async def leave_voice_channel(self, ctx):
         """Leave the current voice channel"""
@@ -496,17 +504,20 @@ class MusicBot:
         discord_voice_client = None
         for vc in self.bot.voice_clients:
             try:
+                # Use getattr with default to safely check guild
                 vc_guild = getattr(vc, 'guild', None)
                 if vc_guild and getattr(vc_guild, 'id', None) == guild_id:
                     discord_voice_client = vc
                     break
             except Exception:
+                # Skip any voice clients that cause errors
                 continue
         
         # If we found a Discord voice client but not in our records, update our records
         if discord_voice_client and not voice_client:
             self.voice_clients[guild_id] = discord_voice_client
             voice_client = discord_voice_client
+            print(f"[VOICE_FIX] Found and restored voice client for guild {guild_id}")
         
         # If still no voice client found
         if not voice_client and not discord_voice_client:
@@ -517,16 +528,15 @@ class MusicBot:
         client_to_disconnect = voice_client or discord_voice_client
         
         if not client_to_disconnect:
-            await ctx.send("❌ No voice connection found!")
+            await ctx.send("❌ I'm not in a voice channel!")
             return
         
         try:
-            # Disconnect from voice channel
             await client_to_disconnect.disconnect()
-            await ctx.send("👋 Disconnected from voice channel!")
+            await ctx.send("🎵 Left the voice channel!")
         except Exception as e:
-            await ctx.send(f"⚠️ Error disconnecting: {str(e)[:100]}...")
-            print(f"[VOICE_LEAVE] Error disconnecting: {e}")
+            print(f"[VOICE_ERROR] Error disconnecting: {e}")
+            await ctx.send("🎵 Disconnected from voice channel (forced)!")
         
         # Clean up all data for this guild regardless of disconnect success
         if guild_id in self.voice_clients:
@@ -548,7 +558,10 @@ class MusicBot:
         """Start playing music from the shuffled playlist"""
         # If called from auto-start, skip the sync check since we just connected
         if not from_auto_start:
-            self._sync_voice_clients(ctx.guild.id)
+            # First try to sync voice clients in case of connection issues
+            if not self._sync_voice_clients(ctx.guild.id):
+                await ctx.send("❌ I'm not in a voice channel! Use `!join` first.")
+                return
         
         # Get voice client (should exist since we just joined or synced)
         if ctx.guild.id not in self.voice_clients:
@@ -564,15 +577,16 @@ class MusicBot:
         
         if not MUSIC_PLAYLISTS:
             await ctx.send("❌ No music playlist configured!")
+            print(f"[PLAY_MUSIC] No songs in MUSIC_PLAYLISTS!")
             return
             
         # Stop current music if playing
         if voice_client.is_playing():
             voice_client.stop()
-            await asyncio.sleep(0.5)
             
         # Ensure we have a shuffle playlist
         if ctx.guild.id not in self.shuffle_playlists:
+            print(f"[PLAY_MUSIC] Generating shuffle playlist for guild {ctx.guild.id}")
             self._generate_shuffle_playlist(ctx.guild.id)
         else:
             print(f"[PLAY_MUSIC] Using existing shuffle playlist for guild {ctx.guild.id}")
@@ -585,9 +599,9 @@ class MusicBot:
         total_songs = len(MUSIC_PLAYLISTS)
         
         if from_auto_start:
-            await ctx.send(f"🔄 Starting infinite music loop! ({total_songs} songs in shuffle)")
+            await ctx.send(f"🎵 **AUTO-STARTING MUSIC!** 🔀 Shuffled playlist ready with {total_songs} songs!")
         else:
-            await ctx.send(f"🎵 Resuming music! Position {current_pos + 1} in shuffle")
+            await ctx.send(f"🎵 Starting shuffled music stream... Playing song {current_pos + 1} of shuffle")
         print(f"[PLAY_MUSIC] Starting playback for guild {ctx.guild.id}, position {current_pos + 1}")
         
         # Start playing the playlist
@@ -603,7 +617,6 @@ class MusicBot:
         
         if voice_client.is_playing():
             voice_client.stop()
-            await asyncio.sleep(0.5)
             
         self.is_playing[ctx.guild.id] = False
         await ctx.send("🎵 Music stopped!")
@@ -637,7 +650,7 @@ class MusicBot:
         
         self.shuffle_positions[ctx.guild.id] = next_pos
         
-        # Set manual skip flag with longer duration to prevent race conditions
+        # Set manual skip flag to prevent race conditions with auto-advance
         self.manual_skip_in_progress[ctx.guild.id] = True
         
         # Instant cleanup for manual skip - no delays for instant transitions
@@ -645,7 +658,7 @@ class MusicBot:
             print(f"[NEXT] Instant stopping current audio for manual skip...")
             voice_client.stop()
             # Brief wait to ensure stop is processed
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.2)
         
         if self.is_playing.get(ctx.guild.id, False):
             # Use skip_cleanup=True since we already did cleanup above
@@ -654,13 +667,8 @@ class MusicBot:
             await ctx.send(f"⏭️ Next song queued. Use `!start` to play.")
         
         # Clear manual skip flag after a longer delay to avoid race conditions
-        async def clear_skip_flag():
-            await asyncio.sleep(2.0)  # Increased from 1.0 to 2.0 seconds
-            if ctx.guild.id in self.manual_skip_in_progress:
-                del self.manual_skip_in_progress[ctx.guild.id]
-        
-        # Schedule flag clearing
-        asyncio.create_task(clear_skip_flag())
+        await asyncio.sleep(1.0)  # Give time for the old song's callback to finish
+        self.manual_skip_in_progress[ctx.guild.id] = False
     
     async def previous_song(self, ctx):
         """Go back to the previous song in the shuffled playlist"""
@@ -688,7 +696,7 @@ class MusicBot:
         
         self.shuffle_positions[ctx.guild.id] = previous_pos
         
-        # Set manual skip flag with longer duration to prevent race conditions
+        # Set manual skip flag to prevent race conditions with auto-advance
         self.manual_skip_in_progress[ctx.guild.id] = True
         
         # Instant cleanup for manual skip - no delays for instant transitions
@@ -696,7 +704,7 @@ class MusicBot:
             print(f"[PREVIOUS] Instant stopping current audio for manual skip...")
             voice_client.stop()
             # Brief wait to ensure stop is processed
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.2)
         
         if self.is_playing.get(ctx.guild.id, False):
             await ctx.send(f"⏮️ Going back to previous song...")
@@ -706,13 +714,8 @@ class MusicBot:
             await ctx.send(f"⏮️ Previous song queued. Use `!start` to play.")
         
         # Clear manual skip flag after a longer delay to avoid race conditions
-        async def clear_skip_flag():
-            await asyncio.sleep(2.0)  # Increased from 1.0 to 2.0 seconds
-            if ctx.guild.id in self.manual_skip_in_progress:
-                del self.manual_skip_in_progress[ctx.guild.id]
-        
-        # Schedule flag clearing
-        asyncio.create_task(clear_skip_flag())
+        await asyncio.sleep(1.0)  # Give time for the old song's callback to finish
+        self.manual_skip_in_progress[ctx.guild.id] = False
     
     async def get_current_song_info(self, ctx):
         """Get information about the current song"""
@@ -734,17 +737,27 @@ class MusicBot:
         total_songs = len(MUSIC_PLAYLISTS)
         shuffle_total = len(self.shuffle_playlists.get(ctx.guild.id, []))
         
-        # Try to extract title from URL
+        # Try to get the actual song title using YouTube API
         try:
+            if youtube_api:
+                video_id = youtube_api.extract_video_id(current_url)
+                if video_id:
+                    video_details = await youtube_api.get_video_details(video_id)
+                    title = video_details['snippet']['title'] if video_details else 'Unknown Title'
+                else:
+                    title = 'Unknown Title'
+            else:
+                title = 'Unknown Title (YouTube API not configured)'
+        except:
             # Fallback to extracting from URL
             if 'youtube.com/watch?v=' in current_url:
-                title = current_url.split('v=')[1].split('&')[0]
+                video_id = current_url.split('v=')[1].split('&')[0]
+                title = f"YouTube Video ({video_id})"
             elif 'youtu.be/' in current_url:
-                title = current_url.split('youtu.be/')[1].split('?')[0]
+                video_id = current_url.split('youtu.be/')[1].split('?')[0]
+                title = f"YouTube Video ({video_id})"
             else:
-                title = 'Unknown Title'
-        except:
-            title = 'Unknown Title'
+                title = "Unknown Title"
         
         embed = discord.Embed(
             title="🎵 Current Song Info (Shuffle Mode)",
@@ -777,18 +790,6 @@ class MusicBot:
         voice_client = self.voice_clients[guild_id]
         print(f"[PLAY_CURRENT] Got voice client: {voice_client}")
         
-        # Add stability check to prevent rapid restarts
-        current_time = asyncio.get_event_loop().time()
-        if not hasattr(self, 'last_play_attempt'):
-            self.last_play_attempt = {}
-        
-        last_attempt = self.last_play_attempt.get(guild_id, 0)
-        if current_time - last_attempt < 3.0:  # Prevent rapid successive calls within 3 seconds
-            print(f"[STABILITY] Preventing rapid restart for guild {guild_id} (last attempt {current_time - last_attempt:.1f}s ago)")
-            return
-        
-        self.last_play_attempt[guild_id] = current_time
-        
         # Check if voice client is still connected - improved detection
         if not voice_client or not hasattr(voice_client, 'is_connected') or not voice_client.is_connected():
             print(f"[VOICE] Voice client disconnected or invalid for guild {guild_id}")
@@ -796,9 +797,9 @@ class MusicBot:
             # Try to sync and find the actual voice client first
             if self._sync_voice_clients(guild_id):
                 voice_client = self.voice_clients[guild_id]
-                print(f"[VOICE] Synced voice client successfully")
+                print(f"[VOICE] Successfully resynced voice client for guild {guild_id}")
             else:
-                print(f"[VOICE] Failed to sync voice client - stopping playback")
+                print(f"[VOICE] No valid voice client found, stopping playback for guild {guild_id}")
                 self.is_playing[guild_id] = False
                 return
         
@@ -806,13 +807,15 @@ class MusicBot:
         if not skip_cleanup:
             # Ultra-minimal cleanup for instant transitions
             if voice_client.is_playing() or voice_client.is_paused():
+                print(f"[INSTANT_STOP] Instant stopping for next song...")
                 voice_client.stop()
-                await asyncio.sleep(0.2)
+                # No delay - instant transition
         else:
             # Even with skip_cleanup=True, do instant safety check
             if voice_client.is_playing() or voice_client.is_paused():
+                print(f"[SKIP_CLEANUP] Instant safety check - forcing stop...")
                 voice_client.stop()
-                await asyncio.sleep(0.1)
+                # No delay - instant transition
         
         max_retries = 5  # More retries for better reliability on cloud platforms
         retries = 0
@@ -823,64 +826,221 @@ class MusicBot:
                 # Get current song URL from shuffled playlist
                 url = self._get_current_song_url(guild_id)
                 if not url:
-                    print(f"[PLAY_CURRENT] No current song URL for guild {guild_id}")
-                    return
+                    print(f"No URL available for guild {guild_id} at position {self.shuffle_positions.get(guild_id, 0)}")
+                    # Try to regenerate playlist if we hit empty URLs
+                    self._generate_shuffle_playlist(guild_id)
+                    url = self._get_current_song_url(guild_id)
+                    
+                    if not url:
+                        print(f"Still no URL after playlist regeneration for guild {guild_id}")
+                        retries += 1
+                        continue
                     
                 print(f"[RENDER_MUSIC] Attempting to play: {url}")
                 
                 # Create audio source with enhanced error handling
                 try:
                     player = await YouTubeAudioSource.from_url(url, loop=self.bot.loop, stream=True)
+                    print(f"[RENDER_MUSIC] Audio source created successfully: {player.title}")
                 except Exception as source_error:
-                    print(f"[AUDIO_SOURCE] Failed to create audio source: {source_error}")
-                    raise source_error
+                    error_str = str(source_error).lower()
+                    print(f"[RENDER_MUSIC] Failed to create audio source: {source_error}")
+                    
+                    # Handle video unavailable errors - skip immediately and continue
+                    if any(keyword in error_str for keyword in ['video is unavailable', 'private video', 'video has been removed', 'this video is not available']):
+                        print(f"[VIDEO_UNAVAILABLE] Video unavailable, skipping to next song: {url}")
+                        current_pos = self.shuffle_positions.get(guild_id, 0)
+                        self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, MUSIC_PLAYLISTS))
+                        # Don't increment retries for unavailable videos - just continue to next song immediately
+                        continue
+                    
+                    # Handle network errors more patiently - don't skip songs too quickly
+                    elif any(keyword in error_str for keyword in ['tls', 'ssl', 'certificate', 'connection reset', 'network', 'timeout', 'input/output', 'broken pipe', 'end of file', 'io error', 'pull function']):
+                        print(f"[NETWORK_ERROR] Network/TLS error detected: {source_error}")
+                        print(f"[NETWORK_ERROR] This may be due to YouTube throttling or network instability")
+                        
+                        # Track network errors for this guild
+                        current_time = asyncio.get_event_loop().time()
+                        self.network_error_count[guild_id] = self.network_error_count.get(guild_id, 0) + 1
+                        self.last_error_time[guild_id] = current_time
+                        
+                        # Reset error count if it's been a while since last error
+                        last_error = self.last_error_time.get(guild_id, 0)
+                        if current_time - last_error > 300:  # 5 minutes
+                            self.network_error_count[guild_id] = 1
+                        
+                        # Only skip songs if we have extremely persistent issues (raised threshold)
+                        error_count = self.network_error_count.get(guild_id, 0)
+                        if error_count >= 12:  # Very patient for TLS errors - allow 12 attempts before skipping
+                            print(f"[NETWORK_ERROR] Extremely persistent TLS/network errors ({error_count}), reluctantly skipping this song")
+                            current_pos = self.shuffle_positions.get(guild_id, 0)
+                            self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, MUSIC_PLAYLISTS))
+                            self.network_error_count[guild_id] = 0  # Reset counter
+                        
+                        retries += 1
+                        # Give even more time for TLS/network recovery, especially on cloud platforms
+                        wait_time = min(8 + (error_count * 2), 25)  # Up to 25 seconds for very problematic TLS connections
+                        print(f"[NETWORK_ERROR] Waiting {wait_time} seconds for TLS/network recovery...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    else:
+                        # For other extraction errors, skip to next song
+                        print(f"[EXTRACTION_ERROR] Skipping to next song due to extraction error: {source_error}")
+                        current_pos = self.shuffle_positions.get(guild_id, 0)
+                        self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, MUSIC_PLAYLISTS))
+                        # Continue immediately to next song
+                        continue
                 
                 def after_playing(error):
                     if error:
-                        print(f"[PLAYBACK] Error during playback: {error}")
+                        error_str = str(error).lower()
+                        print(f'🎵 Player error: {error}')
+                        
+                        # Enhanced TLS/network error detection during playback - VERY aggressive
+                        if any(keyword in error_str for keyword in [
+                            'input/output error', 'end of file', 'connection', 'network', 'broken pipe', 
+                            'tls', 'ssl', 'connection reset', 'io error', 'pull function', 'error in the pull function',
+                            'connection reset by peer', 'will reconnect', 'stream ended', 'broken', 'reset'
+                        ]):
+                            print(f"[TLS_RECOVERY] TLS/Network error detected during playback: {error}")
+                            print(f"[TLS_RECOVERY] Bot will automatically continue with next song to maintain playback")
+                            # Always treat TLS errors as normal song completion for auto-advance
+                        else:
+                            print(f"[PLAYER_ERROR] Non-network player error: {error}")
+                            # For non-network errors, still try to continue (more resilient)
+                            print(f"[PLAYER_ERROR] Will still attempt to continue playback")
                     else:
-                        print(f"[PLAYBACK] Song finished playing normally")
+                        print(f"🎵 Song finished playing normally for guild {guild_id}")
                     
-                    # Only auto-advance if we're still supposed to be playing and not manually skipping
+                    # Clean up player object to free memory on Render.com
+                    try:
+                        if hasattr(player, 'cleanup'):
+                            player.cleanup()
+                        elif hasattr(player, 'source') and hasattr(player.source, 'cleanup'):
+                            player.source.cleanup()
+                    except Exception as cleanup_error:
+                        print(f"[MEMORY] Player cleanup error: {cleanup_error}")
+                    
+                    # ALWAYS auto-advance if we're supposed to be playing (more aggressive continuation)
+                    # BUT ONLY if no manual skip is in progress AND no other song is already playing
                     if (self.is_playing.get(guild_id, False) and 
                         not self.manual_skip_in_progress.get(guild_id, False)):
                         
-                        # Move to next song for infinite loop
-                        current_pos = self.shuffle_positions.get(guild_id, 0)
-                        next_pos = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, MUSIC_PLAYLISTS))
+                        # Additional safety check - make sure voice client isn't already playing something else
+                        try:
+                            if guild_id in self.voice_clients:
+                                current_voice_client = self.voice_clients[guild_id]
+                                if current_voice_client.is_playing():
+                                    print(f"[AUTO-ADVANCE] Voice client already playing new song, skipping auto-advance")
+                                    return
+                        except Exception as voice_check_error:
+                            print(f"[AUTO-ADVANCE] Error checking voice client status: {voice_check_error}")
                         
-                        if next_pos == 0:
-                            # Regenerate shuffle when we reach the end
+                        # Enhanced delay logic for different error types
+                        delay = 0.0
+                        advance_mode = "normal"
+                        
+                        if error:
+                            error_lower = str(error).lower()
+                            if any(keyword in error_lower for keyword in ['tls', 'ssl', 'connection reset', 'pull function', 'reset by peer']):
+                                delay = 3.0  # Longer delay for TLS errors
+                                advance_mode = "TLS error recovery"
+                                print(f"[TLS_RECOVERY] TLS connection error detected, waiting {delay}s for recovery")
+                            elif any(keyword in error_lower for keyword in ['network', 'input/output', 'connection', 'io error']):
+                                delay = 1.5  # Medium delay for network errors
+                                advance_mode = "network error recovery"
+                                print(f"[NETWORK_RECOVERY] Network error detected, waiting {delay}s for recovery")
+                            else:
+                                delay = 0.5  # Brief delay for other errors
+                                advance_mode = "error recovery"
+                                print(f"[ERROR_RECOVERY] Other error detected, waiting {delay}s before retry")
+                        else:
+                            # Normal song completion - no delay needed
+                            delay = 0.0
+                            advance_mode = "normal"
+                        
+                        print(f"[AUTO-ADVANCE] Moving to next song automatically ({advance_mode} mode)")
+                        # Move to next position in shuffle (thread-safe)
+                        current_shuffle_pos = self.shuffle_positions.get(guild_id, 0)
+                        next_shuffle_pos = current_shuffle_pos + 1
+                        
+                        # Check if we need to regenerate shuffle (infinite loop)
+                        if guild_id not in self.shuffle_playlists or next_shuffle_pos >= len(self.shuffle_playlists[guild_id]):
+                            print(f"🔄 End of shuffle reached for guild {guild_id}, regenerating for infinite playback...")
                             self._generate_shuffle_playlist(guild_id)
-                            print(f"[AUTO_ADVANCE] Regenerated shuffle playlist for infinite loop")
+                            next_shuffle_pos = 0
                         
-                        self.shuffle_positions[guild_id] = next_pos
-                        print(f"[AUTO_ADVANCE] Auto-advancing to position {next_pos + 1}")
+                        self.shuffle_positions[guild_id] = next_shuffle_pos
+                        print(f"⏭️ Auto-advancing to shuffle position {next_shuffle_pos + 1} for continuous playback")
                         
-                        # Continue playing next song
+                        # Schedule next song to play without blocking (ensures infinite loop)
+                        async def play_next_song():
+                            try:
+                                # Use the calculated delay from above
+                                if delay > 0:
+                                    print(f"[RECOVERY_DELAY] Waiting {delay}s for connection stabilization...")
+                                    await asyncio.sleep(delay)
+                                else:
+                                    # For normal completion, still add a tiny delay to prevent race conditions
+                                    await asyncio.sleep(0.1)
+                                    await asyncio.sleep(0.1)
+                                
+                                # Enhanced verification - ensure we're still supposed to be playing
+                                if self.is_playing.get(guild_id, False) and not self.manual_skip_in_progress.get(guild_id, False):
+                                    if error:
+                                        print(f"[RECOVERY_CONTINUE] Starting next song after error recovery")
+                                    else:
+                                        print(f"[NORMAL_CONTINUE] Starting next song after normal completion")
+                                    await self._play_current_song(guild_id)
+                                else:
+                                    print(f"[ADVANCE_ABORT] Playback was stopped during transition")
+                            except Exception as e:
+                                print(f"❌ Error playing next song during recovery: {e}")
+                                # Enhanced recovery attempt - try one more time with longer delay
+                                if self.is_playing.get(guild_id, False):
+                                    print(f"🔄 Enhanced recovery attempt for guild {guild_id}")
+                                    await asyncio.sleep(5)  # Longer recovery delay for Render.com
+                                    try:
+                                        if self.is_playing.get(guild_id, False):  # Double-check before retry
+                                            current_pos = self.shuffle_positions.get(guild_id, 0)
+                                            # Try next song in case current one is problematic
+                                            self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, MUSIC_PLAYLISTS))
+                                            print(f"[RECOVERY_SKIP] Skipping potentially problematic song, trying next")
+                                            await self._play_current_song(guild_id)
+                                    except Exception as recovery_error:
+                                        print(f"❌ Enhanced recovery also failed: {recovery_error}")
+                                        print(f"❌ Stopping playback to prevent infinite error loops for guild {guild_id}")
+                        
                         asyncio.run_coroutine_threadsafe(
-                            self._play_current_song(guild_id), 
+                            play_next_song(), 
                             self.bot.loop
                         )
                     else:
-                        print(f"[AUTO_ADVANCE] Not auto-advancing (playing={self.is_playing.get(guild_id, False)}, manual_skip={self.manual_skip_in_progress.get(guild_id, False)})")
+                        if self.manual_skip_in_progress.get(guild_id, False):
+                            print(f"⏭️ Manual skip in progress for guild {guild_id} - skipping auto-advance")
+                        else:
+                            print(f"⏹️ Playback stopped for guild {guild_id} - not auto-advancing")
                 
                 # Enhanced play method with better error detection and handling
                 try:
                     # Final connection stability check before playing
                     if not voice_client.is_connected():
-                        raise Exception("Voice client disconnected before playing")
+                        print(f"[VOICE_ERROR] Voice client disconnected before playing for guild {guild_id}")
+                        self.is_playing[guild_id] = False
+                        return
                     
                     # Additional check - make sure Discord can receive audio
                     if hasattr(voice_client, 'channel') and voice_client.channel:
-                        print(f"[VOICE_CHECK] Connected to {voice_client.channel.name}")
+                        print(f"[VOICE_CHECK] Connected to {voice_client.channel.name}, starting playback...")
                     else:
-                        raise Exception("Voice client has no channel")
-                    
+                        print(f"[VOICE_ERROR] No valid voice channel for guild {guild_id}")
+                        self.is_playing[guild_id] = False
+                        return
                     # Instant check before playing to avoid "already playing" errors
                     if voice_client.is_playing() or voice_client.is_paused():
+                        print(f"[INSTANT_CHECK] Audio still playing before new play attempt, forcing stop...")
                         voice_client.stop()
-                        await asyncio.sleep(0.1)
+                        # No delay - instant override
                     
                     voice_client.play(player, after=after_playing)
                     print(f"[CLOUD_MUSIC] Successfully started playing: {player.title}")
@@ -893,13 +1053,40 @@ class MusicBot:
                     last_error = play_error
                     
                     if "already playing" in error_str or "source is already playing audio" in error_str:
-                        print(f"[PLAY_ERROR] Already playing error - stopping current audio and retrying")
-                        voice_client.stop()
-                        await asyncio.sleep(0.5)
-                        retries += 1
-                        continue
+                        print(f"[ALREADY_PLAYING_FIX] Detected 'already playing' error, attempting aggressive cleanup...")
+                        
+                        # More aggressive cleanup approach
+                        try:
+                            voice_client.stop()
+                            await asyncio.sleep(2.5)  # Longer wait
+                            
+                            # Multiple stop attempts if needed
+                            for attempt in range(3):
+                                if not voice_client.is_playing() and not voice_client.is_paused():
+                                    break
+                                print(f"[ALREADY_PLAYING_FIX] Cleanup attempt {attempt + 1}")
+                                voice_client.stop()
+                                await asyncio.sleep(1.0)
+                            
+                            # Final attempt to play
+                            if not voice_client.is_playing() and not voice_client.is_paused():
+                                voice_client.play(player, after=after_playing)
+                                print(f"[ALREADY_PLAYING_FIX] Successfully played after aggressive cleanup: {player.title}")
+                                return
+                            else:
+                                print(f"[ALREADY_PLAYING_FIX] Could not clean up audio state, skipping to next song")
+                                raise ValueError("Could not resolve 'already playing' state")
+                                
+                        except Exception as cleanup_error:
+                            print(f"[ALREADY_PLAYING_FIX] Cleanup failed: {cleanup_error}")
+                            # Skip to next song rather than retry with same song
+                            current_pos = self.shuffle_positions.get(guild_id, 0)
+                            self.shuffle_positions[guild_id] = (current_pos + 1) % len(MUSIC_PLAYLISTS)
+                            retries += 1
+                            await asyncio.sleep(2)
+                            continue
                     else:
-                        print(f"[PLAY_ERROR] Play error: {play_error}")
+                        print(f"[PLAY_ERROR] Non-'already playing' error: {play_error}")
                         raise play_error
                         
             except Exception as e:
@@ -969,16 +1156,20 @@ class MusicBot:
             await ctx.send("❌ Please provide a YouTube URL! Other platforms may not work reliably.")
             return
         
-        # Extract title from URL for display
+        # Test if the URL is valid using YouTube API
         try:
-            if 'youtube.com/watch?v=' in url:
-                title = url.split('v=')[1].split('&')[0]
-            elif 'youtu.be/' in url:
-                title = url.split('youtu.be/')[1].split('?')[0]
+            if youtube_api:
+                video_id = youtube_api.extract_video_id(url)
+                if video_id:
+                    video_details = await youtube_api.get_video_details(video_id)
+                    title = video_details['snippet']['title'] if video_details else 'Unknown Title'
+                else:
+                    title = 'Unknown Title'
             else:
-                title = 'Unknown Title'
-        except:
-            title = 'Unknown Title'
+                title = 'Unknown Title (YouTube API not configured)'
+        except Exception as e:
+            await ctx.send(f"❌ Failed to validate URL: {str(e)[:100]}...")
+            return
         
         # Add to playlist
         MUSIC_PLAYLISTS.append(url)
@@ -1096,12 +1287,15 @@ class MusicBot:
         
         # Get song title for feedback
         try:
-            if 'youtube.com/watch?v=' in url:
-                title = url.split('v=')[1].split('&')[0]
-            elif 'youtu.be/' in url:
-                title = url.split('youtu.be/')[1].split('?')[0]
+            if youtube_api:
+                video_id = youtube_api.extract_video_id(url)
+                if video_id:
+                    video_details = await youtube_api.get_video_details(video_id)
+                    title = video_details['snippet']['title'] if video_details else 'Unknown Title'
+                else:
+                    title = 'Unknown Title'
             else:
-                title = 'Unknown Title'
+                title = 'Unknown Title (YouTube API not configured)'
         except:
             title = 'Unknown Title'
         
@@ -1212,12 +1406,12 @@ class MusicBot:
             inline=True
         )
         
-        embed.set_footer(text="♾ Infinite loop enabled • Music plays forever • Auto-shuffle on playlist end")
+        embed.set_footer(text="� Infinite loop enabled • Music plays forever • Auto-shuffle on playlist end")
         
         await ctx.send(embed=embed)
     
     def _sync_voice_clients(self, guild_id):
-        """Sync voice client records with actual Discord voice clients - improved reliability"""
+        """Sync voice client records with actual Discord voice clients - conservative approach"""
         try:
             # Check if bot is actually connected to a voice channel
             guild = self.bot.get_guild(guild_id)
@@ -1232,10 +1426,8 @@ class MusicBot:
                     # Use getattr with default to safely check guild
                     vc_guild = getattr(vc, 'guild', None)
                     if vc_guild and getattr(vc_guild, 'id', None) == guild_id:
-                        # More thorough connection checking
-                        if (hasattr(vc, 'is_connected') and vc.is_connected() and
-                            hasattr(vc, 'channel') and vc.channel):
-                            print(f"[VOICE_SYNC] Found connected voice client for guild {guild_id} in {vc.channel.name}")
+                        if hasattr(vc, 'is_connected') and vc.is_connected():
+                            print(f"[VOICE_SYNC] Found connected voice client for guild {guild_id}")
                             found_voice_client = vc
                             break
                 except Exception:
@@ -1245,22 +1437,11 @@ class MusicBot:
             if found_voice_client:
                 # Update our record with the actual voice client
                 self.voice_clients[guild_id] = found_voice_client
-                print(f"[VOICE_SYNC] Successfully synced voice client for guild {guild_id}")
                 return True
             else:
-                # Check if we have a stale record
+                # If no voice client found, just report - don't automatically clean up
                 if guild_id in self.voice_clients:
-                    stored_vc = self.voice_clients[guild_id]
-                    # Only report disconnection if the stored client is truly disconnected
-                    if stored_vc and hasattr(stored_vc, 'is_connected'):
-                        if stored_vc.is_connected():
-                            print(f"[VOICE_SYNC] Stored voice client is still connected for guild {guild_id}")
-                            return True
-                        else:
-                            print(f"[VOICE_SYNC] Stored voice client is disconnected for guild {guild_id}")
-                    else:
-                        print(f"[VOICE_SYNC] Invalid stored voice client for guild {guild_id}")
-                print(f"[VOICE_SYNC] No active voice connection found for guild {guild_id}")
+                    print(f"[VOICE_SYNC] Voice client record exists but no active connection found for guild {guild_id}")
                 return False
                 
         except Exception as e:
@@ -1268,384 +1449,943 @@ class MusicBot:
             return False
 
     async def voice_health_check(self):
-        """Very conservative health check to avoid interference with voice connections"""
-        reconnection_attempts = {}  # guild_id -> attempt_count
-        last_reconnection_time = {}  # guild_id -> timestamp
-        
+        """Conservative health check that monitors playback and handles network issues gracefully"""
         while True:
             try:
-                current_time = asyncio.get_event_loop().time()
+                await asyncio.sleep(120)  # Every 2 minutes - less aggressive
                 
                 for guild_id in list(self.voice_clients.keys()):
-                    try:
-                        voice_client = self.voice_clients[guild_id]
-                        
-                        # Only check if voice client exists and is truly disconnected
-                        if not voice_client or not hasattr(voice_client, 'is_connected'):
-                            print(f"[HEALTH_CHECK] Invalid voice client for guild {guild_id}")
-                            continue
-                            
-                        if not voice_client.is_connected():
-                            print(f"[HEALTH_CHECK] Voice client disconnected for guild {guild_id}")
-                            
-                            # Only attempt reconnection if we were playing and haven't tried recently
-                            should_reconnect = self.is_playing.get(guild_id, False)
-                            attempts = reconnection_attempts.get(guild_id, 0)
-                            last_attempt = last_reconnection_time.get(guild_id, 0)
-                            
-                            # Very conservative reconnection: max 1 attempt, wait 5 minutes between attempts
-                            if (should_reconnect and attempts < 1 and 
-                                current_time - last_attempt > 300):
-                                
-                                print(f"[HEALTH_CHECK] Attempting single auto-reconnection for guild {guild_id}")
-                                reconnection_attempts[guild_id] = attempts + 1
-                                last_reconnection_time[guild_id] = current_time
-                                
-                                # Clean up current state
-                                del self.voice_clients[guild_id]
-                                self.is_playing[guild_id] = False
-                                
-                            else:
-                                # Clean up disconnected voice client
-                                del self.voice_clients[guild_id]
-                                if guild_id in self.is_playing:
-                                    self.is_playing[guild_id] = False
-                            
-                            continue
-                        
-                        # Reset reconnection attempts if connection is stable
-                        if guild_id in reconnection_attempts:
-                            reconnection_attempts[guild_id] = 0
-                        
-                        # NO automatic playback restart - let manual commands handle it
-                        # This prevents interference with voice connections
-                        
-                    except Exception as guild_error:
-                        print(f"[HEALTH_CHECK] Error checking guild {guild_id}: {guild_error}")
+                    if not self.is_playing.get(guild_id, False):
+                        continue  # Skip if not supposed to be playing
+                    
+                    voice_client = self.voice_clients.get(guild_id)
+                    if not voice_client:
                         continue
-                
-                # Much longer sleep - 300 seconds (5 minutes) to minimize interference
-                await asyncio.sleep(300)
+                    
+                    # Check if we're in a problematic state first
+                    if self.manual_skip_in_progress.get(guild_id, False):
+                        print(f"[HEALTH_CHECK] Skipping guild {guild_id} - manual operation in progress")
+                        continue
+                    
+                    # Track the last time we tried to restart for this guild
+                    last_restart_key = f"last_restart_{guild_id}"
+                    current_time = asyncio.get_event_loop().time()
+                    last_restart = getattr(self, last_restart_key, 0)
+                    
+                    # Don't restart too frequently (minimum 8 minutes between restarts for network stability)
+                    if current_time - last_restart < 480:
+                        continue
+                    
+                    # Check if voice client is still connected but DO NOT auto-reconnect
+                    if not voice_client.is_connected():
+                        print(f"[HEALTH_CHECK] Voice client disconnected for guild {guild_id} - cleaning up state")
+                        # Clean up our state but don't try to reconnect automatically
+                        self.is_playing[guild_id] = False
+                        if guild_id in self.voice_clients:
+                            del self.voice_clients[guild_id]
+                        continue
+                    
+                    # Only restart music if voice client is connected but not playing
+                    elif not voice_client.is_playing() and not voice_client.is_paused():
+                        # Wait even longer before considering it stuck (network delays)
+                        print(f"[HEALTH_CHECK] Detected stopped playback for guild {guild_id}, waiting 30s for network recovery...")
+                        await asyncio.sleep(30)
+                        
+                        # Triple-check that it's still stuck and no manual operations started
+                        if (voice_client.is_connected() and 
+                            not voice_client.is_playing() and not voice_client.is_paused() and 
+                            not self.manual_skip_in_progress.get(guild_id, False) and
+                            self.is_playing.get(guild_id, False)):
+                            
+                            print(f"[HEALTH_CHECK] Music confirmed stuck for guild {guild_id}, attempting gentle restart...")
+                            try:
+                                setattr(self, last_restart_key, current_time)
+                                # Try advancing to next song instead of replaying current one (network issues)
+                                current_pos = self.shuffle_positions.get(guild_id, 0)
+                                self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, [1]))
+                                await self._play_current_song(guild_id)
+                                print(f"[HEALTH_CHECK] Successfully restarted music for guild {guild_id}")
+                            except Exception as e:
+                                print(f"[HEALTH_CHECK] Failed to restart music for guild {guild_id}: {e}")
+                                # After failure, be even more conservative 
+                                failure_count_key = f"failure_count_{guild_id}"
+                                failure_count = getattr(self, failure_count_key, 0) + 1
+                                setattr(self, failure_count_key, failure_count)
+                                
+                                if failure_count >= 1:  # Single failure threshold for network stability
+                                    print(f"[HEALTH_CHECK] Network issues detected for guild {guild_id}, pausing health check")
+                                    self.is_playing[guild_id] = False
+                                    setattr(self, failure_count_key, 0)  # Reset for next session
                 
             except Exception as e:
-                print(f"[HEALTH_CHECK] Error in health check loop: {e}")
-                await asyncio.sleep(180)  # 3 minute sleep on error
-
-# Initialize music bot
-music_bot = MusicBot(bot)
-
-# Event handlers
-@bot.event
-async def on_ready():
-    """Bot startup event"""
-    print(f'🤖 Logged in as {bot.user} (ID: {bot.user.id if bot.user else "Unknown"})')
-    print(f'🎵 Bot is ready! Connected to {len(bot.guilds)} servers.')
-    print(f'🔊 Voice support: {discord.opus.is_loaded()}')
-    print(f'🎶 Music playlists available: {len(MUSIC_PLAYLISTS)} songs')
-    print('------')
+                print(f"[HEALTH_CHECK] Error in voice health check: {e}")
+                await asyncio.sleep(30)  # Wait before retrying after error
     
-    # Start HTTP server for Render.com health checks
-    server_started = await start_http_server()
-    if server_started:
-        print("✅ HTTP server started successfully")
-    else:
-        print("❌ HTTP server failed to start - deployment may fail")
-    
-    # Start the voice health check loop in the background
-    asyncio.create_task(music_bot.voice_health_check())
-    print("🔄 Voice health check loop started")
-
-@bot.event
-async def on_voice_state_update(member, before, after):
-    """Handle voice state changes"""
-    # Only care about our own voice state changes
-    if member != bot.user:
+    # ...existing code...
+@bot.command()
+async def playback(ctx):
+    """Check current playback status and duration"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
         return
     
-    # If we were kicked or moved from a voice channel
-    if before.channel and not after.channel:
-        guild_id = before.channel.guild.id
-        print(f"[VOICE_STATE] Bot was disconnected from voice channel in guild {guild_id}")
-        
-        # Clean up voice client records
-        if guild_id in music_bot.voice_clients:
-            del music_bot.voice_clients[guild_id]
-        if guild_id in music_bot.is_playing:
-            music_bot.is_playing[guild_id] = False
-        
-        print(f"[VOICE_STATE] Cleaned up voice data for guild {guild_id}")
-
-@bot.event
-async def on_command_error(ctx, error):
-    """Handle command errors"""
-    if isinstance(error, commands.CommandNotFound):
-        await ctx.send("❌ Command not found! Use `!help` to see available commands.")
-    elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f"❌ Missing required argument: {error.param.name}")
-    elif isinstance(error, commands.BadArgument):
-        await ctx.send(f"❌ Invalid argument provided!")
-    else:
-        await ctx.send(f"❌ An error occurred: {str(error)[:100]}...")
-        print(f"Command error: {error}")
-
-# Music Commands
-@bot.command(name='join', aliases=['connect'])
-async def join_command(ctx):
-    """Join the user's voice channel"""
-    await music_bot.join_voice_channel(ctx)
-
-@bot.command(name='leave', aliases=['disconnect'])
-async def leave_command(ctx):
-    """Leave the current voice channel"""
-    await music_bot.leave_voice_channel(ctx)
-
-@bot.command(name='start', aliases=['play'])
-async def start_command(ctx):
-    """Start playing music from the shuffled playlist"""
-    await music_bot.play_music(ctx)
-
-@bot.command(name='stop')
-async def stop_command(ctx):
-    """Stop playing music"""
-    await music_bot.stop_music(ctx)
-
-@bot.command(name='next', aliases=['skip'])
-async def next_command(ctx):
-    """Skip to the next song"""
-    await music_bot.next_song(ctx)
-
-@bot.command(name='previous', aliases=['prev', 'back'])
-async def previous_command(ctx):
-    """Go back to the previous song"""
-    await music_bot.previous_song(ctx)
-
-@bot.command(name='current', aliases=['now', 'playing'])
-async def current_command(ctx):
-    """Show information about the current song"""
-    await music_bot.get_current_song_info(ctx)
-
-@bot.command(name='status')
-async def status_command(ctx):
-    """Show playback status"""
-    await music_bot.get_playback_status(ctx)
-
-@bot.command(name='playlist', aliases=['queue'])
-async def playlist_command(ctx):
-    """Show the current playlist"""
-    await music_bot.show_playlist(ctx)
-
-@bot.command(name='add')
-async def add_command(ctx, *, url):
-    """Add a song to the playlist"""
-    await music_bot.add_song(ctx, url)
-
-@bot.command(name='remove')
-async def remove_command(ctx, *, url):
-    """Remove a song from the playlist"""
-    await music_bot.remove_song(ctx, url)
-
-@bot.command(name='playurl', aliases=['url'])
-async def playurl_command(ctx, *, url):
-    """Play a specific YouTube URL immediately"""
-    await music_bot.play_specific_url(ctx, url)
-
-@bot.command(name='autostart')
-async def autostart_command(ctx):
-    """Auto-join voice channel and start music"""
-    await music_bot.join_voice_channel(ctx, auto_start=True)
-
-# Role Commands
-@bot.command(name='dog', aliases=['dogs'])
-async def dog_role(ctx):
-    """Get the Dogs role"""
-    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
-    if role:
-        if role in ctx.author.roles:
-            await ctx.author.remove_roles(role)
-            await ctx.send(f"🐕 Removed **{dogs_role_name}** role from {ctx.author.mention}!")
-        else:
-            await ctx.author.add_roles(role)
-            await ctx.send(f"🐕 Added **{dogs_role_name}** role to {ctx.author.mention}!")
-    else:
-        await ctx.send(f"❌ **{dogs_role_name}** role not found!")
-
-@bot.command(name='cat', aliases=['cats'])
-async def cat_role(ctx):
-    """Get the Cats role"""
-    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
-    if role:
-        if role in ctx.author.roles:
-            await ctx.author.remove_roles(role)
-            await ctx.send(f"🐱 Removed **{cats_role_name}** role from {ctx.author.mention}!")
-        else:
-            await ctx.author.add_roles(role)
-            await ctx.send(f"🐱 Added **{cats_role_name}** role to {ctx.author.mention}!")
-    else:
-        await ctx.send(f"❌ **{cats_role_name}** role not found!")
-
-@bot.command(name='lizard', aliases=['lizards'])
-async def lizard_role(ctx):
-    """Get the Lizards role"""
-    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
-    if role:
-        if role in ctx.author.roles:
-            await ctx.author.remove_roles(role)
-            await ctx.send(f"🦎 Removed **{lizards_role_name}** role from {ctx.author.mention}!")
-        else:
-            await ctx.author.add_roles(role)
-            await ctx.send(f"🦎 Added **{lizards_role_name}** role to {ctx.author.mention}!")
-    else:
-        await ctx.send(f"❌ **{lizards_role_name}** role not found!")
-
-@bot.command(name='pvp')
-async def pvp_role(ctx):
-    """Get the PVP role"""
-    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
-    if role:
-        if role in ctx.author.roles:
-            await ctx.author.remove_roles(role)
-            await ctx.send(f"⚔️ Removed **{pvp_role_name}** role from {ctx.author.mention}!")
-        else:
-            await ctx.author.add_roles(role)
-            await ctx.send(f"⚔️ Added **{pvp_role_name}** role to {ctx.author.mention}!")
-    else:
-        await ctx.send(f"❌ **{pvp_role_name}** role not found!")
-
-# AI Chat Command
-@bot.command(name='ai', aliases=['chat'])
-async def ai_chat(ctx, *, message):
-    """Chat with Venice AI"""
-    if not venice_api_key:
-        await ctx.send("❌ AI features are disabled. VENICE_API_KEY not configured.")
+    if ctx.guild.id not in music_bot.voice_clients:
+        await ctx.send("❌ I'm not in a voice channel!")
         return
     
-    async with ctx.typing():
-        try:
-            # Venice AI API call
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    "https://api.venice.ai/api/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {venice_api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": "venice",
-                        "messages": [
-                            {
-                                "role": "system",
-                                "content": "You are DogBot, a friendly Discord bot assistant. Keep responses concise and helpful."
-                            },
-                            {
-                                "role": "user", 
-                                "content": message
-                            }
-                        ],
-                        "max_tokens": 200,
-                        "temperature": 0.7
-                    },
-                    timeout=30.0
-                )
-            
-            if response.status_code == 200:
-                data = response.json()
-                ai_response = data['choices'][0]['message']['content']
-                
-                # Split long responses if needed
-                if len(ai_response) > 2000:
-                    chunks = [ai_response[i:i+2000] for i in range(0, len(ai_response), 2000)]
-                    for chunk in chunks:
-                        await ctx.send(chunk)
-                else:
-                    await ctx.send(ai_response)
-            else:
-                await ctx.send("❌ AI service temporarily unavailable. Please try again later.")
-                
-        except Exception as e:
-            await ctx.send("❌ Failed to get AI response. Please try again later.")
-            print(f"AI chat error: {e}")
-
-# Utility Commands
-@bot.command(name='ping')
-async def ping_command(ctx):
-    """Check bot latency"""
-    latency = round(bot.latency * 1000)
-    await ctx.send(f"🏓 Pong! **{latency}ms**")
-
-@bot.command(name='help')
-async def help_command(ctx):
-    """Show available commands"""
+    voice_client = music_bot.voice_clients[ctx.guild.id]
+    
     embed = discord.Embed(
-        title="🤖 DogBot Commands",
-        description="Here are all the available commands:",
+        title="🎵 [RENDER.COM] Playback Status",
         color=discord.Color.blue()
     )
     
-    # Music Commands
+    # Connection status
     embed.add_field(
-        name="🎵 Music Commands",
-        value=(
-            "`!join` - Join your voice channel\n"
-            "`!leave` - Leave voice channel\n"
-            "`!start` - Start playing music\n"
-            "`!stop` - Stop playing music\n"
-            "`!next` - Skip to next song\n"
-            "`!previous` - Go to previous song\n"
-            "`!current` - Show current song\n"
-            "`!status` - Show playback status\n"
-            "`!playlist` - Show song list\n"
-            "`!add <url>` - Add song to playlist\n"
-            "`!remove <url>` - Remove song\n"
-            "`!playurl <url>` - Play specific URL\n"
-            "`!autostart` - Auto-join and start"
-        ),
-        inline=False
-    )
-    
-    # Role Commands
-    embed.add_field(
-        name="🎭 Role Commands",
-        value=(
-            "`!dog` - Toggle Dogs role\n"
-            "`!cat` - Toggle Cats role\n"
-            "`!lizard` - Toggle Lizards role\n"
-            "`!pvp` - Toggle PVP role"
-        ),
+        name="Connection",
+        value=f"{'✅ Connected' if voice_client.is_connected() else '❌ Disconnected'}",
         inline=True
     )
     
-    # Other Commands
+    # Audio status
+    if voice_client.is_playing():
+        status = "▶️ Playing"
+    elif voice_client.is_paused():
+        status = "⏸️ Paused"
+    else:
+        status = "⏹️ Stopped"
+    
+    embed.add_field(name="Audio State", value=status, inline=True)
+    
+    # Channel info
+    if voice_client.is_connected():
+        embed.add_field(
+            name="Voice Channel",
+            value=voice_client.channel.name,
+            inline=True
+        )
+    
+    # Auto-play status
+    auto_play = music_bot.is_playing.get(ctx.guild.id, False)
     embed.add_field(
-        name="🔧 Other Commands",
-        value=(
-            "`!ai <message>` - Chat with AI\n"
-            "`!ping` - Check bot latency\n"
-            "`!help` - Show this help"
-        ),
+        name="Auto-Play",
+        value=f"{'🔄 Enabled' if auto_play else '❌ Disabled'}",
         inline=True
     )
     
-    embed.set_footer(text="🎶 Music plays in infinite shuffle mode • Made with ❤️")
+    embed.set_footer(text="Use this to debug audio issues on Render.com")
     
     await ctx.send(embed=embed)
 
-# Main execution
-if __name__ == "__main__":
+# Initialize music bot
+music_bot = None
+
+# Venice AI Configuration
+VENICE_API_URL = "https://api.venice.ai/api/v1/chat/completions"
+VENICE_MODEL = "venice-uncensored"
+
+# YouTube Data API v3 Configuration
+YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3"
+
+class YouTubeAPI:
+    """YouTube Data API v3 integration for reliable cloud deployment"""
+    
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or youtube_api_key
+        self.session = None
+    
+    async def search_videos(self, query: str, max_results: int = 10):
+        """Search for YouTube videos using the API"""
+        if not self.api_key:
+            raise ValueError("YouTube API key not configured")
+        
+        params = {
+            'part': 'snippet',
+            'q': query,
+            'type': 'video',
+            'maxResults': max_results,
+            'key': self.api_key,
+            'videoCategoryId': '10',  # Music category
+            'videoEmbeddable': 'true',  # Only embeddable videos
+            'videoSyndicated': 'true',  # Only syndicated videos
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{YOUTUBE_API_BASE_URL}/search", params=params)
+            response.raise_for_status()
+            return response.json()
+    
+    async def get_video_details(self, video_id: str):
+        """Get detailed information about a YouTube video"""
+        if not self.api_key:
+            raise ValueError("YouTube API key not configured")
+        
+        params = {
+            'part': 'snippet,contentDetails,status',
+            'id': video_id,
+            'key': self.api_key
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{YOUTUBE_API_BASE_URL}/videos", params=params)
+            response.raise_for_status()
+            data = response.json()
+            
+            if not data.get('items'):
+                return None
+                
+            return data['items'][0]
+    
+    def extract_video_id(self, url: str) -> Optional[str]:
+        """Extract video ID from various YouTube URL formats"""
+        
+        patterns = [
+            r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)',
+            r'youtube\.com\/watch\?.*v=([^&\n?#]+)',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        
+        return None
+    
+    def get_youtube_url(self, video_id: str) -> str:
+        """Generate a clean YouTube URL from video ID"""
+        return f"https://www.youtube.com/watch?v={video_id}"
+
+# Initialize YouTube API
+youtube_api = YouTubeAPI() if youtube_api_key else None
+
+# Database setup
+async def init_database():
+    """Initialize the chat history database"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS chat_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                user_name TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                message TEXT NOT NULL,
+                response TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Create undo stack table for universal undo/redo
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS undo_stack (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                action_type TEXT NOT NULL,  -- 'chat'
+                action_id INTEGER NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Migration: Add user_id and action_type columns to existing undo_stack if they don't exist
+        try:
+            await db.execute("ALTER TABLE undo_stack ADD COLUMN user_id TEXT")
+        except:
+            pass  # Column already exists
+        
+        try:
+            await db.execute("ALTER TABLE undo_stack ADD COLUMN action_type TEXT DEFAULT 'chat'")
+        except:
+            pass  # Column already exists
+            
+        await db.commit()
+
+async def save_chat_history(user_id: str, user_name: str, channel_id: str, message: str, response: str) -> int:
+    """Save chat interaction to database, returns the action ID"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        cursor = await db.execute(
+            "INSERT INTO chat_history (user_id, user_name, channel_id, message, response) VALUES (?, ?, ?, ?, ?)",
+            (user_id, user_name, channel_id, message, response)
+        )
+        await db.commit()
+        return cursor.lastrowid or 0
+
+async def get_chat_history(user_id: str, limit: int = 5):
+    """Get recent chat history for a user (for context)"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        cursor = await db.execute(
+            "SELECT message, response FROM chat_history WHERE user_id = ? ORDER BY timestamp ASC LIMIT ?",
+            (user_id, limit)
+        )
+        rows = await cursor.fetchall()
+        return [(str(row[0]), str(row[1])) for row in rows]
+
+async def undo_last_action(channel_id: str, user_id: str) -> tuple[bool, str]:
+    """Undo the last chat action by the user in the channel. Returns (success, message)"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        # Try chat action
+        cursor = await db.execute(
+            "SELECT id, user_name, message FROM chat_history WHERE channel_id = ? AND user_id = ? ORDER BY timestamp DESC LIMIT 1",
+            (channel_id, user_id)
+        )
+        chat_row = await cursor.fetchone()
+        
+        if not chat_row:
+            return False, "No actions to undo!"
+        
+        action_id, user_name, message = chat_row
+        
+        # Delete chat action
+        await db.execute(
+            "DELETE FROM chat_history WHERE id = ?",
+            (action_id,)
+        )
+        
+        # Add to undo stack
+        await db.execute(
+            "INSERT INTO undo_stack (channel_id, user_id, action_type, action_id) VALUES (?, ?, ?, ?)",
+            (channel_id, user_id, 'chat', action_id)
+        )
+        
+        await db.commit()
+        return True, f"Undone chat message by {user_name}: {message[:100]}..."
+
+async def redo_last_undo(channel_id: str, user_id: str) -> tuple[bool, str]:
+    """Redo the last undone action by the user. Returns (success, message)"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        return False, "Chat actions cannot be redone once undone!"
+
+async def get_ai_response_with_history(user_id: str, prompt: str, max_tokens: int = 500, use_history: bool = True) -> str:
+    """Get response from Venice AI with chat history context"""
+    if not venice_api_key:
+        return "AI features are disabled. Please set VENICE_API_KEY environment variable."
+    
+    messages = []
+    
+    # Add system message for emoji usage
+    messages.append({"role": "system", "content": "You are Dogbot, a helpful AI assistant with a friendly dog personality! 🐕 Use emojis frequently and Discord formatting to make your responses engaging and fun! Use **bold** for emphasis, *italics* for subtle emphasis, `code blocks` for technical terms, and > quotes for highlighting important information. Keep responses conversational and helpful! 😊✨"})
+    
+    # Add chat history for context if enabled
+    if use_history:
+        history = await get_chat_history(user_id, limit=3)  # Last 3 exchanges
+        for user_msg, ai_response in history:
+            messages.append({"role": "user", "content": user_msg})
+            messages.append({"role": "assistant", "content": ai_response})
+    
+    # Add current message
+    messages.append({"role": "user", "content": prompt})
+    
+    headers = {
+        "Authorization": f"Bearer {venice_api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": VENICE_MODEL,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": 0.7
+    }
+    
     try:
-        print("🚀 Starting DogBot...")
-        print(f"🐍 Python version: {__import__('sys').version}")
-        print(f"📦 Discord.py version: {discord.__version__}")
-        print(f"🎵 Total songs in playlist: {len(MUSIC_PLAYLISTS)}")
-        print(f"🔊 Opus loaded: {discord.opus.is_loaded()}")
-        
-        # Check for required environment variables
-        if not token:
-            print("❌ DISCORD_TOKEN environment variable not set!")
-            exit(1)
-        
-        print("🤖 Starting bot...")
-        bot.run(token, log_handler=handler, log_level=logging.WARNING)
-        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(VENICE_API_URL, headers=headers, json=data)
+            response.raise_for_status()
+            
+            result = response.json()
+            return result["choices"][0]["message"]["content"].strip()
+    except httpx.TimeoutException:
+        return "⏰ AI response timed out. Please try again."
+    except httpx.HTTPStatusError as e:
+        return f"❌ AI service error: {e.response.status_code}"
     except Exception as e:
-        print(f"❌ Failed to start bot: {e}")
-        exit(1)
+        return f"❌ Error: {str(e)}"
+
+# Keep the old function for compatibility
+async def get_ai_response(user_id: str, prompt: str, max_tokens: int = 500) -> str:
+    """Get response from Venice AI, without chat history context"""
+    if not venice_api_key:
+        return "AI features are disabled. Please set VENICE_API_KEY environment variable."
+    
+    headers = {
+        "Authorization": f"Bearer {venice_api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": VENICE_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are Dogbot, a helpful AI assistant with a friendly dog personality! 🐕 Use emojis frequently and Discord formatting to make your responses engaging and fun! Use **bold** for emphasis, *italics* for subtle emphasis, `code blocks` for technical terms, and > quotes for highlighting important information. Keep responses conversational and helpful! 😊✨"},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": max_tokens,
+        "temperature": 0.7
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(VENICE_API_URL, headers=headers, json=data)
+            response.raise_for_status()
+            
+            result = response.json()
+            return result["choices"][0]["message"]["content"].strip()
+    except httpx.TimeoutException:
+        return "⏰ AI response timed out. Please try again."
+    except httpx.HTTPStatusError as e:
+        return f"❌ AI service error: {e.response.status_code}"
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+@bot.event
+async def on_ready():
+    global music_bot
+    if bot.user is not None:
+        print(f"We are ready to go in, {bot.user.name}")
+    else:
+        print("We are ready to go in, but bot.user is None")
+    
+    # Cloud environment diagnostics for Render.com
+    print("="*50)
+    print("[RENDER.COM] Environment Diagnostics:")
+    
+    # Check if we're running on Render.com
+    render_service = os.getenv('RENDER_SERVICE_NAME')
+    if render_service:
+        print(f"[RENDER.COM] Service Name: {render_service}")
+    else:
+        print("[RENDER.COM] Not detected (running locally?)")
+    
+    # Check FFmpeg availability
+    try:
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            # Extract version info
+            version_lines = result.stdout.split('\n')
+            version_line = version_lines[0] if version_lines else "Unknown version"
+            
+            print(f"[RENDER.COM] FFmpeg: {version_line}")
+        else:
+            print("[RENDER.COM] FFmpeg: Available but returned error")
+    except FileNotFoundError:
+               print("[RENDER.COM] FFmpeg: NOT FOUND")
+    except Exception as e:
+        print(f"[RENDER.COM] FFmpeg: Error checking - {e}")
+    
+    # Check Discord voice support
+    try:
+        if discord.opus.is_loaded():
+            print("[RENDER.COM] Discord Opus: Loaded")
+        else:
+            print("[RENDER.COM] Discord Opus: Available but not loaded")
+    except Exception as e:
+        print(f"[RENDER.COM] Discord Opus: Error - {e}")
+    
+    print("="*50)
+    
+    # Initialize database
+    await init_database()
+    print("Chat history database initialized")
+    
+    # Initialize music bot
+    music_bot = MusicBot(bot)
+    print("Music bot initialized")
+    
+    # Start voice health check task
+    asyncio.create_task(music_bot.voice_health_check())
+    print("Voice health check started")
+
+@bot.event
+async def on_disconnect():
+    """Called when the bot disconnects from Discord"""
+    print("[DISCONNECT] ⚠️ Bot disconnected from Discord!")
+    print(f"[DISCONNECT] Time: {datetime.now()}")
+    
+@bot.event
+async def on_resumed():
+    """Called when the bot resumes connection after a disconnect"""
+    print("[RESUMED] ✅ Bot resumed connection to Discord!")
+    print(f"[RESUMED] Time: {datetime.now()}")
+
+@bot.event
+async def on_error(event, *args, **kwargs):
+    """Global error handler to catch unhandled exceptions"""
+    import traceback
+    print(f"[BOT_ERROR] ❌ Unhandled error in event {event}:")
+    print(f"[BOT_ERROR] Time: {datetime.now()}")
+    traceback.print_exc()
+    
+    # Try to continue running rather than crash
+    try:
+        if music_bot:
+            # Reset any problematic states
+            for guild_id in list(music_bot.voice_clients.keys()):
+                try:
+                    voice_client = music_bot.voice_clients[guild_id]
+                    if not voice_client.is_connected():
+                        print(f"[BOT_ERROR] Cleaning up disconnected voice client for guild {guild_id}")
+                        del music_bot.voice_clients[guild_id]
+                        music_bot.is_playing[guild_id] = False
+                except Exception as cleanup_error:
+                    print(f"[BOT_ERROR] Error during cleanup: {cleanup_error}")
+    except Exception as e:
+        print(f"[BOT_ERROR] Error in error handler: {e}")
+
+@bot.event
+async def on_member_join(member):
+    # Get the system channel (default channel) or the first text channel
+    channel = member.guild.system_channel
+
+    if channel is None:
+        # If no system channel, find the first text channel
+        for ch in member.guild.text_channels:
+            if ch.permissions_for(member.guild.me).send_messages:
+                channel = ch
+                break
+    
+    if channel:
+        await channel.send(f"🐶 Woof woof! Welcome to the server, {member.mention}! ")
+
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+    
+    # Just process commands, don't handle them manually here
+    await bot.process_commands(message)
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    """Track voice state changes to detect when the bot is disconnected"""
+    if member == bot.user:
+        if before.channel and not after.channel:
+            # Bot was disconnected from voice channel
+            guild_id = before.channel.guild.id
+            print(f"[VOICE_STATE] Bot was disconnected from {before.channel.name} in guild {guild_id}")
+            
+            # Add a small delay to avoid race conditions with reconnection attempts
+            await asyncio.sleep(2)
+            
+            # Clean up music bot state if it exists, but be more conservative
+            if music_bot and guild_id in music_bot.voice_clients:
+                print(f"[VOICE_STATE] Cleaning up music bot state for guild {guild_id}")
+                # Clean up voice client reference
+                del music_bot.voice_clients[guild_id]
+                # Stop playback flag to prevent health check conflicts
+                if guild_id in music_bot.is_playing:
+                    music_bot.is_playing[guild_id] = False
+                # Keep other state (shuffle playlists, positions, etc.) for potential manual reconnection
+                print(f"[VOICE_STATE] State cleaned up, manual reconnection will be required")
+        elif not before.channel and after.channel:
+            # Bot connected to voice channel
+            print(f"[VOICE_STATE] Bot connected to {after.channel.name}")
+            # Add a short delay to let the connection stabilize
+            await asyncio.sleep(1)
+
+# Helper function to check for admin/moderator permissions
+def has_admin_or_moderator_role(ctx):
+    """Check if user has Admin or Moderator role"""
+    user_roles = [role.name.lower() for role in ctx.author.roles]
+    return any(role in ['admin', 'moderator', 'administrator'] for role in user_roles)
+
+@bot.command()
+async def hello(ctx):
+    await ctx.send(f'🐕 Woof woof! Hello {ctx.author.name}!')
+
+@bot.command()
+async def test(ctx):
+    """Test bot functionality"""
+    embed = discord.Embed(
+        title="🔧 Bot Test Results",
+        color=discord.Color.green()
+    )
+    
+    # Test music bot
+    if music_bot:
+        embed.add_field(name="Music Bot", value="✅ Initialized", inline=True)
+    else:
+        embed.add_field(name="Music Bot", value="❌ Not initialized", inline=True)
+    
+    # Test playlist
+    if MUSIC_PLAYLISTS:
+        embed.add_field(name="Playlist", value=f"✅ {len(MUSIC_PLAYLISTS)} songs", inline=True)
+    else:
+        embed.add_field(name="Playlist", value="❌ Empty", inline=True)
+    
+    # Test voice connection
+    if music_bot and ctx.guild.id in music_bot.voice_clients:
+        voice_client = music_bot.voice_clients[ctx.guild.id]
+        if voice_client.is_connected():
+            embed.add_field(name="Voice", value="✅ Connected", inline=True)
+        else:
+            embed.add_field(name="Voice", value="❌ Disconnected", inline=True)
+    else:
+        embed.add_field(name="Voice", value="❌ Not connected", inline=True)
+    
+    embed.set_footer(text="Use !join to start music")
+    await ctx.send(embed=embed)
+
+# Music Bot Commands
+@bot.command()
+async def join(ctx):
+    """Join voice channel and auto-start music"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.join_voice_channel(ctx, auto_start=True)
+
+@bot.command()
+async def leave(ctx):
+    """Leave voice channel"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.leave_voice_channel(ctx)
+
+@bot.command()
+async def start(ctx):
+    """Start playing music"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.play_music(ctx)
+
+@bot.command()
+async def stop(ctx):
+    """Stop playing music"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.stop_music(ctx)
+
+@bot.command()
+async def next(ctx):
+    """Skip to next song"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.next_song(ctx)
+
+@bot.command()
+async def skip(ctx):
+    """Skip to next song (alias for !next)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.next_song(ctx)
+
+@bot.command()
+async def previous(ctx):
+    """Go to previous song"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.previous_song(ctx)
+
+@bot.command()
+async def play(ctx, *, url=None):
+    """Play music or specific URL"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    if url:
+        await music_bot.play_specific_url(ctx, url)
+    else:
+        await music_bot.play_music(ctx)
+
+@bot.command()
+async def playlist(ctx):
+    """Show current playlist"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.show_playlist(ctx)
+
+@bot.command()
+async def queue(ctx):
+    """Show current playlist (alias for !playlist)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.show_playlist(ctx)
+
+@bot.command()
+async def add(ctx, *, url):
+    """Add song to playlist"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.add_song(ctx, url)
+
+@bot.command()
+async def remove(ctx, *, url):
+    """Remove song from playlist"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.remove_song(ctx, url)
+
+@bot.command()
+async def nowplaying(ctx):
+    """Show current song info"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.get_current_song_info(ctx)
+
+@bot.command()
+async def np(ctx):
+    """Show current song info (alias for !nowplaying)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.get_current_song_info(ctx)
+    
+@bot.command()
+async def status(ctx):
+    """Debug voice channel status"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    embed = discord.Embed(
+        title="🔧 Voice Channel Debug Status",
+        color=discord.Color.orange()
+    )
+    
+    guild_id = ctx.guild.id
+    
+    # Check bot's voice state
+    bot_voice_state = ctx.guild.me.voice
+    discord_voice_channel = bot_voice_state.channel.name if bot_voice_state and bot_voice_state.channel else "None"
+    
+    # Check our voice client record
+    has_voice_client = guild_id in music_bot.voice_clients
+    voice_client_connected = False
+    if has_voice_client:
+        try:
+            voice_client_connected = music_bot.voice_clients[guild_id].is_connected()
+        except:
+            voice_client_connected = False
+    
+    # Check Discord's native voice clients
+    discord_voice_clients = []
+    for vc in bot.voice_clients:
+        try:
+            # Use getattr with default to safely check guild
+            vc_guild = getattr(vc, 'guild', None)
+            if vc_guild and getattr(vc_guild, 'id', None) == guild_id:
+                discord_voice_clients.append(vc)
+        except Exception:
+            # Skip any voice clients that cause errors
+            continue
+    
+    embed.add_field(name="Bot Voice Channel", value=discord_voice_channel or "None", inline=True)
+    embed.add_field(name="Has Voice Client Record", value="✅ Yes" if has_voice_client else "❌ No", inline=True)
+    embed.add_field(name="Voice Client Connected", value="✅ Yes" if voice_client_connected else "❌ No", inline=True)
+    embed.add_field(name="Total Voice Clients", value=str(len(discord_voice_clients)), inline=True)
+    embed.add_field(name="Playing Status", value="▶️ Playing" if music_bot.is_playing.get(guild_id, False) else "⏸️ Stopped", inline=True)
+    embed.add_field(name="Manual Skip Active", value="🔄 Yes" if music_bot.manual_skip_in_progress.get(guild_id, False) else "❌ No", inline=True)
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def loop(ctx):
+    """Show infinite loop status and statistics"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    guild_id = ctx.guild.id
+    
+    embed = discord.Embed(
+        title="🔄 Infinite Loop Status",
+        color=discord.Color.green()
+    )
+    
+    # Playing status
+    is_playing = music_bot.is_playing.get(guild_id, False)
+    embed.add_field(
+        name="🎵 Current Status", 
+        value="🔄 **INFINITE LOOP ACTIVE**" if is_playing else "⏹️ Stopped", 
+        inline=False
+    )
+    
+    # Playlist info
+    total_songs = len(MUSIC_PLAYLISTS)
+    embed.add_field(name="📚 Total Songs", value=f"{total_songs} songs available", inline=True)
+    
+    if guild_id in music_bot.shuffle_playlists:
+        current_pos = music_bot.shuffle_positions.get(guild_id, 0)
+        shuffle_total = len(music_bot.shuffle_playlists[guild_id])
+        embed.add_field(
+            name="🔀 Current Shuffle",
+            value=f"Position {current_pos + 1} of {shuffle_total}",
+            inline=True
+        )
+        
+        # Calculate how many times the playlist has looped
+        if guild_id in music_bot.current_songs:
+            # This is a rough estimate based on position
+            loops_completed = current_pos // total_songs if total_songs > 0 else 0
+            embed.add_field(
+                name="♾️ Loops Completed",
+                value=f"~{loops_completed} full loops",
+                inline=True
+            )
+    
+    # Voice status
+    if guild_id in music_bot.voice_clients:
+        voice_client = music_bot.voice_clients[guild_id]
+        if voice_client.is_connected():
+            embed.add_field(
+                name="🔊 Voice Status",
+                value=f"Connected to {voice_client.channel.name}",
+                inline=False
+            )
+        else:
+            embed.add_field(name="🔊 Voice Status", value="❌ Disconnected", inline=False)
+    else:
+        embed.add_field(name="🔊 Voice Status", value="❌ Not in voice channel", inline=False)
+    
+    embed.set_footer(text="🔄 Music will automatically loop forever when playing • Use !stop to disable")
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def reshuffle(ctx):
+    """Generate new shuffle order"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    if ctx.guild.id in music_bot.shuffle_playlists:
+        music_bot._generate_shuffle_playlist(ctx.guild.id)
+        await ctx.send("🔀 Generated new shuffle order! Use `!next` to skip to a new song.")
+    else:
+        await ctx.send("❌ No active shuffle playlist found!")
+
+@bot.command()
+async def volume(ctx, vol: Optional[int] = None):
+    """Check or set the music volume (0-100)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    if ctx.guild.id not in music_bot.voice_clients:
+        await ctx.send("❌ I'm not in a voice channel!")
+        return
+    
+    voice_client = music_bot.voice_clients[ctx.guild.id]
+    
+    if vol is None:
+        # Just check current volume
+        if voice_client.source:
+            current_vol = int(voice_client.source.volume * 100)
+            await ctx.send(f"🔊 Current volume: {current_vol}%")
+        else:
+            await ctx.send("🔊 No audio source active")
+        return
+    
+    # Set volume
+    if vol < 0 or vol > 100:
+        await ctx.send("❌ Volume must be between 0 and 100!")
+        return
+    
+    if voice_client.source:
+        voice_client.source.volume = vol / 100.0
+        await ctx.send(f"🔊 Volume set to {vol}%")
+    else:
+        await ctx.send("❌ No audio source active to adjust volume")
+
+@bot.command()
+async def audiotest(ctx):
+    """Test audio playback with debug info"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    if ctx.guild.id not in music_bot.voice_clients:
+        await ctx.send("❌ I'm not in a voice channel!")
+        return
+    
+    voice_client = music_bot.voice_clients[ctx.guild.id]
+    
+    embed = discord.Embed(
+        title="🔊 Audio Debug Test",
+        color=discord.Color.blue()
+    )
+    
+    # Voice client status
+    embed.add_field(name="Connected", value="✅ Yes" if voice_client.is_connected() else "❌ No", inline=True)
+    embed.add_field(name="Playing", value="▶️ Yes" if voice_client.is_playing() else "⏸️ No", inline=True)
+    embed.add_field(name="Paused", value="⏸️ Yes" if voice_client.is_paused() else "▶️ No", inline=True)
+    
+    # Channel info
+    if voice_client.is_connected():
+        embed.add_field(name="Channel", value=voice_client.channel.name, inline=True)
+        embed.add_field(name="Channel Members", value=len(voice_client.channel.members), inline=True)
+    
+    # Volume info
+    if voice_client.source:
+        volume = int(voice_client.source.volume * 100)
+        embed.add_field(name="Volume", value=f"{volume}%", inline=True)
+    else:
+        embed.add_field(name="Volume", value="No audio source", inline=True)
+    
+    # Bot's audio state
+    is_playing = music_bot.is_playing.get(ctx.guild.id, False)
+    embed.add_field(name="Bot State", value="🔄 Playing" if is_playing else "⏹️ Stopped", inline=True)
+    
+    embed.set_footer(text="Use this to debug why you might not hear audio")
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def bluetooth(ctx):
+    """Optimize audio settings for Bluetooth speakers"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    if ctx.guild.id not in music_bot.voice_clients:
+        await ctx.send("❌ I'm not in a voice channel!")
+        return
+    
+    voice_client = music_bot.voice_clients[ctx.guild.id]
+    
+    embed = discord.Embed(
+        title="🎧 Bluetooth Audio Optimization",
+        description="Bot is now optimized for Bluetooth speakers with:",
+        color=discord.Color.blue()
+    )
+    
+    embed.add_field(
+        name="🎵 Audio Quality",
+        value="• High-quality AAC/M4A format preferred\n• 48kHz sample rate\n• 320kbps bitrate\n• Enhanced stereo output",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="🔊 Volume Settings",
+        value="• Default volume increased to 70%\n• Use `!volume [0-100]` to adjust\n• Consider 80-90% for most Bluetooth speakers",
+        inline=False
+    )
+    
+    embed.add_field(
+        name="💡 Bluetooth Tips",
+        value="• Make sure your device is close to the Bluetooth speaker\n• Reduce interference from other devices\n• Check your speaker's codec support (AAC preferred)\n• Some speakers may have slight audio delay",
+        inline=False
+    )
+    
+    # Auto-adjust volume if currently playing
+    if voice_client.source:
+        current_vol = voice_client.source.volume
+        if current_vol < 0.8:  # If volume is less than 80%
+            voice_client.source.volume = 0.8  # Set to 80% for Bluetooth
+            embed.add_field(
+                name="🔧 Auto-Adjustment",
+                value="Volume automatically set to 80% for optimal Bluetooth experience",
+                inline=False
+            )
+    
+    embed.set_footer(text="🎧 Enhanced audio settings are now active for better Bluetooth playback")
+    await ctx.send(embed=embed)
