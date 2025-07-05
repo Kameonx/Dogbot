@@ -1,11 +1,18 @@
 # Music Bot Configuration
 MUSIC_PLAYLISTS = [
     # Existing tracks
-    "https://www.youtube.com/watch?v=dQw4w9WgXcQ",  # Rick Astley - Never Gonna Give You Up
-    "https://www.youtube.com/watch?v=L_jWHffIx5E",  # Smash Mouth - All Star
-    "https://www.youtube.com/watch?v=9bZkp7q19f0",  # PSY - Gangnam Style
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "", # Placeholder for future tracks
+    "https://youtu.be/9Ux0eOPanxE?si=FwpVUN-KcX5vb3iV", # Ganja White Night x LSDREAM - BADMAN | Official Music Video | Extended Version | Animation | 2022
+    "https://youtu.be/1mMyySsfZd8?si=JEEKsW4VYOzsIkB-", # 6YNTHMANE, LXGHTXNG - FINA LANA
     "https://www.youtube.com/watch?v=fJ9rUzIMcZQ",  # Queen - Bohemian Rhapsody
-    "https://www.youtube.com/watch?v=hTWKbfoikeg",  # Smash Mouth - All Star (alternate upload)
     "https://www.youtube.com/watch?v=60ItHLz5WEA",  # Alan Walker - Faded
     "https://www.youtube.com/watch?v=Zi_XLOBDo_Y",  # Michael Jackson - Billie Jean
     "https://www.youtube.com/watch?v=A_MjCqQoLLA",  # The Beatles - Hey Jude
@@ -340,16 +347,5 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/u1JasCPIl28?si=XP4ks6J5fsOZM5NK", # Iggy Azalea - Bounce LYRICS
     "https://youtu.be/zXt56MB-3vc?si=ktHSC48BnQZReBvL", # UB40 - Red Red Wine (Official Video HD Remastered)
     "https://youtu.be/i3aL0up-v28?si=SMa_qjg4qbOSdlNB", # Lana Del Rey Blue Jeans ft. Azealia Banks (Smims&Belle Remix)
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/aeBaSrJmTMk?si=9QAJDED8HdWQTojt", # AVAION, Sofiya Nzau - Wacuka (Official Visualizer)
 ]
