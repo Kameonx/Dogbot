@@ -7,9 +7,9 @@ MUSIC_PLAYLISTS = [
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/aNPuB-kCsmo?si=V_ILeVWa_haPXvWs", # AVAION - Keep On Dancing (Official Video)
+    "https://youtu.be/9KiFRB1aVI4?si=hcsfVOtXsUc2DCJ9", # AVAION - Hope (Official Video)
+    "https://youtu.be/hlwtfhloxlg?si=EfM3YfjlP_mU31EI", # AVAION, oskar med k - Can't find you (Lyrics)
     "https://youtu.be/9Ux0eOPanxE?si=FwpVUN-KcX5vb3iV", # Ganja White Night x LSDREAM - BADMAN | Official Music Video | Extended Version | Animation | 2022
     "https://youtu.be/1mMyySsfZd8?si=JEEKsW4VYOzsIkB-", # 6YNTHMANE, LXGHTXNG - FINA LANA
     "https://www.youtube.com/watch?v=fJ9rUzIMcZQ",  # Queen - Bohemian Rhapsody
