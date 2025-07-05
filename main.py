@@ -138,17 +138,19 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 '-probesize 2147483647 '  # Better stream probing
             )
             
-            # Enhanced audio processing for Bluetooth compatibility
-            # Force higher sample rate and bitrate for better quality
+            # Enhanced audio processing optimized for Render.com deployment
+            # Removed -ac and -ar options to avoid conflicts with platform defaults
+            # Let the environment handle sample rate and channels to avoid "Multiple options" warnings
             options = (
                 '-vn '  # No video
-                '-ac 2 '  # Force stereo
-                '-ar 48000 '  # High sample rate (48kHz) for better quality
                 '-ab 320k '  # Force high bitrate (320kbps) for quality
                 '-acodec pcm_s16le '  # High-quality PCM encoding for Discord
                 '-f s16le '  # Force 16-bit signed little-endian format
                 '-bufsize 512k '  # Audio buffer size for smooth playback
             )
+            
+            print(f"[RENDER] Using FFmpeg options: {options}")
+            print(f"[RENDER] Using before_options: {before_options}")
             
             # Create the audio source with enhanced network stability
             source = discord.FFmpegPCMAudio(
