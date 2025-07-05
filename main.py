@@ -1449,77 +1449,21 @@ class MusicBot:
             return False
 
     async def voice_health_check(self):
-        """Conservative health check that monitors playback and handles network issues gracefully"""
+        """Simple health check to clean up disconnected voice clients"""
         while True:
             try:
-                await asyncio.sleep(120)  # Every 2 minutes - less aggressive
+                await asyncio.sleep(300)  # Every 5 minutes - simple check
                 
                 for guild_id in list(self.voice_clients.keys()):
-                    if not self.is_playing.get(guild_id, False):
-                        continue  # Skip if not supposed to be playing
-                    
                     voice_client = self.voice_clients.get(guild_id)
-                    if not voice_client:
-                        continue
-                    
-                    # Check if we're in a problematic state first
-                    if self.manual_skip_in_progress.get(guild_id, False):
-                        print(f"[HEALTH_CHECK] Skipping guild {guild_id} - manual operation in progress")
-                        continue
-                    
-                    # Track the last time we tried to restart for this guild
-                    last_restart_key = f"last_restart_{guild_id}"
-                    current_time = asyncio.get_event_loop().time()
-                    last_restart = getattr(self, last_restart_key, 0)
-                    
-                    # Don't restart too frequently (minimum 8 minutes between restarts for network stability)
-                    if current_time - last_restart < 480:
-                        continue
-                    
-                    # Check if voice client is still connected but DO NOT auto-reconnect
-                    if not voice_client.is_connected():
-                        print(f"[HEALTH_CHECK] Voice client disconnected for guild {guild_id} - cleaning up state")
-                        # Clean up our state but don't try to reconnect automatically
+                    if voice_client and not voice_client.is_connected():
+                        print(f"[HEALTH_CHECK] Cleaning up disconnected voice client for guild {guild_id}")
+                        del self.voice_clients[guild_id]
                         self.is_playing[guild_id] = False
-                        if guild_id in self.voice_clients:
-                            del self.voice_clients[guild_id]
-                        continue
-                    
-                    # Only restart music if voice client is connected but not playing
-                    elif not voice_client.is_playing() and not voice_client.is_paused():
-                        # Wait even longer before considering it stuck (network delays)
-                        print(f"[HEALTH_CHECK] Detected stopped playback for guild {guild_id}, waiting 30s for network recovery...")
-                        await asyncio.sleep(30)
-                        
-                        # Triple-check that it's still stuck and no manual operations started
-                        if (voice_client.is_connected() and 
-                            not voice_client.is_playing() and not voice_client.is_paused() and 
-                            not self.manual_skip_in_progress.get(guild_id, False) and
-                            self.is_playing.get(guild_id, False)):
-                            
-                            print(f"[HEALTH_CHECK] Music confirmed stuck for guild {guild_id}, attempting gentle restart...")
-                            try:
-                                setattr(self, last_restart_key, current_time)
-                                # Try advancing to next song instead of replaying current one (network issues)
-                                current_pos = self.shuffle_positions.get(guild_id, 0)
-                                self.shuffle_positions[guild_id] = (current_pos + 1) % len(self.shuffle_playlists.get(guild_id, [1]))
-                                await self._play_current_song(guild_id)
-                                print(f"[HEALTH_CHECK] Successfully restarted music for guild {guild_id}")
-                            except Exception as e:
-                                print(f"[HEALTH_CHECK] Failed to restart music for guild {guild_id}: {e}")
-                                # After failure, be even more conservative 
-                                failure_count_key = f"failure_count_{guild_id}"
-                                failure_count = getattr(self, failure_count_key, 0) + 1
-                                setattr(self, failure_count_key, failure_count)
-                                
-                                if failure_count >= 1:  # Single failure threshold for network stability
-                                    print(f"[HEALTH_CHECK] Network issues detected for guild {guild_id}, pausing health check")
-                                    self.is_playing[guild_id] = False
-                                    setattr(self, failure_count_key, 0)  # Reset for next session
                 
             except Exception as e:
-                print(f"[HEALTH_CHECK] Error in voice health check: {e}")
-                await asyncio.sleep(30)  # Wait before retrying after error
+                print(f"[HEALTH_CHECK] Error in health check: {e}")
+                await asyncio.sleep(60)
     
     # ...existing code...
 @bot.command()
@@ -2389,3 +2333,54 @@ async def bluetooth(ctx):
     
     embed.set_footer(text="🎧 Enhanced audio settings are now active for better Bluetooth playback")
     await ctx.send(embed=embed)
+
+# Web server setup for Render.com port binding
+async def health_check(request):
+    """Health check endpoint for Render.com"""
+    return web.Response(text="Bot is running!")
+
+async def init_web_server():
+    """Initialize web server for Render.com"""
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    
+    # Get port from environment variable (required by Render.com)
+    port = int(os.getenv('PORT', 10000))
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    
+    print(f"[RENDER] Web server started on port {port}")
+    return runner
+
+async def main():
+    """Main function to start both Discord bot and web server"""
+    web_runner = None
+    try:
+        # Start web server for Render.com port binding
+        web_runner = await init_web_server()
+        print("[RENDER] Web server initialized")
+        
+        # Start Discord bot
+        print("[DISCORD] Starting Discord bot...")
+        if token:
+            await bot.start(token)
+        else:
+            raise ValueError("Discord token not found")
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to start: {e}")
+        if web_runner:
+            await web_runner.cleanup()
+        raise
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("[SHUTDOWN] Bot stopped by user")
+    except Exception as e:
+        print(f"[SHUTDOWN] Bot stopped due to error: {e}")
