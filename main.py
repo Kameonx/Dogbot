@@ -14,10 +14,7 @@ from typing import Optional
 import re
 import yt_dlp
 import subprocess
-from pytube import YouTube
-from urllib.error import HTTPError
-from playlist import MUSIC_PLAYLISTS  # moved playlist definitions to playlist.py
-from music import MusicBot, YouTubeAudioSource  # import music functionality from music.py
+from music import MusicBot, YouTubeAudioSource  # restore music functionality imports
 import base64
 import io
 
@@ -1057,7 +1054,7 @@ async def modhelp(ctx):
 async def download(ctx, *, url):
     # Remove surrounding angle brackets in case of Discord formatting
     url = url.strip('<>')
-    """Download YouTube video as MP3 using pytube"""
+    """Download YouTube video as MP3 using yt_dlp"""
     if not url:
         await ctx.send("❌ Please provide a YouTube URL!")
         return
@@ -1076,124 +1073,59 @@ async def download(ctx, *, url):
     processing_msg = await ctx.send("🎵 Processing download request... This may take a moment.")
     
     try:
-        # Create YouTube object
-        yt = YouTube(url)
-        
-        # Get video info
-        title = yt.title
-        duration = yt.length
-        
-        # Check duration (limit to 10 minutes to avoid huge files)
-        if duration > 600:  # 10 minutes
-            await processing_msg.edit(content="❌ Video is too long! Please use videos under 10 minutes.")
+        # Use yt_dlp to download and convert to MP3
+        ytdl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': f'{download_dir}/%(title)s.%(ext)s',
+            'quiet': True,
+            'no_warnings': True,
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+        }
+        ytdl = yt_dlp.YoutubeDL(ytdl_opts)
+        info = ytdl.extract_info(url, download=True)
+        if not info:
+            await processing_msg.edit(content="❌ Failed to retrieve video info.")
             return
-        
-        await processing_msg.edit(content=f"⬬ Downloading: **{title}**...")
-        
-        # Get audio stream (highest quality audio)
-        audio_stream = yt.streams.filter(only_audio=True, file_extension='mp4').first()
-        
-        if not audio_stream:
-            await processing_msg.edit(content="❌ No audio stream found for this video!")
-            return
-        
-        # Download the audio file
-        temp_filename = audio_stream.download(output_path=download_dir)
-        
-        # Convert to MP3 using FFmpeg
-        mp3_filename = os.path.splitext(temp_filename)[0] + '.mp3'
-        
-        # Convert using FFmpeg
-        try:
-            subprocess.run([
-                'ffmpeg', '-i', temp_filename, 
-                '-vn', '-acodec', 'libmp3lame', 
-                '-ab', '192k', '-ar', '44100', 
-                '-y', mp3_filename
-            ], check=True, capture_output=True)
-            
-            # Remove original file
-            os.remove(temp_filename)
-            
-        except subprocess.CalledProcessError:
-            # If FFmpeg fails, just rename the file
-            os.rename(temp_filename, mp3_filename)
-        except FileNotFoundError:
-            # FFmpeg not available, just rename
-            os.rename(temp_filename, mp3_filename)
-        
-        # Check file size
-        if os.path.exists(mp3_filename):
-            file_size = os.path.getsize(mp3_filename)
-            file_size_mb = file_size / (1024 * 1024)
-            
-            # Discord file size limit check (25MB for safety)
-            if file_size_mb > 25:
-                await processing_msg.edit(content=f"❌ File too large ({file_size_mb:.1f}MB)! Discord limit is ~25MB.")
-                # Clean up
-                try:
-                    os.remove(mp3_filename)
-                except:
-                    pass
-                return
-            
-            await processing_msg.edit(content=f"⬆️ Uploading **{title}** ({file_size_mb:.1f}MB)...")
-            
-            # Send the file
-            with open(mp3_filename, 'rb') as f:
-                # Clean filename for Discord
-                clean_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
-                discord_file = discord.File(f, filename=f"{clean_title}.mp3")
-                
-                embed = discord.Embed(
-                    title="🎵 Download Complete!",
-                    description=f"**{title}**",
-                    color=discord.Color.green()
-                )
-                embed.add_field(name="File Size", value=f"{file_size_mb:.1f}MB", inline=True)
-                embed.add_field(name="Duration", value=f"{duration//60}:{duration%60:02d}", inline=True)
-                embed.add_field(name="Format", value="MP3", inline=True)
-                embed.set_footer(text="⚠️ Please respect YouTube's Terms of Service")
-                
-                await ctx.send(embed=embed, file=discord_file)
-                await processing_msg.delete()
-            
-            # Clean up the file after sending
-            try:
-                os.remove(mp3_filename)
-            except:
-                pass
-                
-        else:
+        # Prepare filename and ensure validity
+        filename = ytdl.prepare_filename(info)
+        base = os.path.splitext(filename)[0]
+        mp3_filename = f'{base}.mp3'
+        title = info.get('title', 'audio')
+        # Check file exists
+        if not os.path.exists(mp3_filename):
             await processing_msg.edit(content="❌ Download failed! File not found after processing.")
-            
-    except HTTPError as http_err:
-        # Handle HTTP errors from pytube
-        await processing_msg.edit(content=f"❌ HTTP Error while downloading video: {http_err}")
-        print(f"Download HTTP error: {http_err}")
+            return
+        # Send file
+        await processing_msg.delete()
+        file_size_mb = os.path.getsize(mp3_filename) / (1024 * 1024)
+        discord_file = discord.File(mp3_filename, filename=os.path.basename(mp3_filename))
+        embed = discord.Embed(
+            title="🎵 YouTube Download",
+            description=f"**{title}**",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="File Size", value=f"{file_size_mb:.1f}MB", inline=True)
+        embed.add_field(name="Format", value="MP3", inline=True)
+        await ctx.send(embed=embed, file=discord_file)
+        # Cleanup
+        os.remove(mp3_filename)
+     
     except Exception as e:
-        error_msg = str(e)
-        if "Private video" in error_msg or "private" in error_msg.lower():
-            await processing_msg.edit(content="❌ Cannot download private videos!")
-        elif "unavailable" in error_msg.lower():
-            await processing_msg.edit(content="❌ Video is unavailable or has been removed!")
-        elif "age" in error_msg.lower() and "restrict" in error_msg.lower():
-            await processing_msg.edit(content="❌ Cannot download age-restricted videos!")
-        else:
-            await processing_msg.edit(content=f"❌ Download failed: {error_msg[:100]}...")
+        await processing_msg.edit(content=f"❌ Download failed: {str(e)[:100]}...")
         print(f"Download error: {e}")
-    
-    # Clean up any leftover files
+     
+    # Clean up old downloads
     try:
-        # Remove any files older than 1 hour in downloads directory
         import time
         now = time.time()
-        for filename in os.listdir(download_dir):
-            filepath = os.path.join(download_dir, filename)
-            if os.path.isfile(filepath):
-                file_age = now - os.path.getmtime(filepath)
-                if file_age > 3600:  # 1 hour
-                    os.remove(filepath)
+        for fname in os.listdir(download_dir):
+            path = os.path.join(download_dir, fname)
+            if os.path.isfile(path) and now - os.path.getmtime(path) > 3600:
+                os.remove(path)
     except:
         pass
 
