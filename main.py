@@ -490,8 +490,7 @@ async def help(ctx):
             "`!playlist` / `!queue` - Show current playlist\n"
             "`!nowplaying` / `!np` - Show current song\n"
             "`!volume [0-100]` - Check or set volume\n"
-            "`!download <youtube_url>` - Download YouTube video as MP3 (pytube)\n"
-            "`!voicediag` - Voice connection diagnostics"
+            "`!download <youtube_url>` - Download YouTube video as MP3 (pytube)"
         ),
         inline=False
     )
@@ -1033,8 +1032,8 @@ async def modhelp(ctx):
         name="🔧 **Test & Debug**",
         value=(
             "`!status` - Check voice channel status\n"
-            "`!voicediag` - Detailed voice connection diagnostics\n"
             "`!audiotest` - Test audio system components\n"
+            "`!voicediag` - Detailed voice connection diagnostics\n"
             "`!download <youtube_url>` - Download YouTube as MP3 (pytube) ⚠️"
         ),
         inline=False
@@ -1056,6 +1055,8 @@ async def modhelp(ctx):
 # YouTube Download Command using pytube
 @bot.command()
 async def download(ctx, *, url):
+    # Remove surrounding angle brackets in case of Discord formatting
+    url = url.strip('<>')
     """Download YouTube video as MP3 using pytube"""
     if not url:
         await ctx.send("❌ Please provide a YouTube URL!")
