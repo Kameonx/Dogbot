@@ -55,7 +55,6 @@ MUSIC_PLAYLISTS = [
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
     "https://youtu.be/whQPnOcnxuI?si=UUOkcig8Sf00MAe3", # Ganja White Night - Rockstar (Wobble Rocks IV Introduction) | Animation | 2025
     "https://youtu.be/WaBG-p05NJg?si=mSVPX_70i9rfbQ5m", # Ganja White Night - Wobble Jam | Music video | Animation
     "https://youtu.be/7K50gOshkvY?si=J8sNrvLKvcnhgfIf", # Ganja White Night x Truth - Bassline Don | Music video | Animation
