@@ -5,6 +5,9 @@ import random
 import yt_dlp
 from playlist import MUSIC_PLAYLISTS
 
+# Channel ID for now playing messages
+NOW_PLAYING_CHANNEL_ID = 1389695684633952267
+
 class YouTubeAudioSource(discord.PCMVolumeTransformer):
     """Simplified audio source for cloud deployment"""
     
@@ -119,6 +122,14 @@ class MusicBot:
                             pass
             
             # Attempt fresh connection with retries
+            # Disconnect any existing connection for a fresh join
+            if ctx.voice_client and ctx.voice_client.is_connected():
+                try:
+                    await ctx.voice_client.disconnect(force=True)
+                    await asyncio.sleep(1)
+                except:
+                    pass
+            
             for attempt in range(3):
                 try:
                     print(f"[MUSIC] Connection attempt {attempt + 1}/3")
@@ -299,12 +310,22 @@ class MusicBot:
                     print(f"[MUSIC] Player error: {error}")
                 else:
                     print(f"[MUSIC] Song finished normally")
-                # Schedule next song
-                asyncio.create_task(self._advance_to_next_song(ctx))
+                # Schedule next song in bot loop
+                try:
+                    self.bot.loop.create_task(self._advance_to_next_song(ctx))
+                except Exception as sched_err:
+                    print(f"[MUSIC] Error scheduling next song: {sched_err}")
             
             try:
                 voice_client.play(player, after=after_playing)
-                await ctx.send(f"🎵 Now playing: **{player.title}** ({index + 1}/{len(playlist)})")
+                
+                # Send now playing message in designated channel
+                channel = self.bot.get_channel(NOW_PLAYING_CHANNEL_ID)
+                message_content = f"🎵 Now playing: **{player.title}** ({index + 1}/{len(playlist)})"
+                if channel:
+                    await channel.send(message_content)
+                else:
+                    await ctx.send(message_content)
                 print(f"[MUSIC] Successfully started playback: {player.title}")
             except Exception as e:
                 print(f"[MUSIC] Failed to start playback: {e}")
@@ -410,6 +431,40 @@ class MusicBot:
             
         except Exception as e:
             await ctx.send(f"❌ Error getting song info: {str(e)[:100]}")
+
+    async def play_url(self, ctx, url):
+        """Play a single URL, then resume the main playlist"""
+        # Ensure voice connection
+        voice_client = ctx.voice_client or ctx.guild.voice_client
+        if not voice_client or not voice_client.is_connected():
+            if not await self.join_voice_channel(ctx):
+                return
+            voice_client = ctx.voice_client or ctx.guild.voice_client
+        # Stop any current playback
+        if voice_client.is_playing():
+            voice_client.stop()
+        try:
+            player = await YouTubeAudioSource.from_url(url)
+        except Exception as e:
+            await ctx.send(f"❌ Failed to load URL: {e}")
+            return
+        # After URL, resume main playlist
+        def after(error):
+            if error:
+                print(f"[MUSIC] URL playback error: {error}")
+            # Resume playlist
+            try:
+                self.bot.loop.create_task(self.play_music(ctx))
+            except Exception as err:
+                print(f"[MUSIC] Error resuming playlist: {err}")
+        voice_client.play(player, after=after)
+        # Send now playing message
+        channel = self.bot.get_channel(NOW_PLAYING_CHANNEL_ID)
+        msg = f"🎵 Now playing URL: **{player.title}**"
+        if channel:
+            await channel.send(msg)
+        else:
+            await ctx.send(msg)
 
     def get_available_playlists(self):
         """Get list of available playlists"""
