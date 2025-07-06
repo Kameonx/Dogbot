@@ -316,139 +316,124 @@ class MusicBot:
         channel = ctx.author.voice.channel
         guild_id = ctx.guild.id
         
-        # Enhanced cooldown to prevent rapid join attempts
+        # Simple cooldown to prevent spam
         current_time = time.time()
         last_join_attempt = self.join_cooldowns.get(guild_id, 0)
         
-        # Enforce minimum 5 second cooldown between join attempts
-        if current_time - last_join_attempt < 5:
-            remaining = 5 - (current_time - last_join_attempt)
-            await ctx.send(f"⏳ Please wait {remaining:.1f} seconds before attempting to join again.")
+        if current_time - last_join_attempt < 3:
+            remaining = 3 - (current_time - last_join_attempt)
+            await ctx.send(f"⏳ Please wait {remaining:.1f} seconds before joining again.")
             return None
         
         self.join_cooldowns[guild_id] = current_time
         
-        # Check if we're already connected to this exact channel
+        # Step 1: Check if we already have a working voice client
         if guild_id in self.voice_clients:
             voice_client = self.voice_clients[guild_id]
             try:
-                if voice_client.is_connected() and voice_client.channel == channel:
-                    if auto_start:
-                        await ctx.send("🎵 I'm already in your voice channel! Starting music...")
-                        if not self.is_playing.get(guild_id, False):
+                # Test if it's actually connected and working
+                if voice_client.is_connected():
+                    # Check if we're in the right channel
+                    if voice_client.channel.id == channel.id:
+                        # Perfect - already connected to the target channel
+                        if auto_start and not self.is_playing.get(guild_id, False):
+                            await ctx.send("🎵 Already connected! Starting music...")
                             await self.play_music(ctx, from_auto_start=True)
+                        else:
+                            await ctx.send("🎵 Already connected to your voice channel!")
+                        return voice_client
                     else:
-                        await ctx.send("🎵 I'm already in your voice channel!")
-                    return voice_client
-                elif voice_client.is_connected() and voice_client.channel != channel:
-                    # Move to the new channel
-                    try:
+                        # Connected but wrong channel - move to correct channel
                         await voice_client.move_to(channel)
-                        if auto_start:
-                            await ctx.send(f"🎵 Moved to {channel.name} and starting music!")
-                            if not self.is_playing.get(guild_id, False):
-                                await self.play_music(ctx, from_auto_start=True)
+                        if auto_start and not self.is_playing.get(guild_id, False):
+                            await ctx.send(f"🎵 Moved to {channel.name}! Starting music...")
+                            await self.play_music(ctx, from_auto_start=True)
                         else:
                             await ctx.send(f"🎵 Moved to {channel.name}!")
                         return voice_client
-                    except Exception as e:
-                        print(f"[VOICE] Failed to move to channel {channel.name}: {e}")
-                        # Clean up and try fresh connection
-                        del self.voice_clients[guild_id]
                 else:
-                    # Voice client exists but isn't connected - clean it up
+                    # Voice client exists but disconnected - remove it
+                    print(f"[VOICE] Removing disconnected voice client for guild {guild_id}")
                     del self.voice_clients[guild_id]
             except Exception as e:
-                print(f"[VOICE] Error checking voice client state: {e}")
-                # Clean up problematic voice client
+                # Voice client is corrupted - remove it
+                print(f"[VOICE] Removing corrupted voice client for guild {guild_id}: {e}")
                 del self.voice_clients[guild_id]
         
-        # Check if bot is already connected via Discord's voice clients but not in our records
-        for vc in self.bot.voice_clients:
+        # Step 2: Clean up any existing Discord voice clients for this guild
+        for vc in self.bot.voice_clients.copy():  # Use copy() to avoid modification during iteration
             try:
                 if hasattr(vc, 'guild') and vc.guild and vc.guild.id == guild_id:
-                    if vc.is_connected():
-                        self.voice_clients[guild_id] = vc
-                        if vc.channel == channel:
-                            if auto_start:
-                                await ctx.send("🎵 Found existing connection! Starting music...")
-                                if not self.is_playing.get(guild_id, False):
-                                    await self.play_music(ctx, from_auto_start=True)
-                            else:
-                                await ctx.send("🎵 Found existing connection!")
-                            return vc
-                        else:
-                            # Move to new channel
-                            try:
-                                await vc.move_to(channel)
-                                if auto_start:
-                                    await ctx.send(f"🎵 Moved to {channel.name} and starting music!")
-                                    if not self.is_playing.get(guild_id, False):
-                                        await self.play_music(ctx, from_auto_start=True)
-                                else:
-                                    await ctx.send(f"🎵 Moved to {channel.name}!")
-                                return vc
-                            except Exception as e:
-                                print(f"[VOICE] Failed to move to channel {channel.name}: {e}")
-                                # Continue to fresh connection attempt
-                                break
+                    print(f"[VOICE] Found existing Discord voice client for guild {guild_id}, disconnecting...")
+                    await vc.disconnect()
+                    await asyncio.sleep(1)  # Give time for cleanup
             except Exception as e:
-                print(f"[VOICE] Error checking Discord voice client: {e}")
-                continue
+                print(f"[VOICE] Error cleaning up existing voice client: {e}")
         
-        # Attempt fresh connection
+        # Step 3: Create fresh connection
         try:
-            print(f"[VOICE] Attempting fresh connection to {channel.name} in guild {guild_id}")
+            print(f"[VOICE] Creating fresh connection to {channel.name} for guild {guild_id}")
             voice_client = await channel.connect()
-            print(f"[VOICE] Successfully connected to {channel.name}")
             
-            # Store voice client
+            # Verify connection worked
+            if not voice_client.is_connected():
+                await ctx.send("❌ Failed to establish voice connection!")
+                return None
+            
+            # Store the voice client
             self.voice_clients[guild_id] = voice_client
+            print(f"[VOICE] Successfully connected and stored voice client for guild {guild_id}")
             
-            # Initialize all necessary state
-            self._generate_shuffle_playlist(guild_id)
-            if self.shuffle_playlists.get(guild_id):
-                self.shuffle_positions[guild_id] = random.randint(0, len(self.shuffle_playlists[guild_id]) - 1)
+            # Initialize state for this guild
+            self._initialize_guild_state(guild_id)
             
-            self.current_songs[guild_id] = 0
-            self.is_playing[guild_id] = False
-            self.manual_skip_in_progress[guild_id] = False
-            
-            # Initialize queue properties
-            if guild_id not in self.queued_songs:
-                self.queued_songs[guild_id] = []
-            if guild_id not in self.playing_queued_song:
-                self.playing_queued_song[guild_id] = False
-            if guild_id not in self.playing_specific_url:
-                self.playing_specific_url[guild_id] = False
-            
-            # Reset network error tracking
-            self.network_error_count[guild_id] = 0
-            self.last_error_time[guild_id] = 0
-            
+            # Success message and auto-start
             if auto_start:
-                await ctx.send(f"🎵 Joined {channel.name} and starting music in shuffle mode!")
+                await ctx.send(f"🎵 Joined {channel.name}! Starting music...")
                 await asyncio.sleep(1)  # Brief delay for stability
                 await self.play_music(ctx, from_auto_start=True)
             else:
-                await ctx.send(f"🎵 Joined {channel.name}! Ready to play music in shuffle mode!")
+                await ctx.send(f"🎵 Joined {channel.name}! Ready for music!")
                 
             return voice_client
             
         except discord.ClientException as e:
             error_msg = str(e).lower()
             if "already connected" in error_msg:
-                # This should be rare now due to our checks, but handle gracefully
-                await ctx.send("🔄 Connection issue detected. Please try again in a few seconds.")
-                return None
+                await ctx.send("🔄 Connection conflict detected. Please try again in a moment.")
             else:
-                print(f"[VOICE] Connection failed: {e}")
                 await ctx.send(f"❌ Failed to connect: {e}")
-                return None
-        except Exception as e:
-            print(f"[VOICE] Unexpected error: {e}")
-            await ctx.send(f"❌ Failed to join voice channel: {e}")
             return None
+        except Exception as e:
+            print(f"[VOICE] Unexpected connection error: {e}")
+            await ctx.send(f"❌ Unexpected error: {e}")
+            return None
+    
+    def _initialize_guild_state(self, guild_id):
+        """Initialize all state for a guild when joining voice"""
+        # Generate shuffle playlist
+        self._generate_shuffle_playlist(guild_id)
+        if self.shuffle_playlists.get(guild_id):
+            self.shuffle_positions[guild_id] = random.randint(0, len(self.shuffle_playlists[guild_id]) - 1)
+        
+        # Initialize all flags and state
+        self.current_songs[guild_id] = 0
+        self.is_playing[guild_id] = False
+        self.manual_skip_in_progress[guild_id] = False
+        
+        # Initialize queue properties
+        if guild_id not in self.queued_songs:
+            self.queued_songs[guild_id] = []
+        if guild_id not in self.playing_queued_song:
+            self.playing_queued_song[guild_id] = False
+        if guild_id not in self.playing_specific_url:
+            self.playing_specific_url[guild_id] = False
+        
+        # Reset error tracking
+        self.network_error_count[guild_id] = 0
+        self.last_error_time[guild_id] = 0
+        
+        print(f"[VOICE] Initialized all state for guild {guild_id}")
     
     async def leave_voice_channel(self, ctx):
         """Leave the current voice channel"""
@@ -1155,41 +1140,24 @@ class MusicBot:
         return
     
     def _sync_voice_clients(self, guild_id):
-        """Sync voice client records with actual Discord voice clients - conservative approach"""
+        """Simple voice client sync - just check if our stored client is still valid"""
         try:
-            # Check if bot is actually connected to a voice channel
-            guild = self.bot.get_guild(guild_id)
-            if not guild:
-                print(f"[VOICE_SYNC] Guild {guild_id} not found")
+            if guild_id not in self.voice_clients:
                 return False
                 
-            # Find actual voice client from Discord.py
-            found_voice_client = None
-            for vc in self.bot.voice_clients:
-                try:
-                    # Use getattr with default to safely check guild
-                    vc_guild = getattr(vc, 'guild', None)
-                    if vc_guild and getattr(vc_guild, 'id', None) == guild_id:
-                        if hasattr(vc, 'is_connected') and vc.is_connected():
-                            print(f"[VOICE_SYNC] Found connected voice client for guild {guild_id}")
-                            found_voice_client = vc
-                            break
-                except Exception:
-                    # Skip any voice clients that cause errors
-                    continue
-            
-            if found_voice_client:
-                # Update our record with the actual voice client
-                self.voice_clients[guild_id] = found_voice_client
+            voice_client = self.voice_clients[guild_id]
+            if voice_client and voice_client.is_connected():
                 return True
             else:
-                # If no voice client found, just report - don't automatically clean up
-                if guild_id in self.voice_clients:
-                    print(f"[VOICE_SYNC] Voice client record exists but no active connection found for guild {guild_id}")
+                # Clean up disconnected client
+                print(f"[VOICE_SYNC] Removing disconnected voice client for guild {guild_id}")
+                del self.voice_clients[guild_id]
                 return False
                 
         except Exception as e:
-            print(f"[VOICE_SYNC] Error syncing voice clients: {e}")
+            print(f"[VOICE_SYNC] Error syncing voice client: {e}")
+            if guild_id in self.voice_clients:
+                del self.voice_clients[guild_id]
             return False
 
     async def voice_health_check(self):
