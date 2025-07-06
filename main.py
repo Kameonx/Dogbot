@@ -1074,6 +1074,7 @@ async def download(ctx, *, url):
     
     try:
         # Use yt_dlp to download and convert to MP3
+        # Set up yt_dlp options, including cookies if available
         ytdl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': f'{download_dir}/%(title)s.%(ext)s',
@@ -1085,10 +1086,32 @@ async def download(ctx, *, url):
                 'preferredquality': '192',
             }],
         }
-        ytdl = yt_dlp.YoutubeDL(ytdl_opts)
-        info = ytdl.extract_info(url, download=True)
-        if not info:
-            await processing_msg.edit(content="❌ Failed to retrieve video info.")
+        # Use cookies.txt if present to bypass YouTube bot checks
+        if os.path.isfile('cookies.txt'):
+            ytdl_opts['cookiefile'] = 'cookies.txt'
+        
+        try:
+            ytdl = yt_dlp.YoutubeDL(ytdl_opts)
+            try:
+                info = ytdl.extract_info(url, download=True)
+            except Exception as e:
+                err = str(e)
+                if 'Sign in to confirm' in err:
+                    # Retry using browser cookies from browser
+                    retry_opts = ytdl_opts.copy()
+                    retry_opts.pop('cookiefile', None)
+                    retry_opts['cookiesfrombrowser'] = ('chrome',)
+                    info = yt_dlp.YoutubeDL(retry_opts).extract_info(url, download=True)
+                else:
+                    raise
+            if not info:
+                raise Exception('No info retrieved')
+        except Exception as e:
+            err_msg = str(e)
+            if 'Sign in to confirm' in err_msg:
+                await processing_msg.edit(content="❌ Download failed: YouTube requires login for this video. Please update your cookies.txt or provide browser cookies.")
+                return
+            await processing_msg.edit(content=f"❌ Download failed: {err_msg[:100]}...")
             return
         # Prepare filename and ensure validity
         filename = ytdl.prepare_filename(info)
@@ -1115,7 +1138,7 @@ async def download(ctx, *, url):
         os.remove(mp3_filename)
      
     except Exception as e:
-        await processing_msg.edit(content=f"❌ Download failed: {str(e)[:100]}...")
+        await processing_msg.edit(content=f"❌ Download failed: {str(e)}")
         print(f"Download error: {e}")
      
     # Clean up old downloads
