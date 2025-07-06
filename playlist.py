@@ -49,12 +49,12 @@ MUSIC_PLAYLISTS = [
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
     "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/rMGkrWD5fNg?si=FPWNmWTFalkwIvxy", # Victoria Monét - Ass Like That (Lyric Video)
+    "https://youtu.be/CcNo07Xp8aQ?si=e_0_q9XoRuR6xMTC", # Robyn - Dancing On My Own (Official Video)
+    "https://youtu.be/kp_1J2XZaNI?si=DHQvd1ZClpCjxBi9", # Jet Voon - Roads (Original Mix) | Royalty Free Music
+    "https://youtu.be/qBvft8J5xxs?si=LYpt7e0GvWJ6GXQG", # MONXX - FALLING
+    "https://youtu.be/pbG7HZD5f58?si=LJN18u1RRMg_PnUc", # MONXX - SURVIVAL
+    "https://youtu.be/K3mqbZgzHzs?si=Sc2cGfC0Wo6tK8cz", # RAIZHELL - PULL THE TRIGGER (PHONK)
     "https://youtu.be/whQPnOcnxuI?si=UUOkcig8Sf00MAe3", # Ganja White Night - Rockstar (Wobble Rocks IV Introduction) | Animation | 2025
     "https://youtu.be/WaBG-p05NJg?si=mSVPX_70i9rfbQ5m", # Ganja White Night - Wobble Jam | Music video | Animation
     "https://youtu.be/7K50gOshkvY?si=J8sNrvLKvcnhgfIf", # Ganja White Night x Truth - Bassline Don | Music video | Animation
