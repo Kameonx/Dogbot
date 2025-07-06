@@ -5,3 +5,4 @@ httpx
 aiosqlite
 PyNaCl
 yt-dlp
+pytube
