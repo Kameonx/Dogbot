@@ -49,8 +49,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             # Minimal FFmpeg options for cloud deployment
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-                options='-vn'
+                before_options='-nostdin -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+                options='-vn -nostats -hide_banner -loglevel error'
             )
             
             return cls(source, data=data)
@@ -216,7 +216,9 @@ class MusicBot:
                 print(f"[MUSIC] Audio source created: {player.title}")
             except Exception as e:
                 print(f"[MUSIC] Failed to create audio source: {e}")
-                await ctx.send(f"❌ Failed to load song, skipping...")
+                err_msg = str(e)
+                if "Broken pipe" not in err_msg:
+                    await ctx.send("❌ Failed to load song, skipping...")
                 await self._advance_to_next_song(ctx)
                 return
             
@@ -246,7 +248,9 @@ class MusicBot:
                 print(f"[MUSIC] Successfully started playback: {player.title}")
             except Exception as e:
                 print(f"[MUSIC] Failed to start playback: {e}")
-                await ctx.send(f"❌ Playback failed, skipping...")
+                err_msg = str(e)
+                if "Broken pipe" not in err_msg:
+                    await ctx.send("❌ Playback failed, skipping...")
                 await self._advance_to_next_song(ctx)
             
         except Exception as e:
