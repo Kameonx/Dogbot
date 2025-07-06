@@ -3,6 +3,7 @@ from discord.ext import commands
 import asyncio
 import random
 import yt_dlp
+import time
 from playlist import MUSIC_PLAYLISTS
 
 class YouTubeAudioSource(discord.PCMVolumeTransformer):
@@ -240,6 +241,7 @@ class MusicBot:
         self.network_error_count = {}  # guild_id -> count of recent network errors
         self.last_error_time = {}  # guild_id -> timestamp of last network error
         self.playing_specific_url = {}  # guild_id -> bool (prevents playlist interference)
+        self.join_cooldowns = {}  # guild_id -> timestamp of last join attempt
     
     def _generate_shuffle_playlist(self, guild_id):
         """Generate a new shuffled playlist for the guild"""
@@ -314,24 +316,23 @@ class MusicBot:
         channel = ctx.author.voice.channel
         guild_id = ctx.guild.id
         
-        # Add connection cooldown to prevent rapid reconnection attempts
-        cooldown_key = f"join_cooldown_{guild_id}"
-        current_time = asyncio.get_event_loop().time()
-        last_join_attempt = getattr(self, cooldown_key, 0)
+        # Enhanced cooldown to prevent rapid join attempts
+        current_time = time.time()
+        last_join_attempt = self.join_cooldowns.get(guild_id, 0)
         
-        # Enforce minimum 10 second cooldown between join attempts
-        if current_time - last_join_attempt < 10:
-            remaining = 10 - (current_time - last_join_attempt)
+        # Enforce minimum 5 second cooldown between join attempts
+        if current_time - last_join_attempt < 5:
+            remaining = 5 - (current_time - last_join_attempt)
             await ctx.send(f"⏳ Please wait {remaining:.1f} seconds before attempting to join again.")
             return None
         
-        setattr(self, cooldown_key, current_time)
+        self.join_cooldowns[guild_id] = current_time
         
+        # Check if we're already connected to this exact channel
         if guild_id in self.voice_clients:
             voice_client = self.voice_clients[guild_id]
-            # Check if voice client is still connected
-            if voice_client.is_connected():
-                if voice_client.channel == channel:
+            try:
+                if voice_client.is_connected() and voice_client.channel == channel:
                     if auto_start:
                         await ctx.send("🎵 I'm already in your voice channel! Starting music...")
                         if not self.is_playing.get(guild_id, False):
@@ -339,7 +340,8 @@ class MusicBot:
                     else:
                         await ctx.send("🎵 I'm already in your voice channel!")
                     return voice_client
-                else:
+                elif voice_client.is_connected() and voice_client.channel != channel:
+                    # Move to the new channel
                     try:
                         await voice_client.move_to(channel)
                         if auto_start:
@@ -353,39 +355,65 @@ class MusicBot:
                         print(f"[VOICE] Failed to move to channel {channel.name}: {e}")
                         # Clean up and try fresh connection
                         del self.voice_clients[guild_id]
-            else:
-                # Clean up disconnected voice client
-                print(f"[VOICE] Cleaning up disconnected voice client for guild {guild_id}")
+                else:
+                    # Voice client exists but isn't connected - clean it up
+                    del self.voice_clients[guild_id]
+            except Exception as e:
+                print(f"[VOICE] Error checking voice client state: {e}")
+                # Clean up problematic voice client
                 del self.voice_clients[guild_id]
         
+        # Check if bot is already connected via Discord's voice clients but not in our records
+        for vc in self.bot.voice_clients:
+            try:
+                if hasattr(vc, 'guild') and vc.guild and vc.guild.id == guild_id:
+                    if vc.is_connected():
+                        self.voice_clients[guild_id] = vc
+                        if vc.channel == channel:
+                            if auto_start:
+                                await ctx.send("🎵 Found existing connection! Starting music...")
+                                if not self.is_playing.get(guild_id, False):
+                                    await self.play_music(ctx, from_auto_start=True)
+                            else:
+                                await ctx.send("🎵 Found existing connection!")
+                            return vc
+                        else:
+                            # Move to new channel
+                            try:
+                                await vc.move_to(channel)
+                                if auto_start:
+                                    await ctx.send(f"🎵 Moved to {channel.name} and starting music!")
+                                    if not self.is_playing.get(guild_id, False):
+                                        await self.play_music(ctx, from_auto_start=True)
+                                else:
+                                    await ctx.send(f"🎵 Moved to {channel.name}!")
+                                return vc
+                            except Exception as e:
+                                print(f"[VOICE] Failed to move to channel {channel.name}: {e}")
+                                # Continue to fresh connection attempt
+                                break
+            except Exception as e:
+                print(f"[VOICE] Error checking Discord voice client: {e}")
+                continue
+        
+        # Attempt fresh connection
         try:
-            print(f"[VOICE] Attempting to connect to {channel.name} in guild {guild_id}")
-            print(f"[VOICE] Bot has permissions: {channel.permissions_for(ctx.guild.me)}")
+            print(f"[VOICE] Attempting fresh connection to {channel.name} in guild {guild_id}")
             voice_client = await channel.connect()
             print(f"[VOICE] Successfully connected to {channel.name}")
-            print(f"[VOICE] Voice client connected status: {voice_client.is_connected()}")
             
-            # Add delay to ensure connection is stable
-            await asyncio.sleep(2)
-            
-            # Verify connection is still active
-            if not voice_client.is_connected():
-                print(f"[VOICE] Connection failed immediately after connect for guild {guild_id}")
-                await ctx.send("❌ Failed to establish stable voice connection. Please try again.")
-                return None
-            
-            # Store voice client after verification
+            # Store voice client
             self.voice_clients[guild_id] = voice_client
             
-            # Generate initial shuffle playlist and start at random position
+            # Initialize all necessary state
             self._generate_shuffle_playlist(guild_id)
-            # Start at a random position in the shuffled playlist
             if self.shuffle_playlists.get(guild_id):
                 self.shuffle_positions[guild_id] = random.randint(0, len(self.shuffle_playlists[guild_id]) - 1)
             
             self.current_songs[guild_id] = 0
             self.is_playing[guild_id] = False
-            self.manual_skip_in_progress[guild_id] = False  # Initialize flag
+            self.manual_skip_in_progress[guild_id] = False
+            
             # Initialize queue properties
             if guild_id not in self.queued_songs:
                 self.queued_songs[guild_id] = []
@@ -394,20 +422,31 @@ class MusicBot:
             if guild_id not in self.playing_specific_url:
                 self.playing_specific_url[guild_id] = False
             
-            # Reset network error tracking for fresh start
+            # Reset network error tracking
             self.network_error_count[guild_id] = 0
             self.last_error_time[guild_id] = 0
             
             if auto_start:
                 await ctx.send(f"🎵 Joined {channel.name} and starting music in shuffle mode!")
-                # Give more time for voice client to fully stabilize
-                await asyncio.sleep(3)
+                await asyncio.sleep(1)  # Brief delay for stability
                 await self.play_music(ctx, from_auto_start=True)
             else:
                 await ctx.send(f"🎵 Joined {channel.name}! Ready to play music in shuffle mode!")
+                
             return voice_client
+            
+        except discord.ClientException as e:
+            error_msg = str(e).lower()
+            if "already connected" in error_msg:
+                # This should be rare now due to our checks, but handle gracefully
+                await ctx.send("🔄 Connection issue detected. Please try again in a few seconds.")
+                return None
+            else:
+                print(f"[VOICE] Connection failed: {e}")
+                await ctx.send(f"❌ Failed to connect: {e}")
+                return None
         except Exception as e:
-            print(f"[VOICE] Connection failed with error: {e}")
+            print(f"[VOICE] Unexpected error: {e}")
             await ctx.send(f"❌ Failed to join voice channel: {e}")
             return None
     
@@ -784,11 +823,24 @@ class MusicBot:
                         continue
                 
                 def after_playing(error):
+                    import time
+                    play_start_time = getattr(player, '_play_start_time', time.time())
+                    play_duration = time.time() - play_start_time
+                    
                     if error:
                         error_str = str(error).lower()
-                        print(f'🎵 Player error: {error}')
+                        print(f'🎵 Player error after {play_duration:.1f}s: {error}')
+                        
+                        # Check for common network/stream errors that should trigger retry
+                        if any(keyword in error_str for keyword in ['connection', 'network', 'timeout', 'reset', 'eof']):
+                            print(f"[NETWORK_ERROR] Detected network issue, will retry with next song")
+                        else:
+                            print(f"[AUDIO_ERROR] Non-network audio error: {error}")
                     else:
-                        print(f"🎵 Song finished playing normally for guild {guild_id}")
+                        if play_duration < 10:  # Song finished too quickly, likely an error
+                            print(f"🎵 Song finished suspiciously quickly ({play_duration:.1f}s) for guild {guild_id} - possible stream failure")
+                        else:
+                            print(f"🎵 Song finished playing normally after {play_duration:.1f}s for guild {guild_id}")
                     
                     # Clean up player object to free memory on Render.com
                     try:
@@ -799,11 +851,19 @@ class MusicBot:
                     except Exception as cleanup_error:
                         print(f"[MEMORY] Player cleanup error: {cleanup_error}")
                     
-                    # ALWAYS auto-advance if we're supposed to be playing
-                    if (self.is_playing.get(guild_id, False) and 
-                        not self.manual_skip_in_progress.get(guild_id, False)):
+                    # Only auto-advance if we're supposed to be playing AND the song played for a reasonable duration
+                    # This prevents rapid cycling due to immediate stream failures
+                    should_advance = (self.is_playing.get(guild_id, False) and 
+                                    not self.manual_skip_in_progress.get(guild_id, False))
+                    
+                    if should_advance:
+                        if play_duration < 5 and error:  # Very short play time with error suggests stream failure
+                            print(f"[STREAM_FAILURE] Song played for only {play_duration:.1f}s with error, will retry after delay")
+                            retry_delay = 3.0  # Wait longer before retry
+                        else:
+                            print(f"[AUTO-ADVANCE] Moving to next song automatically")
+                            retry_delay = 0.1  # Normal advance
                         
-                        print(f"[AUTO-ADVANCE] Moving to next song automatically")
                         # Move to next position in shuffle (thread-safe)
                         current_shuffle_pos = self.shuffle_positions.get(guild_id, 0)
                         next_shuffle_pos = current_shuffle_pos + 1
@@ -820,7 +880,7 @@ class MusicBot:
                         # Schedule next song to play without blocking (ensures infinite loop)
                         async def play_next_song():
                             try:
-                                await asyncio.sleep(0.1)  # Brief delay to prevent race conditions
+                                await asyncio.sleep(retry_delay)  # Use adaptive delay
                                 if self.is_playing.get(guild_id, False) and not self.manual_skip_in_progress.get(guild_id, False):
                                     await self._play_current_song(guild_id)
                                 else:
@@ -848,6 +908,11 @@ class MusicBot:
                         # No delay - instant override
                     
                     voice_client.play(player, after=after_playing)
+                    
+                    # Track when playback actually starts for duration monitoring
+                    import time
+                    player._play_start_time = time.time()
+                    
                     print(f"[CLOUD_MUSIC] Successfully started playing: {player.title}")
                     return  # Success! Exit the retry loop
                     
