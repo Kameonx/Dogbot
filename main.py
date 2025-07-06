@@ -15,6 +15,7 @@ import re
 import yt_dlp
 import subprocess
 from pytube import YouTube
+from urllib.error import HTTPError
 from playlist import MUSIC_PLAYLISTS  # moved playlist definitions to playlist.py
 from music import MusicBot, YouTubeAudioSource  # import music functionality from music.py
 
@@ -68,6 +69,7 @@ YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3"
 # Venice AI Configuration
 VENICE_API_URL = "https://api.venice.ai/api/v1/chat/completions"
 VENICE_MODEL = "venice-uncensored"
+IMAGE_API_URL = "https://api.venice.ai/api/v1/image/generate"
 
 # YouTube Data API v3 Configuration
 YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3"
@@ -510,7 +512,8 @@ async def help(ctx):
         name="🤖 **AI & Chat Commands**",
         value=(
             "`!chat <message>` - Chat with AI (with memory)\n"
-            "`!ask <question>` - Ask AI a question (no memory)"
+            "`!ask <question>` - Ask AI a question (no memory)\n"
+            "`!generate <prompt>` - Generate an AI image using HiDream model"
         ),
         inline=False
     )
@@ -701,7 +704,7 @@ async def play(ctx, *, url=None):
         return
     
     if url:
-        await ctx.send("❌ Specific URL playback not available in simplified mode! Use `!start` to play the main playlist.")
+        await music_bot.play_url(ctx, url)
     else:
         await music_bot.play_music(ctx)
 
@@ -1161,6 +1164,10 @@ async def download(ctx, *, url):
         else:
             await processing_msg.edit(content="❌ Download failed! File not found after processing.")
             
+    except HTTPError as http_err:
+        # Handle HTTP errors from pytube
+        await processing_msg.edit(content=f"❌ HTTP Error while downloading video: {http_err}")
+        print(f"Download HTTP error: {http_err}")
     except Exception as e:
         error_msg = str(e)
         if "Private video" in error_msg or "private" in error_msg.lower():
@@ -1595,6 +1602,51 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
         await ctx.send("❌ I don't have permission to remove roles!")
     except Exception as e:
         await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command(name='generate')
+async def generate(ctx, *, prompt: Optional[str] = None):
+    """Generate an image using Venice AI HiDream model"""
+    if not prompt:
+        await ctx.send("❌ Please provide a prompt for image generation!")
+        return
+    if not venice_api_key:
+        await ctx.send("❌ AI image generation is disabled. Please set VENICE_API_KEY.")
+        return
+    payload = {
+        "prompt": prompt,
+        "model": "hidream",
+        "format": "webp",
+        "width": 1024,
+        "height": 1024,
+        "steps": 20,
+        "safe_mode": True,
+        "hide_watermark": True,
+        "embed_exif_metadata": False,
+        "return_binary": False,
+        "seed": 0
+    }
+    headers = {"Authorization": f"Bearer {venice_api_key}", "Content-Type": "application/json"}
+    try:
+        async with ctx.typing():
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(IMAGE_API_URL, json=payload, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+        items = data.get("data", [])
+        if not items:
+            await ctx.send("❌ No image returned from AI.")
+            return
+        img_url = items[0].get("url") or items[0].get("image_url")
+        if not img_url:
+            await ctx.send("❌ Failed to retrieve image URL.")
+            return
+        embed = discord.Embed(title="🖼️ AI Image Generation", description=f"Prompt: {prompt}", color=discord.Color.purple())
+        embed.set_image(url=img_url)
+        await ctx.send(embed=embed)
+    except httpx.HTTPStatusError as e:
+        await ctx.send(f"❌ Image generation failed: {e.response.status_code}")
+    except Exception as e:
+        await ctx.send(f"❌ Error generating image: {e}")
 
 # Web server setup for Render.com port binding
 async def health_check(request):
