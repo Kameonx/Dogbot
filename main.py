@@ -412,20 +412,7 @@ async def on_error(event, *args, **kwargs):
     traceback.print_exc()
     
     # Try to continue running rather than crash
-    try:
-        if music_bot:
-            # Reset any problematic states
-            for guild_id in list(music_bot.voice_clients.keys()):
-                try:
-                    voice_client = music_bot.voice_clients[guild_id]
-                    if not voice_client.is_connected():
-                        print(f"[BOT_ERROR] Cleaning up disconnected voice client for guild {guild_id}")
-                        del music_bot.voice_clients[guild_id]
-                        music_bot.is_playing[guild_id] = False
-                except Exception as cleanup_error:
-                    print(f"[BOT_ERROR] Error during cleanup: {cleanup_error}")
-    except Exception as e:
-        print(f"[BOT_ERROR] Error in error handler: {e}")
+    print("[BOT_ERROR] Attempting to continue operation...")
 
 @bot.event
 async def on_member_join(member):
@@ -473,23 +460,31 @@ async def help(ctx):
         color=discord.Color.blue()
     )
     
+    # Basic Commands (moved to top)
+    embed.add_field(
+        name="🔧 **Basic Commands**",
+        value=(
+            "`!hello` - Say hello to Dogbot\n"
+            "`!help` - Show this help message\n"
+            "`!modhelp` - Show moderator commands"
+        ),
+        inline=False
+    )
+    
     # Music Commands
     embed.add_field(
         name="🎵 **Music Commands**",
         value=(
             "`!join` - Join your voice channel and start music\n"
             "`!leave` - Leave voice channel\n"
-            "`!play [url]` - Play music or specific YouTube URL\n"
+            "`!start` - Start playing the music playlist\n"
             "`!stop` - Stop playing music\n"
             "`!next` / `!skip` - Skip to next song\n"
-            "`!previous` - Go to previous song\n"
+            "`!pause` - Pause current song\n"
+            "`!resume` - Resume paused song\n"
             "`!playlist` / `!queue` - Show current playlist\n"
-            "`!add <url>` - Add song to queue\n"
-            "`!remove <url>` - Remove song from queue\n"
             "`!nowplaying` / `!np` - Show current song\n"
-            "`!volume [0-100]` - Check or set volume\n"
-            "`!reshuffle` - Generate new shuffle order\n"
-            "`!loop` - Show infinite loop status"
+            "`!volume [0-100]` - Check or set volume"
         ),
         inline=False
     )
@@ -513,18 +508,6 @@ async def help(ctx):
         value=(
             "`!chat <message>` - Chat with AI (with memory)\n"
             "`!ask <question>` - Ask AI a question (no memory)"
-        ),
-        inline=False
-    )
-    
-    # Basic Commands
-    embed.add_field(
-        name="🔧 **Basic Commands**",
-        value=(
-            "`!hello` - Say hello to Dogbot\n"
-            "`!test` - Test bot functionality\n"
-            "`!help` - Show this help message\n"
-            "`!modhelp` - Show moderator commands"
         ),
         inline=False
     )
@@ -635,38 +618,7 @@ async def history(ctx):
 async def hello(ctx):
     await ctx.send(f'🐕 Woof woof! Hello {ctx.author.name}!')
 
-@bot.command()
-async def test(ctx):
-    """Test bot functionality"""
-    embed = discord.Embed(
-        title="🔧 Bot Test Results",
-        color=discord.Color.green()
-    )
-    
-    # Test music bot
-    if music_bot:
-        embed.add_field(name="Music Bot", value="✅ Initialized", inline=True)
-    else:
-        embed.add_field(name="Music Bot", value="❌ Not initialized", inline=True)
-    
-    # Test playlist
-    if MUSIC_PLAYLISTS:
-        embed.add_field(name="Playlist", value=f"✅ {len(MUSIC_PLAYLISTS)} songs", inline=True)
-    else:
-        embed.add_field(name="Playlist", value="❌ Empty", inline=True)
-    
-    # Test voice connection
-    if music_bot and ctx.guild.id in music_bot.voice_clients:
-        voice_client = music_bot.voice_clients[ctx.guild.id]
-        if voice_client.is_connected():
-            embed.add_field(name="Voice", value="✅ Connected", inline=True)
-        else:
-            embed.add_field(name="Voice", value="❌ Disconnected", inline=True)
-    else:
-        embed.add_field(name="Voice", value="❌ Not connected", inline=True)
-    
-    embed.set_footer(text="Use !join to start music")
-    await ctx.send(embed=embed)
+
 
 # Music Bot Commands
 @bot.command()
@@ -675,7 +627,11 @@ async def join(ctx):
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    await music_bot.join_voice_channel(ctx, auto_start=True)
+    
+    # Join voice channel
+    if await music_bot.join_voice_channel(ctx):
+        # Auto-start music after joining
+        await music_bot.play_music(ctx)
 
 @bot.command()
 async def leave(ctx):
@@ -699,7 +655,13 @@ async def stop(ctx):
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    await music_bot.stop_music(ctx)
+    
+    if ctx.voice_client and ctx.voice_client.is_playing():
+        ctx.voice_client.stop()
+        music_bot._cleanup_guild_state(ctx.guild.id)
+        await ctx.send("🛑 Music stopped!")
+    else:
+        await ctx.send("❌ Nothing is playing!")
 
 @bot.command()
 async def next(ctx):
@@ -707,7 +669,7 @@ async def next(ctx):
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    await music_bot.next_song(ctx)
+    await music_bot.skip_song(ctx)
 
 @bot.command()
 async def skip(ctx):
@@ -715,7 +677,7 @@ async def skip(ctx):
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    await music_bot.next_song(ctx)
+    await music_bot.skip_song(ctx)
 
 @bot.command()
 async def previous(ctx):
@@ -723,7 +685,7 @@ async def previous(ctx):
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    await music_bot.previous_song(ctx)
+    await ctx.send("❌ Previous song not available in simplified mode!")
 
 @bot.command()
 async def play(ctx, *, url=None):
@@ -733,7 +695,7 @@ async def play(ctx, *, url=None):
         return
     
     if url:
-        await music_bot.play_specific_url(ctx, url)
+        await ctx.send("❌ Specific URL playback not available in simplified mode! Use `!start` to play the main playlist.")
     else:
         await music_bot.play_music(ctx)
 
@@ -743,7 +705,19 @@ async def playlist(ctx):
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    await music_bot.show_playlist(ctx)
+    
+    from playlist import MUSIC_PLAYLISTS
+    embed = discord.Embed(
+        title="🎵 Music Playlist",
+        description=f"Total songs: {len(MUSIC_PLAYLISTS)}",
+        color=discord.Color.blue()
+    )
+    embed.add_field(
+        name="View Full Playlist",
+        value="[🔗 Click here to view on GitHub](https://github.com/Kameonx/Dogbot/blob/main/playlist.py)",
+        inline=False
+    )
+    await ctx.send(embed=embed)
 
 @bot.command()
 async def queue(ctx):
@@ -751,23 +725,29 @@ async def queue(ctx):
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    await music_bot.show_playlist(ctx)
+    
+    from playlist import MUSIC_PLAYLISTS
+    embed = discord.Embed(
+        title="🎵 Music Queue",
+        description=f"Total songs: {len(MUSIC_PLAYLISTS)}",
+        color=discord.Color.blue()
+    )
+    embed.add_field(
+        name="View Full Playlist",
+        value="[🔗 Click here to view on GitHub](https://github.com/Kameonx/Dogbot/blob/main/playlist.py)",
+        inline=False
+    )
+    await ctx.send(embed=embed)
 
 @bot.command()
 async def add(ctx, *, url):
     """Add song to playlist"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    await music_bot.add_song(ctx, url)
+    await ctx.send("❌ Adding songs is disabled in simplified mode for stability!")
 
 @bot.command()
 async def remove(ctx, *, url):
     """Remove song from playlist"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    await music_bot.remove_song(ctx, url)
+    await ctx.send("❌ Removing songs is disabled in simplified mode for stability!")
 
 @bot.command()
 async def nowplaying(ctx):
@@ -775,7 +755,7 @@ async def nowplaying(ctx):
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    await music_bot.get_current_song_info(ctx)
+    await music_bot.now_playing(ctx)
 
 @bot.command()
 async def np(ctx):
@@ -783,7 +763,7 @@ async def np(ctx):
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    await music_bot.get_current_song_info(ctx)
+    await music_bot.now_playing(ctx)
     
 @bot.command()
 async def status(ctx):
@@ -793,7 +773,7 @@ async def status(ctx):
         return
     
     embed = discord.Embed(
-        title="🔧 Voice Channel Debug Status",
+        title="🔧 Voice Channel Status",
         color=discord.Color.orange()
     )
     
@@ -803,197 +783,35 @@ async def status(ctx):
     bot_voice_state = ctx.guild.me.voice
     discord_voice_channel = bot_voice_state.channel.name if bot_voice_state and bot_voice_state.channel else "None"
     
-    # Check our voice client record
-    has_voice_client = guild_id in music_bot.voice_clients
-    voice_client_connected = False
-    if has_voice_client:
-        try:
-            voice_client_connected = music_bot.voice_clients[guild_id].is_connected()
-        except:
-            voice_client_connected = False
+    # Check if we have a voice client
+    has_voice_client = ctx.voice_client is not None
+    voice_client_connected = ctx.voice_client.is_connected() if ctx.voice_client else False
     
-    # Check Discord's native voice clients
-    discord_voice_clients = []
-    for vc in bot.voice_clients:
-        try:
-            # Use getattr with default to safely check guild
-            vc_guild = getattr(vc, 'guild', None)
-            if vc_guild and getattr(vc_guild, 'id', None) == guild_id:
-                discord_voice_clients.append(vc)
-        except Exception:
-            # Skip any voice clients that cause errors
-            continue
+    # Check if music is playing
+    is_playing = ctx.voice_client.is_playing() if ctx.voice_client else False
+    is_paused = ctx.voice_client.is_paused() if ctx.voice_client else False
+    
+    # Check guild state
+    guild_state = music_bot._get_guild_state(guild_id)
+    current_index = guild_state.get('current_index', 0)
+    playlist_length = len(guild_state.get('current_playlist', []))
     
     embed.add_field(name="Bot Voice Channel", value=discord_voice_channel or "None", inline=True)
-    embed.add_field(name="Has Voice Client Record", value="✅ Yes" if has_voice_client else "❌ No", inline=True)
-    embed.add_field(name="Voice Client Connected", value="✅ Yes" if voice_client_connected else "❌ No", inline=True)
-    embed.add_field(name="Total Voice Clients", value=str(len(discord_voice_clients)), inline=True)
-    embed.add_field(name="Playing Status", value="▶️ Playing" if music_bot.is_playing.get(guild_id, False) else "⏸️ Stopped", inline=True)
-    embed.add_field(name="Manual Skip Active", value="🔄 Yes" if music_bot.manual_skip_in_progress.get(guild_id, False) else "❌ No", inline=True)
+    embed.add_field(name="Connected", value="✅ Yes" if voice_client_connected else "❌ No", inline=True)
+    embed.add_field(name="Playing", value="▶️ Yes" if is_playing else "⏸️ Paused" if is_paused else "⏹️ No", inline=True)
+    embed.add_field(name="Playlist Progress", value=f"{current_index + 1}/{playlist_length}" if playlist_length > 0 else "No playlist", inline=True)
     
     await ctx.send(embed=embed)
 
-@bot.command()
-async def loop(ctx):
-    """Show infinite loop status and statistics"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    guild_id = ctx.guild.id
-    
-    embed = discord.Embed(
-        title="🔄 Infinite Loop Status",
-        color=discord.Color.green()
-    )
-    
-    # Playing status
-    is_playing = music_bot.is_playing.get(guild_id, False)
-    embed.add_field(
-        name="🎵 Current Status", 
-        value="🔄 **INFINITE LOOP ACTIVE**" if is_playing else "⏹️ Stopped", 
-        inline=False
-    )
-    
-    # Playlist info
-    total_songs = len(MUSIC_PLAYLISTS)
-    embed.add_field(name="📚 Total Songs", value=f"{total_songs} songs available", inline=True)
-    
-    if guild_id in music_bot.shuffle_playlists:
-        current_pos = music_bot.shuffle_positions.get(guild_id, 0)
-        shuffle_total = len(music_bot.shuffle_playlists[guild_id])
-        embed.add_field(
-            name="🔀 Current Shuffle",
-            value=f"Position {current_pos + 1} of {shuffle_total}",
-            inline=True
-        )
-        
-        # Calculate how many times the playlist has looped
-        if guild_id in music_bot.current_songs:
-            # This is a rough estimate based on position
-            loops_completed = current_pos // total_songs if total_songs > 0 else 0
-            embed.add_field(
-                name="♾️ Loops Completed",
-                value=f"~{loops_completed} full loops",
-                inline=True
-            )
-    
-    # Voice status
-    if guild_id in music_bot.voice_clients:
-        voice_client = music_bot.voice_clients[guild_id]
-        if voice_client.is_connected():
-            embed.add_field(
-                name="🔊 Voice Status",
-                value=f"Connected to {voice_client.channel.name}",
-                inline=False
-            )
-        else:
-            embed.add_field(name="🔊 Voice Status", value="❌ Disconnected", inline=False)
-    else:
-        embed.add_field(name="🔊 Voice Status", value="❌ Not in voice channel", inline=False)
-    
-    embed.set_footer(text="🔄 Music will automatically loop forever when playing • Use !stop to disable")
-    
-    await ctx.send(embed=embed)
 
-@bot.command()
-async def reshuffle(ctx):
-    """Generate new shuffle order"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    if ctx.guild.id in music_bot.shuffle_playlists:
-        music_bot._generate_shuffle_playlist(ctx.guild.id)
-        await ctx.send("🔀 Generated new shuffle order! Use `!next` to skip to a new song.")
-    else:
-        await ctx.send("❌ No active shuffle playlist found!")
 
-@bot.command()
-async def volume(ctx, vol: Optional[int] = None):
-    """Check or set the music volume (0-100)"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    if ctx.guild.id not in music_bot.voice_clients:
-        await ctx.send("❌ I'm not in a voice channel!")
-        return
-    
-    voice_client = music_bot.voice_clients[ctx.guild.id]
-    
-    if vol is None:
-        # Just check current volume
-        if voice_client.source:
-            current_vol = int(voice_client.source.volume * 100)
-            await ctx.send(f"🔊 Current volume: {current_vol}%")
-        else:
-            await ctx.send("🔊 No audio source active")
-        return
-    
-    # Set volume
-    if vol < 0 or vol > 100:
-        await ctx.send("❌ Volume must be between 0 and 100!")
-        return
-    
-    if voice_client.source:
-        voice_client.source.volume = vol / 100.0
-        await ctx.send(f"🔊 Volume set to {vol}%")
-    else:
-        await ctx.send("❌ No audio source active to adjust volume")
 
-@bot.command()
-async def audiotest(ctx):
-    """Test audio playback with debug info"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    if ctx.guild.id not in music_bot.voice_clients:
-        await ctx.send("❌ I'm not in a voice channel!")
-        return
-    
-    voice_client = music_bot.voice_clients[ctx.guild.id]
-    
-    embed = discord.Embed(
-        title="🔊 Audio Debug Test",
-        color=discord.Color.blue()
-    )
-    
-    # Voice client status
-    embed.add_field(name="Connected", value="✅ Yes" if voice_client.is_connected() else "❌ No", inline=True)
-    embed.add_field(name="Playing", value="▶️ Yes" if voice_client.is_playing() else "⏸️ No", inline=True)
-    embed.add_field(name="Paused", value="⏸️ Yes" if voice_client.is_paused() else "▶️ No", inline=True)
-    
-    # Channel info
-    if voice_client.is_connected():
-        embed.add_field(name="Channel", value=voice_client.channel.name, inline=True)
-        embed.add_field(name="Channel Members", value=len(voice_client.channel.members), inline=True)
-    
-    # Volume info
-    if voice_client.source:
-        volume = int(voice_client.source.volume * 100)
-        embed.add_field(name="Volume", value=f"{volume}%", inline=True)
-    else:
-        embed.add_field(name="Volume", value="No audio source", inline=True)
-    
-    # Bot's audio state
-    is_playing = music_bot.is_playing.get(ctx.guild.id, False)
-    embed.add_field(name="Bot State", value="🔄 Playing" if is_playing else "⏹️ Stopped", inline=True)
-    
-    embed.set_footer(text="Use this to debug why you might not hear audio")
-    await ctx.send(embed=embed)
 
-@bot.command()
-async def bluetooth(ctx):
-    """Optimize audio settings for Bluetooth speakers"""
-    if not music_bot:
-        await ctx.send("❌ Music bot is not initialized!")
-        return
-    
-    if ctx.guild.id not in music_bot.voice_clients:
-        await ctx.send("❌ I'm not in a voice channel!")
-        return
+
+
+
+
+
 
 # Role Management Commands
 @bot.command()
@@ -1165,23 +983,37 @@ async def modhelp(ctx):
         color=discord.Color.orange()
     )
     
+    # Role Assignment Commands
+    embed.add_field(
+        name="🎭 **Role Assignment (for Moderators)**",
+        value=(
+            "`!assigndogsrole @username` - Assign Dogs role to user\n"
+            "`!removedogsrolefrom @username` - Remove Dogs role from user\n"
+            "`!assigncatsrole @username` - Assign Cats role to user\n"
+            "`!removecatsrolefrom @username` - Remove Cats role from user\n"
+            "`!assignlizardsrole @username` - Assign Lizards role to user\n"
+            "`!removelizardsrolefrom @username` - Remove Lizards role from user\n"
+            "`!assignpvprole @username` - Assign PVP role to user\n"
+            "`!removepvprolefrom @username` - Remove PVP role from user"
+        ),
+        inline=False
+    )
+    
+    # Test & Debug Commands
+    embed.add_field(
+        name="🔧 **Test & Debug**",
+        value=(
+            "`!status` - Check voice channel status"
+        ),
+        inline=False
+    )
+    
     # Chat Management
     embed.add_field(
         name="💬 **Chat Management**",
         value=(
             "`!clear_history` - Clear your chat history\n"
             "`!history` - View your recent chat history"
-        ),
-        inline=False
-    )
-    
-    # Debug & Utility Commands
-    embed.add_field(
-        name="🔧 **Debug & Utility**",
-        value=(
-            "`!status` - Debug voice channel status\n"
-            "`!audiotest` - Test audio playback\n"
-            "`!bluetooth` - Optimize for Bluetooth speakers"
         ),
         inline=False
     )
