@@ -1633,30 +1633,49 @@ async def generate(ctx, *, prompt: Optional[str] = None):
             async with httpx.AsyncClient(timeout=60) as client:
                 resp = await client.post(IMAGE_API_URL, json=payload, headers=headers)
                 resp.raise_for_status()
+                # Determine if response is JSON or image data
+                content_type = resp.headers.get("Content-Type", "")
+                if content_type.startswith("image"):
+                    img_bytes = resp.content
+                    buffer = io.BytesIO(img_bytes)
+                    buffer.seek(0)
+                    file = discord.File(buffer, filename="image.png")
+                    embed = discord.Embed(
+                        title="🖼️ AI Image Generation", description=f"Prompt: {prompt}", color=discord.Color.purple()
+                    )
+                    embed.set_image(url="attachment://image.png")
+                    await ctx.send(embed=embed, file=file)
+                    return
+                # Otherwise parse JSON for image URLs or base64
                 data = resp.json()
-        items = data.get("data", [])
-        if not items:
-            await ctx.send("❌ No image returned from AI.")
-            return
-        # Handle base64 encoded image
-        b64_data = items[0].get("b64_json") or items[0].get("image") or items[0].get("base64")
-        if b64_data:
-            img_bytes = base64.b64decode(b64_data)
-            buffer = io.BytesIO(img_bytes)
-            buffer.seek(0)
-            file = discord.File(buffer, filename="image.png")
-            embed = discord.Embed(title="🖼️ AI Image Generation", description=f"Prompt: {prompt}", color=discord.Color.purple())
-            embed.set_image(url="attachment://image.png")
-            await ctx.send(embed=embed, file=file)
-            return
-        # Fallback to URL if binary not provided
-        img_url = items[0].get("url") or items[0].get("image_url")
-        if img_url:
-            embed = discord.Embed(title="🖼️ AI Image Generation", description=f"Prompt: {prompt}", color=discord.Color.purple())
-            embed.set_image(url=img_url)
-            await ctx.send(embed=embed)
-            return
-        await ctx.send("❌ Failed to retrieve image data.")
+                items = data.get("data", [])
+                
+                if not items:
+                    await ctx.send("❌ No image returned from AI.")
+                    return
+                # Handle base64 encoded image
+                b64_data = items[0].get("b64_json") or items[0].get("image") or items[0].get("base64")
+                if b64_data:
+                    img_bytes = base64.b64decode(b64_data)
+                    buffer = io.BytesIO(img_bytes)
+                    buffer.seek(0)
+                    file = discord.File(buffer, filename="image.png")
+                    embed = discord.Embed(
+                        title="🖼️ AI Image Generation", description=f"Prompt: {prompt}", color=discord.Color.purple()
+                    )
+                    embed.set_image(url="attachment://image.png")
+                    await ctx.send(embed=embed, file=file)
+                    return
+                # Fallback to URL if binary not provided
+                img_url = items[0].get("url") or items[0].get("image_url")
+                if img_url:
+                    embed = discord.Embed(
+                        title="🖼️ AI Image Generation", description=f"Prompt: {prompt}", color=discord.Color.purple()
+                    )
+                    embed.set_image(url=img_url)
+                    await ctx.send(embed=embed)
+                    return
+                await ctx.send("❌ Failed to retrieve image data.")
     except httpx.HTTPStatusError as e:
         await ctx.send(f"❌ Image generation failed: {e.response.status_code}")
     except Exception as e:
