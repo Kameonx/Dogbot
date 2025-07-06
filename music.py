@@ -82,54 +82,52 @@ class MusicBot:
             del self.guild_states[guild_id]
 
     async def join_voice_channel(self, ctx):
-        """Improved voice channel joining with better diagnostics"""
-        try:
-            # Ensure user is in a voice channel
-            if not ctx.author.voice or not ctx.author.voice.channel:
-                await ctx.send("❌ You need to be in a voice channel first!")
-                return False
-            channel = ctx.author.voice.channel
+        """Reliable join logic: single connect/move without loops to prevent repeated reconnects"""
+        # Ensure user is in a voice channel
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            await ctx.send("❌ You need to be in a voice channel first!")
+            return False
+        channel = ctx.author.voice.channel
 
-            # Check bot permissions
-            permissions = channel.permissions_for(ctx.guild.me)
-            if not permissions.connect:
-                await ctx.send("❌ I don't have permission to connect to that voice channel!")
-                return False
-            if not permissions.speak:
-                await ctx.send("❌ I don't have permission to speak in that voice channel!")
-                return False
-
-            # Handle existing voice client
-            vc = ctx.guild.voice_client
-            if vc and vc.is_connected():
-                if vc.channel == channel:
-                    await ctx.send(f"✅ Already connected to **{channel.name}**")
-                    return True
-                await vc.move_to(channel)
-                await ctx.send(f"🔄 Moved to **{channel.name}**")
-                return True
-
-            # Disconnect stale client
-            if vc:
-                await vc.disconnect(force=True)
-                await asyncio.sleep(1)
-
-            # Attempt connection with retries
-            for attempt in range(1, 4):
-                try:
-                    vc = await channel.connect()
-                    if vc and vc.is_connected():
-                        await ctx.send(f"✅ Joined 🎵 | **{channel.name}** (attempt {attempt})")
-                        return True
-                except Exception as e:
-                    print(f"[MUSIC] join attempt {attempt} failed: {e}")
-                await asyncio.sleep(2)
-
-            await ctx.send("❌ Failed to join voice channel after 3 attempts.")
+        # Check permissions
+        perms = channel.permissions_for(ctx.guild.me)
+        if not perms.connect or not perms.speak:
+            await ctx.send("❌ I need Connect and Speak permissions in your voice channel!")
             return False
 
+        # Already connected in this guild
+        vc = ctx.voice_client
+        if vc and vc.is_connected():
+            if vc.channel.id == channel.id:
+                return True
+            try:
+                await vc.move_to(channel)
+                return True
+            except Exception as e:
+                await ctx.send(f"❌ Failed to move to channel: {e}")
+                return False
+
+        # Disconnect any stale client
+        if vc:
+            try:
+                await vc.disconnect(force=True)
+            except:
+                pass
+        # Connect
+        try:
+            # Wait until bot is ready to connect
+            await self.bot.wait_until_ready()
+            new_vc = await channel.connect()
+            # Brief pause to allow connection registration
+            await asyncio.sleep(1.0)
+            if new_vc and new_vc.is_connected():
+                await ctx.send(f"✅ Joined 🎵 | **{channel.name}**")
+                return True
+            else:
+                await ctx.send("❌ Failed to join voice channel.")
+                return False
         except Exception as e:
-            await ctx.send(f"❌ Failed to join voice channel: {e}")
+            await ctx.send(f"❌ Error connecting to voice channel: {e}")
             return False
 
     async def leave_voice_channel(self, ctx):
