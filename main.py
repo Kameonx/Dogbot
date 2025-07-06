@@ -1071,7 +1071,9 @@ async def download(ctx, *, url):
     
     # Show initial message
     processing_msg = await ctx.send("🎵 Processing download request... This may take a moment.")
-    
+    # Use executor to offload blocking download tasks
+    loop = asyncio.get_event_loop()
+
     try:
         # Use yt_dlp to download and convert to MP3
         # Set up yt_dlp options, including cookies if available
@@ -1093,7 +1095,7 @@ async def download(ctx, *, url):
         try:
             ytdl = yt_dlp.YoutubeDL(ytdl_opts)
             try:
-                info = ytdl.extract_info(url, download=True)
+                info = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=True))
             except Exception as e:
                 err = str(e)
                 if 'Sign in to confirm' in err:
@@ -1101,7 +1103,7 @@ async def download(ctx, *, url):
                     retry_opts = ytdl_opts.copy()
                     retry_opts.pop('cookiefile', None)
                     retry_opts['cookiesfrombrowser'] = ('chrome',)
-                    info = yt_dlp.YoutubeDL(retry_opts).extract_info(url, download=True)
+                    info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(retry_opts).extract_info(url, download=True))
                 else:
                     raise
             if not info:
