@@ -14,6 +14,7 @@ from typing import Optional
 import re
 import yt_dlp
 import subprocess
+from pytube import YouTube
 from playlist import MUSIC_PLAYLISTS  # moved playlist definitions to playlist.py
 from music import MusicBot, YouTubeAudioSource  # import music functionality from music.py
 
@@ -476,8 +477,8 @@ async def help(ctx):
         name="🎵 **Music Commands**",
         value=(
             "`!join` - Join your voice channel and start music\n"
+            "`!start` - Start playing music (will join channel if needed)\n"
             "`!leave` - Leave voice channel\n"
-            "`!start` - Start playing the music playlist\n"
             "`!stop` - Stop playing music\n"
             "`!next` / `!skip` - Skip to next song\n"
             "`!pause` - Pause current song\n"
@@ -485,7 +486,8 @@ async def help(ctx):
             "`!playlist` / `!queue` - Show current playlist\n"
             "`!nowplaying` / `!np` - Show current song\n"
             "`!volume [0-100]` - Check or set volume\n"
-            "`!download <youtube_url>` - Download YouTube video as MP3"
+            "`!download <youtube_url>` - Download YouTube video as MP3 (pytube)\n"
+            "`!voicediag` - Voice connection diagnostics"
         ),
         inline=False
     )
@@ -1008,7 +1010,9 @@ async def modhelp(ctx):
         name="🔧 **Test & Debug**",
         value=(
             "`!status` - Check voice channel status\n"
-            "`!download <youtube_url>` - Download YouTube as MP3 ⚠️"
+            "`!voicediag` - Detailed voice connection diagnostics\n"
+            "`!audiotest` - Test audio system components\n"
+            "`!download <youtube_url>` - Download YouTube as MP3 (pytube) ⚠️"
         ),
         inline=False
     )
@@ -1026,10 +1030,10 @@ async def modhelp(ctx):
     embed.set_footer(text="🔧 These commands help with troubleshooting and management!")
     await ctx.send(embed=embed)
 
-# YouTube Download Command
+# YouTube Download Command using pytube
 @bot.command()
 async def download(ctx, *, url):
-    """Download YouTube video as MP3 (Note: May violate YouTube ToS)"""
+    """Download YouTube video as MP3 using pytube"""
     if not url:
         await ctx.send("❌ Please provide a YouTube URL!")
         return
@@ -1048,102 +1052,107 @@ async def download(ctx, *, url):
     processing_msg = await ctx.send("🎵 Processing download request... This may take a moment.")
     
     try:
-        # Configure yt-dlp for audio download
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'extractaudio': True,
-            'audioformat': 'mp3',
-            'audioquality': '192',  # Good quality but smaller file size
-            'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'quiet': True,
-            'no_warnings': True,
-        }
+        # Create YouTube object
+        yt = YouTube(url)
         
-        # Download the audio
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Get video info first
-            info = ydl.extract_info(url, download=False)
-            if not info:
-                await processing_msg.edit(content="❌ Could not extract video information!")
-                return
-                
-            title = info.get('title', 'Unknown')
-            duration = info.get('duration', 0)
+        # Get video info
+        title = yt.title
+        duration = yt.length
+        
+        # Check duration (limit to 10 minutes to avoid huge files)
+        if duration > 600:  # 10 minutes
+            await processing_msg.edit(content="❌ Video is too long! Please use videos under 10 minutes.")
+            return
+        
+        await processing_msg.edit(content=f"⬬ Downloading: **{title}**...")
+        
+        # Get audio stream (highest quality audio)
+        audio_stream = yt.streams.filter(only_audio=True, file_extension='mp4').first()
+        
+        if not audio_stream:
+            await processing_msg.edit(content="❌ No audio stream found for this video!")
+            return
+        
+        # Download the audio file
+        temp_filename = audio_stream.download(output_path=download_dir)
+        
+        # Convert to MP3 using FFmpeg
+        mp3_filename = os.path.splitext(temp_filename)[0] + '.mp3'
+        
+        # Convert using FFmpeg
+        try:
+            subprocess.run([
+                'ffmpeg', '-i', temp_filename, 
+                '-vn', '-acodec', 'libmp3lame', 
+                '-ab', '192k', '-ar', '44100', 
+                '-y', mp3_filename
+            ], check=True, capture_output=True)
             
-            # Check duration (limit to 10 minutes to avoid huge files)
-            if duration > 600:  # 10 minutes
-                await processing_msg.edit(content="❌ Video is too long! Please use videos under 10 minutes.")
-                return
+            # Remove original file
+            os.remove(temp_filename)
             
-            await processing_msg.edit(content=f"⬬ Downloading: **{title}**...")
+        except subprocess.CalledProcessError:
+            # If FFmpeg fails, just rename the file
+            os.rename(temp_filename, mp3_filename)
+        except FileNotFoundError:
+            # FFmpeg not available, just rename
+            os.rename(temp_filename, mp3_filename)
+        
+        # Check file size
+        if os.path.exists(mp3_filename):
+            file_size = os.path.getsize(mp3_filename)
+            file_size_mb = file_size / (1024 * 1024)
             
-            # Actually download
-            ydl.download([url])
-            
-            # Find the downloaded file
-            filename = ydl.prepare_filename(info)
-            # Replace extension with .mp3
-            mp3_filename = os.path.splitext(filename)[0] + '.mp3'
-            
-            # Check if file exists and get size
-            if os.path.exists(mp3_filename):
-                file_size = os.path.getsize(mp3_filename)
-                file_size_mb = file_size / (1024 * 1024)
-                
-                # Discord file size limit check (25MB for safety)
-                if file_size_mb > 25:
-                    await processing_msg.edit(content=f"❌ File too large ({file_size_mb:.1f}MB)! Discord limit is ~25MB.")
-                    # Clean up
-                    try:
-                        os.remove(mp3_filename)
-                    except:
-                        pass
-                    return
-                
-                await processing_msg.edit(content=f"⬆️ Uploading **{title}** ({file_size_mb:.1f}MB)...")
-                
-                # Send the file
-                with open(mp3_filename, 'rb') as f:
-                    discord_file = discord.File(f, filename=f"{title}.mp3")
-                    
-                    embed = discord.Embed(
-                        title="🎵 Download Complete!",
-                        description=f"**{title}**",
-                        color=discord.Color.green()
-                    )
-                    embed.add_field(name="File Size", value=f"{file_size_mb:.1f}MB", inline=True)
-                    embed.add_field(name="Format", value="MP3 (192kbps)", inline=True)
-                    embed.set_footer(text="⚠️ Please respect YouTube's Terms of Service")
-                    
-                    await ctx.send(embed=embed, file=discord_file)
-                    await processing_msg.delete()
-                
-                # Clean up the file after sending
+            # Discord file size limit check (25MB for safety)
+            if file_size_mb > 25:
+                await processing_msg.edit(content=f"❌ File too large ({file_size_mb:.1f}MB)! Discord limit is ~25MB.")
+                # Clean up
                 try:
                     os.remove(mp3_filename)
                 except:
                     pass
-                    
-            else:
-                await processing_msg.edit(content="❌ Download failed! File not found after processing.")
+                return
+            
+            await processing_msg.edit(content=f"⬆️ Uploading **{title}** ({file_size_mb:.1f}MB)...")
+            
+            # Send the file
+            with open(mp3_filename, 'rb') as f:
+                # Clean filename for Discord
+                clean_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
+                discord_file = discord.File(f, filename=f"{clean_title}.mp3")
                 
-    except yt_dlp.DownloadError as e:
+                embed = discord.Embed(
+                    title="🎵 Download Complete!",
+                    description=f"**{title}**",
+                    color=discord.Color.green()
+                )
+                embed.add_field(name="File Size", value=f"{file_size_mb:.1f}MB", inline=True)
+                embed.add_field(name="Duration", value=f"{duration//60}:{duration%60:02d}", inline=True)
+                embed.add_field(name="Format", value="MP3", inline=True)
+                embed.set_footer(text="⚠️ Please respect YouTube's Terms of Service")
+                
+                await ctx.send(embed=embed, file=discord_file)
+                await processing_msg.delete()
+            
+            # Clean up the file after sending
+            try:
+                os.remove(mp3_filename)
+            except:
+                pass
+                
+        else:
+            await processing_msg.edit(content="❌ Download failed! File not found after processing.")
+            
+    except Exception as e:
         error_msg = str(e)
-        if "Private video" in error_msg:
+        if "Private video" in error_msg or "private" in error_msg.lower():
             await processing_msg.edit(content="❌ Cannot download private videos!")
-        elif "Video unavailable" in error_msg:
+        elif "unavailable" in error_msg.lower():
             await processing_msg.edit(content="❌ Video is unavailable or has been removed!")
-        elif "age-restricted" in error_msg.lower():
+        elif "age" in error_msg.lower() and "restrict" in error_msg.lower():
             await processing_msg.edit(content="❌ Cannot download age-restricted videos!")
         else:
             await processing_msg.edit(content=f"❌ Download failed: {error_msg[:100]}...")
-    except Exception as e:
-        await processing_msg.edit(content=f"❌ Error during download: {str(e)[:100]}...")
         print(f"Download error: {e}")
     
     # Clean up any leftover files
@@ -1193,3 +1202,186 @@ if __name__ == '__main__':
         print("[SHUTDOWN] Bot stopped by user")
     except Exception as e:
         print(f"[SHUTDOWN] Bot stopped due to error: {e}")
+
+@bot.command()
+async def voicediag(ctx):
+    """Diagnostic command for voice connection issues"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    # Check user voice state
+    user_voice = ctx.author.voice
+    if not user_voice:
+        await ctx.send("❌ **User Status:** Not in any voice channel")
+        return
+    
+    user_channel = user_voice.channel
+    
+    # Check bot voice state
+    bot_voice = ctx.voice_client
+    guild_voice = ctx.guild.voice_client
+    
+    # Check permissions
+    permissions = user_channel.permissions_for(ctx.guild.me)
+    
+    embed = discord.Embed(title="🔧 Voice Connection Diagnostics", color=0x00ff00)
+    
+    # User info
+    embed.add_field(
+        name="👤 User Status",
+        value=f"Channel: **{user_channel.name}** (ID: {user_channel.id})\nUser Count: {len(user_channel.members)}",
+        inline=False
+    )
+    
+    # Bot voice status
+    bot_status = []
+    if bot_voice:
+        bot_status.append(f"Connected: {bot_voice.is_connected()}")
+        bot_status.append(f"Channel: {bot_voice.channel.name if bot_voice.channel else 'None'}")
+        bot_status.append(f"Playing: {bot_voice.is_playing()}")
+        bot_status.append(f"Paused: {bot_voice.is_paused()}")
+    else:
+        bot_status.append("No voice client found")
+    
+    embed.add_field(
+        name="🤖 Bot Voice Status (ctx.voice_client)",
+        value="\n".join(bot_status),
+        inline=True
+    )
+    
+    # Guild voice status
+    guild_status = []
+    if guild_voice:
+        guild_status.append(f"Connected: {guild_voice.is_connected()}")
+        guild_status.append(f"Channel: {guild_voice.channel.name if guild_voice.channel else 'None'}")
+        guild_status.append(f"Same client: {bot_voice is guild_voice}")
+    else:
+        guild_status.append("No guild voice client found")
+    
+    embed.add_field(
+        name="🏰 Guild Voice Status",
+        value="\n".join(guild_status),
+        inline=True
+    )
+    
+    # Permissions
+    perm_status = []
+    perm_status.append(f"Connect: {'✅' if permissions.connect else '❌'}")
+    perm_status.append(f"Speak: {'✅' if permissions.speak else '❌'}")
+    perm_status.append(f"Use Voice Activity: {'✅' if permissions.use_voice_activation else '❌'}")
+    
+    embed.add_field(
+        name="🔐 Bot Permissions",
+        value="\n".join(perm_status),
+        inline=True
+    )
+    
+    # Opus status
+    embed.add_field(
+        name="🎵 Audio System",
+        value=f"Opus loaded: {'✅' if discord.opus.is_loaded() else '❌'}",
+        inline=True
+    )
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def audiotest(ctx):
+    """Test if audio system is working (doesn't require voice connection)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    try:
+        # Test basic system components
+        embed = discord.Embed(title="🔧 Audio System Test", color=0x00ff00)
+        
+        # Test Opus
+        opus_status = "✅ Loaded" if discord.opus.is_loaded() else "❌ Not loaded"
+        embed.add_field(name="Opus Library", value=opus_status, inline=True)
+        
+        # Test yt-dlp availability
+        try:
+            import yt_dlp
+            ytdl_status = "✅ Available"
+        except ImportError:
+            ytdl_status = "❌ Not available"
+        embed.add_field(name="yt-dlp", value=ytdl_status, inline=True)
+        
+        # Test pytube availability
+        try:
+            import pytube
+            pytube_status = "✅ Available"
+        except ImportError:
+            pytube_status = "❌ Not available"
+        embed.add_field(name="pytube", value=pytube_status, inline=True)
+        
+        # Test FFmpeg (try to create a basic instance)
+        try:
+            # This tests if FFmpeg is available without actually connecting
+            test_source = discord.FFmpegPCMAudio("test", before_options="-f lavfi -i anullsrc=duration=0.1", options="-vn")
+            ffmpeg_status = "✅ Available"
+        except Exception as e:
+            ffmpeg_status = f"❌ Error: {str(e)[:50]}"
+        embed.add_field(name="FFmpeg", value=ffmpeg_status, inline=True)
+        
+        # Test basic playlist access
+        try:
+            from playlist import MUSIC_PLAYLISTS
+            playlist_status = f"✅ {len(MUSIC_PLAYLISTS)} songs loaded"
+        except Exception as e:
+            playlist_status = f"❌ Error: {str(e)[:50]}"
+        embed.add_field(name="Playlist", value=playlist_status, inline=True)
+        
+        # Check bot's voice-related permissions (if user is in voice)
+        if ctx.author.voice and ctx.author.voice.channel:
+            channel = ctx.author.voice.channel
+            permissions = channel.permissions_for(ctx.guild.me)
+            perm_status = []
+            perm_status.append(f"Connect: {'✅' if permissions.connect else '❌'}")
+            perm_status.append(f"Speak: {'✅' if permissions.speak else '❌'}")
+            embed.add_field(name="Voice Permissions", value="\n".join(perm_status), inline=True)
+        
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        await ctx.send(f"❌ Audio test failed: {str(e)[:100]}")
+
+@bot.command()
+async def pause(ctx):
+    """Pause current song"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.pause_music(ctx)
+
+@bot.command()
+async def resume(ctx):
+    """Resume paused song"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.resume_music(ctx)
+
+@bot.command()
+async def volume(ctx, volume: Optional[int] = None):
+    """Check or set volume (0-100)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    if volume is None:
+        # Check current volume
+        if not ctx.voice_client or not ctx.voice_client.source:
+            await ctx.send("❌ Nothing is playing!")
+            return
+        
+        if isinstance(ctx.voice_client.source, discord.PCMVolumeTransformer):
+            current_volume = int(ctx.voice_client.source.volume * 100)
+            await ctx.send(f"🔊 Current volume: {current_volume}%")
+        else:
+            await ctx.send("❌ Volume control not available for this audio source!")
+    else:
+        # Set volume
+        await music_bot.set_volume(ctx, volume)
