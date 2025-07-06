@@ -494,28 +494,37 @@ async def help(ctx):
         inline=False
     )
     
+    # Role Commands
+    embed.add_field(
+        name="🎭 **Role Commands**",
+        value=(
+            "`!dogsrole` - Add Dogs role 🐕\n"
+            "`!catsrole` - Add Cats role 🐱\n"
+            "`!lizardsrole` - Add Lizards role 🦎\n"
+            "`!pvprole` - Add PVP role ⚔️\n"
+            "`!remove<role>` - Remove any role (e.g., `!removedogsrole`)"
+        ),
+        inline=False
+    )
+    
     # AI & Chat Commands
     embed.add_field(
         name="🤖 **AI & Chat Commands**",
         value=(
             "`!chat <message>` - Chat with AI (with memory)\n"
-            "`!ask <question>` - Ask AI a question (no memory)\n"
-            "`!clear_history` - Clear your chat history\n"
-            "`!history` - View your recent chat history"
+            "`!ask <question>` - Ask AI a question (no memory)"
         ),
         inline=False
     )
     
-    # Utility Commands
+    # Basic Commands
     embed.add_field(
-        name="🔧 **Utility Commands**",
+        name="🔧 **Basic Commands**",
         value=(
             "`!hello` - Say hello to Dogbot\n"
             "`!test` - Test bot functionality\n"
-            "`!status` - Debug voice channel status\n"
-            "`!audiotest` - Test audio playback\n"
-            "`!bluetooth` - Optimize for Bluetooth speakers\n"
-            "`!help` - Show this help message"
+            "`!help` - Show this help message\n"
+            "`!modhelp` - Show moderator commands"
         ),
         inline=False
     )
@@ -985,6 +994,200 @@ async def bluetooth(ctx):
     if ctx.guild.id not in music_bot.voice_clients:
         await ctx.send("❌ I'm not in a voice channel!")
         return
+
+# Role Management Commands
+@bot.command()
+async def dogsrole(ctx):
+    """Add the Dogs role to yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{dogs_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in ctx.author.roles:
+        await ctx.send(f"🐕 You already have the {dogs_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🐕 Successfully added the {dogs_role_name} role! Woof woof!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error adding role: {e}")
+
+@bot.command()
+async def catsrole(ctx):
+    """Add the Cats role to yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{cats_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in ctx.author.roles:
+        await ctx.send(f"🐱 You already have the {cats_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🐱 Successfully added the {cats_role_name} role! Meow!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error adding role: {e}")
+
+@bot.command()
+async def lizardsrole(ctx):
+    """Add the Lizards role to yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{lizards_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in ctx.author.roles:
+        await ctx.send(f"🦎 You already have the {lizards_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🦎 Successfully added the {lizards_role_name} role! Hiss!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error adding role: {e}")
+
+@bot.command()
+async def pvprole(ctx):
+    """Add the PVP role to yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{pvp_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in ctx.author.roles:
+        await ctx.send(f"⚔️ You already have the {pvp_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"⚔️ Successfully added the {pvp_role_name} role! Ready for battle!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error adding role: {e}")
+
+@bot.command()
+async def removedogsrole(ctx):
+    """Remove the Dogs role from yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{dogs_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role not in ctx.author.roles:
+        await ctx.send(f"❌ You don't have the {dogs_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.remove_roles(role)
+        await ctx.send(f"🐕 Successfully removed the {dogs_role_name} role!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def removecatsrole(ctx):
+    """Remove the Cats role from yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{cats_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role not in ctx.author.roles:
+        await ctx.send(f"❌ You don't have the {cats_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.remove_roles(role)
+        await ctx.send(f"🐱 Successfully removed the {cats_role_name} role!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def removelizardsrole(ctx):
+    """Remove the Lizards role from yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{lizards_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role not in ctx.author.roles:
+        await ctx.send(f"❌ You don't have the {lizards_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.remove_roles(role)
+        await ctx.send(f"🦎 Successfully removed the {lizards_role_name} role!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def removepvprole(ctx):
+    """Remove the PVP role from yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{pvp_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role not in ctx.author.roles:
+        await ctx.send(f"❌ You don't have the {pvp_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.remove_roles(role)
+        await ctx.send(f"⚔️ Successfully removed the {pvp_role_name} role!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def modhelp(ctx):
+    """Show moderator and utility commands"""
+    embed = discord.Embed(
+        title="🛠️ Moderator & Utility Commands",
+        description="Advanced commands for moderators and debugging:",
+        color=discord.Color.orange()
+    )
+    
+    # Chat Management
+    embed.add_field(
+        name="💬 **Chat Management**",
+        value=(
+            "`!clear_history` - Clear your chat history\n"
+            "`!history` - View your recent chat history"
+        ),
+        inline=False
+    )
+    
+    # Debug & Utility Commands
+    embed.add_field(
+        name="🔧 **Debug & Utility**",
+        value=(
+            "`!status` - Debug voice channel status\n"
+            "`!audiotest` - Test audio playback\n"
+            "`!bluetooth` - Optimize for Bluetooth speakers"
+        ),
+        inline=False
+    )
+    
+    embed.set_footer(text="🔧 These commands help with troubleshooting and management!")
+    await ctx.send(embed=embed)
 
 # Web server setup for Render.com port binding
 async def health_check(request):
