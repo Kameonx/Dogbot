@@ -484,7 +484,8 @@ async def help(ctx):
             "`!resume` - Resume paused song\n"
             "`!playlist` / `!queue` - Show current playlist\n"
             "`!nowplaying` / `!np` - Show current song\n"
-            "`!volume [0-100]` - Check or set volume"
+            "`!volume [0-100]` - Check or set volume\n"
+            "`!download <youtube_url>` - Download YouTube video as MP3"
         ),
         inline=False
     )
@@ -628,10 +629,13 @@ async def join(ctx):
         await ctx.send("❌ Music bot is not initialized!")
         return
     
-    # Join voice channel
-    if await music_bot.join_voice_channel(ctx):
-        # Auto-start music after joining
-        await music_bot.play_music(ctx)
+    # Join voice channel first
+    join_success = await music_bot.join_voice_channel(ctx)
+    if not join_success:
+        return
+    
+    # Auto-start music after successful join
+    await music_bot.play_music(ctx)
 
 @bot.command()
 async def leave(ctx):
@@ -1003,7 +1007,8 @@ async def modhelp(ctx):
     embed.add_field(
         name="🔧 **Test & Debug**",
         value=(
-            "`!status` - Check voice channel status"
+            "`!status` - Check voice channel status\n"
+            "`!download <youtube_url>` - Download YouTube as MP3 ⚠️"
         ),
         inline=False
     )
@@ -1020,6 +1025,140 @@ async def modhelp(ctx):
     
     embed.set_footer(text="🔧 These commands help with troubleshooting and management!")
     await ctx.send(embed=embed)
+
+# YouTube Download Command
+@bot.command()
+async def download(ctx, *, url):
+    """Download YouTube video as MP3 (Note: May violate YouTube ToS)"""
+    if not url:
+        await ctx.send("❌ Please provide a YouTube URL!")
+        return
+    
+    # Check if it's a valid YouTube URL
+    if not any(domain in url.lower() for domain in ['youtube.com', 'youtu.be']):
+        await ctx.send("❌ Please provide a valid YouTube URL!")
+        return
+    
+    # Create downloads directory if it doesn't exist
+    download_dir = "downloads"
+    if not os.path.exists(download_dir):
+        os.makedirs(download_dir)
+    
+    # Show initial message
+    processing_msg = await ctx.send("🎵 Processing download request... This may take a moment.")
+    
+    try:
+        # Configure yt-dlp for audio download
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'extractaudio': True,
+            'audioformat': 'mp3',
+            'audioquality': '192',  # Good quality but smaller file size
+            'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+            'quiet': True,
+            'no_warnings': True,
+        }
+        
+        # Download the audio
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Get video info first
+            info = ydl.extract_info(url, download=False)
+            if not info:
+                await processing_msg.edit(content="❌ Could not extract video information!")
+                return
+                
+            title = info.get('title', 'Unknown')
+            duration = info.get('duration', 0)
+            
+            # Check duration (limit to 10 minutes to avoid huge files)
+            if duration > 600:  # 10 minutes
+                await processing_msg.edit(content="❌ Video is too long! Please use videos under 10 minutes.")
+                return
+            
+            await processing_msg.edit(content=f"⬬ Downloading: **{title}**...")
+            
+            # Actually download
+            ydl.download([url])
+            
+            # Find the downloaded file
+            filename = ydl.prepare_filename(info)
+            # Replace extension with .mp3
+            mp3_filename = os.path.splitext(filename)[0] + '.mp3'
+            
+            # Check if file exists and get size
+            if os.path.exists(mp3_filename):
+                file_size = os.path.getsize(mp3_filename)
+                file_size_mb = file_size / (1024 * 1024)
+                
+                # Discord file size limit check (25MB for safety)
+                if file_size_mb > 25:
+                    await processing_msg.edit(content=f"❌ File too large ({file_size_mb:.1f}MB)! Discord limit is ~25MB.")
+                    # Clean up
+                    try:
+                        os.remove(mp3_filename)
+                    except:
+                        pass
+                    return
+                
+                await processing_msg.edit(content=f"⬆️ Uploading **{title}** ({file_size_mb:.1f}MB)...")
+                
+                # Send the file
+                with open(mp3_filename, 'rb') as f:
+                    discord_file = discord.File(f, filename=f"{title}.mp3")
+                    
+                    embed = discord.Embed(
+                        title="🎵 Download Complete!",
+                        description=f"**{title}**",
+                        color=discord.Color.green()
+                    )
+                    embed.add_field(name="File Size", value=f"{file_size_mb:.1f}MB", inline=True)
+                    embed.add_field(name="Format", value="MP3 (192kbps)", inline=True)
+                    embed.set_footer(text="⚠️ Please respect YouTube's Terms of Service")
+                    
+                    await ctx.send(embed=embed, file=discord_file)
+                    await processing_msg.delete()
+                
+                # Clean up the file after sending
+                try:
+                    os.remove(mp3_filename)
+                except:
+                    pass
+                    
+            else:
+                await processing_msg.edit(content="❌ Download failed! File not found after processing.")
+                
+    except yt_dlp.DownloadError as e:
+        error_msg = str(e)
+        if "Private video" in error_msg:
+            await processing_msg.edit(content="❌ Cannot download private videos!")
+        elif "Video unavailable" in error_msg:
+            await processing_msg.edit(content="❌ Video is unavailable or has been removed!")
+        elif "age-restricted" in error_msg.lower():
+            await processing_msg.edit(content="❌ Cannot download age-restricted videos!")
+        else:
+            await processing_msg.edit(content=f"❌ Download failed: {error_msg[:100]}...")
+    except Exception as e:
+        await processing_msg.edit(content=f"❌ Error during download: {str(e)[:100]}...")
+        print(f"Download error: {e}")
+    
+    # Clean up any leftover files
+    try:
+        # Remove any files older than 1 hour in downloads directory
+        import time
+        now = time.time()
+        for filename in os.listdir(download_dir):
+            filepath = os.path.join(download_dir, filename)
+            if os.path.isfile(filepath):
+                file_age = now - os.path.getmtime(filepath)
+                if file_age > 3600:  # 1 hour
+                    os.remove(filepath)
+    except:
+        pass
 
 # Web server setup for Render.com port binding
 async def health_check(request):
