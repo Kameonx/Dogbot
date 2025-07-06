@@ -79,7 +79,7 @@ class MusicBot:
             del self.guild_states[guild_id]
 
     async def join_voice_channel(self, ctx):
-        """Simplified voice channel joining"""
+        """Simplified voice channel joining with retry"""
         try:
             # Check if user is in voice channel
             if not ctx.author.voice or not ctx.author.voice.channel:
@@ -93,12 +93,38 @@ class MusicBot:
                 if ctx.voice_client.channel != channel:
                     await ctx.voice_client.move_to(channel)
                     await ctx.send(f"🔄 Moved to **{channel.name}**")
+                else:
+                    await ctx.send(f"✅ Already connected to **{channel.name}**")
                 return True
             
-            # Connect to voice channel
-            await channel.connect()
-            await ctx.send(f"✅ Joined **{channel.name}**")
-            return True
+            # Try to connect to voice channel (with retry)
+            for attempt in range(3):
+                try:
+                    voice_client = await channel.connect()
+                    
+                    # Small delay to ensure connection is established
+                    await asyncio.sleep(1)
+                    
+                    # Verify connection
+                    if voice_client and voice_client.is_connected():
+                        await ctx.send(f"✅ Joined 🎵 | **{channel.name}**")
+                        return True
+                    else:
+                        if attempt < 2:  # Don't disconnect on last attempt
+                            if voice_client:
+                                await voice_client.disconnect()
+                            await asyncio.sleep(1)
+                        
+                except Exception as e:
+                    if attempt < 2:  # Only retry if not last attempt
+                        print(f"[MUSIC] Connection attempt {attempt + 1} failed: {e}")
+                        await asyncio.sleep(1)
+                        continue
+                    else:
+                        raise e
+            
+            await ctx.send("❌ Failed to establish stable voice connection after 3 attempts!")
+            return False
             
         except Exception as e:
             await ctx.send(f"❌ Failed to join voice channel: {str(e)[:100]}")
@@ -123,6 +149,11 @@ class MusicBot:
             if not ctx.voice_client:
                 if not await self.join_voice_channel(ctx):
                     return
+            
+            # Double-check voice connection is still valid
+            if not ctx.voice_client or not ctx.voice_client.is_connected():
+                await ctx.send("❌ Voice connection failed!")
+                return
 
             # Get the main playlist from MUSIC_PLAYLISTS
             if not MUSIC_PLAYLISTS:
@@ -147,10 +178,16 @@ class MusicBot:
             
         except Exception as e:
             await ctx.send(f"❌ Error starting playlist: {str(e)[:100]}")
+            print(f"[MUSIC] Error in play_music: {e}")
 
     async def _play_current_song(self, ctx):
         """Play current song with auto-advance"""
         try:
+            # Check voice client first
+            if not ctx.voice_client:
+                await ctx.send("❌ Not connected to voice channel!")
+                return
+                
             state = self._get_guild_state(ctx.guild.id)
             playlist = state['current_playlist']
             index = state['current_index']
@@ -163,7 +200,7 @@ class MusicBot:
             
             url = playlist[index]
             
-            # Stop current playback
+            # Stop current playback if playing
             if ctx.voice_client.is_playing():
                 ctx.voice_client.stop()
             
@@ -187,6 +224,11 @@ class MusicBot:
     async def _advance_to_next_song(self, ctx):
         """Advance to next song"""
         try:
+            # Check if still connected to voice
+            if not ctx.voice_client:
+                print("Voice client disconnected, stopping music")
+                return
+                
             state = self._get_guild_state(ctx.guild.id)
             state['current_index'] += 1
             await self._play_current_song(ctx)
