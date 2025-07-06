@@ -991,7 +991,25 @@ async def modhelp(ctx):
     
     # Role Assignment Commands
     embed.add_field(
-        name="🎭 **Role Assignment (for Moderators)**",
+        name="🎭 **Role Commands (Available to All Users)**",
+        value=(
+            "**Add Roles:**\n"
+            "`!dogsrole` - Add Dogs role 🐕\n"
+            "`!catsrole` - Add Cats role 🐱\n"
+            "`!lizardsrole` - Add Lizards role 🦎\n"
+            "`!pvprole` - Add PVP role ⚔️\n"
+            "**Remove Roles:**\n"
+            "`!removedogsrole` - Remove Dogs role\n"
+            "`!removecatsrole` - Remove Cats role\n"
+            "`!removelizardsrole` - Remove Lizards role\n"
+            "`!removepvprole` - Remove PVP role"
+        ),
+        inline=False
+    )
+    
+    # Moderator Role Assignment Commands
+    embed.add_field(
+        name="👑 **Moderator Role Assignment**",
         value=(
             "`!assigndogsrole @username` - Assign Dogs role to user\n"
             "`!removedogsrolefrom @username` - Remove Dogs role from user\n"
@@ -1168,40 +1186,6 @@ async def download(ctx, *, url):
                     os.remove(filepath)
     except:
         pass
-
-# Web server setup for Render.com port binding
-async def health_check(request):
-    """Health check endpoint for Render.com"""
-    return web.Response(text="Bot is running!")
-
-async def init_web_server():
-    """Initialize web server for Render.com"""
-    app = web.Application()
-    app.router.add_get('/', health_check)
-    app.router.add_get('/health', health_check)
-    port = int(os.getenv('PORT', 10000))
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    print(f"[RENDER] Web server started on port {port}")
-    return runner
-
-async def main():
-    """Start web server and Discord bot"""
-    web_runner = await init_web_server()
-    print("[RENDER] Web server initialized")
-    print("[DISCORD] Starting Discord bot...")
-    assert token is not None, "DISCORD_TOKEN must be set"
-    await bot.start(token)
-
-if __name__ == '__main__':
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("[SHUTDOWN] Bot stopped by user")
-    except Exception as e:
-        print(f"[SHUTDOWN] Bot stopped due to error: {e}")
 
 @bot.command()
 async def voicediag(ctx):
@@ -1385,3 +1369,263 @@ async def volume(ctx, volume: Optional[int] = None):
     else:
         # Set volume
         await music_bot.set_volume(ctx, volume)
+
+# Moderator Role Assignment Commands (for admins/moderators to assign roles to others)
+@bot.command()
+async def assigndogsrole(ctx, member: Optional[discord.Member] = None):
+    """Assign Dogs role to a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to! Usage: `!assigndogsrole @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{dogs_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in member.roles:
+        await ctx.send(f"🐕 {member.mention} already has the {dogs_role_name} role!")
+        return
+    
+    try:
+        await member.add_roles(role)
+        await ctx.send(f"🐕 Successfully assigned the {dogs_role_name} role to {member.mention}! Woof woof!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error assigning role: {e}")
+
+@bot.command()
+async def removedogsrolefrom(ctx, member: Optional[discord.Member] = None):
+    """Remove Dogs role from a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from! Usage: `!removedogsrolefrom @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{dogs_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role not in member.roles:
+        await ctx.send(f"❌ {member.mention} doesn't have the {dogs_role_name} role!")
+        return
+    
+    try:
+        await member.remove_roles(role)
+        await ctx.send(f"🐕 Successfully removed the {dogs_role_name} role from {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def assigncatsrole(ctx, member: Optional[discord.Member] = None):
+    """Assign Cats role to a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to! Usage: `!assigncatsrole @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{cats_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in member.roles:
+        await ctx.send(f"🐱 {member.mention} already has the {cats_role_name} role!")
+        return
+    
+    try:
+        await member.add_roles(role)
+        await ctx.send(f"🐱 Successfully assigned the {cats_role_name} role to {member.mention}! Meow!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error assigning role: {e}")
+
+@bot.command()
+async def removecatsrolefrom(ctx, member: Optional[discord.Member] = None):
+    """Remove Cats role from a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from! Usage: `!removecatsrolefrom @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{cats_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role not in member.roles:
+        await ctx.send(f"❌ {member.mention} doesn't have the {cats_role_name} role!")
+        return
+    
+    try:
+        await member.remove_roles(role)
+        await ctx.send(f"🐱 Successfully removed the {cats_role_name} role from {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def assignlizardsrole(ctx, member: Optional[discord.Member] = None):
+    """Assign Lizards role to a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to! Usage: `!assignlizardsrole @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{lizards_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in member.roles:
+        await ctx.send(f"🦎 {member.mention} already has the {lizards_role_name} role!")
+        return
+    
+    try:
+        await member.add_roles(role)
+        await ctx.send(f"🦎 Successfully assigned the {lizards_role_name} role to {member.mention}! Hiss!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error assigning role: {e}")
+
+@bot.command()
+async def removelizardsrolefrom(ctx, member: Optional[discord.Member] = None):
+    """Remove Lizards role from a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from! Usage: `!removelizardsrolefrom @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{lizards_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role not in member.roles:
+        await ctx.send(f"❌ {member.mention} doesn't have the {lizards_role_name} role!")
+        return
+    
+    # Implement removal logic for moderators
+    try:
+        await member.remove_roles(role)
+        await ctx.send(f"🦎 Successfully removed the {lizards_role_name} role from {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def assignpvprole(ctx, member: Optional[discord.Member] = None):
+    """Assign PVP role to a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to! Usage: `!assignpvprole @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{pvp_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in member.roles:
+        await ctx.send(f"⚔️ {member.mention} already has the {pvp_role_name} role!")
+        return
+    
+    try:
+        await member.add_roles(role)
+        await ctx.send(f"⚔️ Successfully assigned the {pvp_role_name} role to {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error assigning role: {e}")
+
+@bot.command()
+async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
+    """Remove PVP role from a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from! Usage: `!removepvprolefrom @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{pvp_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role not in member.roles:
+        await ctx.send(f"❌ {member.mention} doesn't have the {pvp_role_name} role!")
+        return
+    
+    try:
+        await member.remove_roles(role)
+        await ctx.send(f"⚔️ Successfully removed the {pvp_role_name} role from {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+# Web server setup for Render.com port binding
+async def health_check(request):
+    """Health check endpoint for Render.com"""
+    return web.Response(text="Bot is running!")
+
+async def init_web_server():
+    """Initialize web server for Render.com"""
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    port = int(os.getenv('PORT', 10000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"[RENDER] Web server started on port {port}")
+    return runner
+
+async def main():
+    """Start web server and Discord bot"""
+    web_runner = await init_web_server()
+    print("[RENDER] Web server initialized")
+    print("[DISCORD] Starting Discord bot...")
+    assert token is not None, "DISCORD_TOKEN must be set"
+    await bot.start(token)
+
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("[SHUTDOWN] Bot stopped by user")
+    except Exception as e:
+        print(f"[SHUTDOWN] Bot stopped due to error: {e}")
