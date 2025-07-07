@@ -182,9 +182,13 @@ class MusicBot:
             # Enhanced voice client verification
             voice_client = ctx.voice_client or ctx.guild.voice_client
             if not voice_client or not voice_client.is_connected():
-                await ctx.send("❌ Not connected to voice channel!")
-                return
-                
+                # Try to reconnect if disconnected
+                reconnected = await self.join_voice_channel(ctx)
+                if not reconnected:
+                    print("[MUSIC] Could not reconnect, stopping playback")
+                    return
+                voice_client = ctx.voice_client or ctx.guild.voice_client
+            
             state = self._get_guild_state(ctx.guild.id)
             playlist = state['current_playlist']
             index = state['current_index']
