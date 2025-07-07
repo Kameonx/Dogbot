@@ -52,7 +52,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             source = discord.FFmpegPCMAudio(
                 data['url'],
                 before_options='-nostdin -reconnect 1 -reconnect_streamed 1 -reconnect_at_eof 1 -reconnect_delay_max 5 -rw_timeout 15000000',
-                options='-vn -nostats -hide_banner -loglevel error'
+                options='-vn -nostats -hide_banner -loglevel panic'
             )
             
             return cls(source, data=data)
