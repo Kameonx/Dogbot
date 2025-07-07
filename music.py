@@ -83,36 +83,27 @@ class MusicBot:
             del self.guild_states[guild_id]
 
     async def join_voice_channel(self, ctx):
-        """Join user's voice channel with retry logic and verification"""
-        if not ctx.author.voice or not ctx.author.voice.channel:
+        """Join user's voice channel reliably"""
+        # Ensure user is in a voice channel
+        user_voice = ctx.author.voice
+        if not user_voice or not user_voice.channel:
             await ctx.send("❌ You need to be in a voice channel first!")
             return False
-        channel = ctx.author.voice.channel
-        # Try connecting up to 3 times
-        for attempt in range(3):
-            try:
-                vc = ctx.voice_client or ctx.guild.voice_client
-                if vc:
-                    if vc.channel.id != channel.id:
-                        await vc.move_to(channel)
-                else:
-                    vc = await channel.connect()
-                    # Wait until connection is confirmed
-                    for _ in range(10):
-                        if getattr(vc, 'is_connected', lambda: False)():
-                            break
-                        await asyncio.sleep(0.5)
-                    else:
-                        raise Exception('Connection timeout')
-                await ctx.send(f"✅ Connected to **{channel.name}**")
-                return True
-            except Exception as e:
-                print(f"[MUSIC] join_voice_channel attempt {attempt+1} error: {e}")
-                if attempt < 2:
-                    await asyncio.sleep(1)
-                else:
-                    await ctx.send(f"❌ Unable to connect to **{channel.name}** after multiple attempts: {e}")
-                    return False
+        channel = user_voice.channel
+        try:
+            vc = ctx.voice_client
+            if not vc:
+                # Connect to the user's channel
+                vc = await channel.connect()
+            elif vc.channel.id != channel.id:
+                # Move if connected to a different channel
+                await vc.move_to(channel)
+            await ctx.send(f"✅ Connected to **{channel.name}**")
+            return True
+        except Exception as e:
+            print(f"[MUSIC] join_voice_channel error: {e}")
+            await ctx.send(f"❌ Could not join your voice channel: {str(e)[:100]}")
+            return False
 
     async def leave_voice_channel(self, ctx):
         """Leave voice channel and cleanup"""
