@@ -1,54 +1,54 @@
 # Music Bot Configuration
 MUSIC_PLAYLISTS = [
     # Existing tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
-    "", # Placeholder for future tracks
+    "https://youtu.be/luQSQuCHtcI?si=EI1YvZzArPoC95M2", # INZO - Overthinker
+    "https://youtu.be/DZiaXEIQgkE?si=hloGPU4HDy4NnqGp", # Salvatore Ganacci - Fight Dirty
+    "https://youtu.be/UbQgXeY_zi4?si=Pvk238gFCPG8utZb", # Caravan Palace - Lone Digger (Official MV)
+    "https://youtu.be/VW9wlPtDc50?si=PXgXkKuZ-ecnrgjg", # Stamp On The Ground (New Music Video)
+    "https://youtu.be/lRpxecLkUHQ?si=h37H5BC9uNHHabsE", # Nyan Cat - Genre Hopping
+    "https://youtu.be/tJdgErAfiRQ?si=oVgm41KXz1Vy5gGV", # Propane Genesis Evangelion - King of the Hill Anime OP
+    "https://youtu.be/npuuTBlEb1U?si=sBeD1PWtO-9pOBBd", # Donkey Kong 64 (N64) - DK Rap Introduction
+    "https://youtu.be/ax3JAcUArZo?si=CI3dQfTw9Br7layW", # Inuyasha - Ending 2 HD
+    "https://youtu.be/2upuBiEiXDk?si=z76d8Yu_Pyd3pK84", # Naruto Shippuden Opening 3 | Blue Bird
+    "https://youtu.be/QNYT9wVwQ8A?si=haE_NFw_0xslFPsh", # Miki Matsubara - Stay With Me HD (Club Mix)
+    "https://youtu.be/NB5jyYD2WEw?si=S_SG3X9oLLe1UUJV", # 2NE1 - HATE YOU M/V
+    "https://youtu.be/UXiwRmlCZ7E?si=-voWQwZseJj2z5we", # Engelwood - Crystal Dolphin (Official Music Video)
+    "https://youtu.be/3O1_3zBUKM8?si=yeTv0qMNu_zgVymg", # Naughty Boy - La la la ft. Sam Smith (Official Video)
+    "https://youtu.be/I7xgCtn8374?si=RLIXIS5CeuC022aL", # Mike Candys - Anubis (Music Video HD)
+    "https://youtu.be/YJ506-zYmbs?si=3MLNNg2MaR7zA7MB", # Ganja White Night x Subtronics - Womp Portal | Official Music Video | Animation | 2023
+    "https://youtu.be/cQKGUgOfD8U?si=77WZ65JANqhGVxbZ", # 【VOCALOID Original】ECHO【Gumi English】
+    "https://youtu.be/6QkV81pDz7w?si=-ECGiAgX11VJi_gr", # Chess Type Beat | joyful - chess (slowed)
+    "https://youtu.be/Hrph2EW9VjY?si=X3naD0Ed1yWSgb-e", # Gigi D'Agostino Bla Bla Bla
+    "https://youtu.be/68ugkg9RePc?si=0SjXeWLOzpooGdW2", # Eiffel 65 - Blue (Da Ba Dee) [Gabry Ponte Ice Pop Mix] (Original Video with subtitles)
+    "https://youtu.be/LogL2pUiQmg?si=e8U-VX1UtpcUcQdh", # La Bouche-Be my lover *LYRICS*
+    "https://youtu.be/mMfxI3r_LyA?si=bGrmfz5AQXD7kd7I", # Modjo - Lady (Hear Me Tonight) (Official Video)
+    "https://youtu.be/Ke8jkogx63M?si=jWx_isSfObCo98ev", # ATB 9pm till i come! HQ
+    "https://youtu.be/Lgs9QUtWc3M?si=N_DJXyiEFG1lXMAI", # Alice Deejay - Better Off Alone (Official Video)
+    "https://youtu.be/2ziqtyseR3M?si=cH9KzkOAyjUwIAII", # Nightcore - Everytime We Touch (Remix) ✕
+    "https://youtu.be/o_j0tc0njUY?si=Cdz_p8VDxF9yr6uA", # Nightcore - We Don't Sleep At Night - (Lyrics)
+    "https://youtu.be/a0fkNdPiIL4?si=S0MPm-YR95kRLuWb", # Benny Benassi - Satisfaction
+    "https://youtu.be/Kq4OtRsdXls?si=cP81TFgQs0Rfk0sB", # Alex Gaudino feat. Crystal Waters - Destination Calabria [Explicit Version] [Official Video]
+    "https://youtu.be/QzcvRDWgRIE?si=GUyywj861UuI5GU6", # Smile - Butterfly (Official Music Video)
+    "https://youtu.be/efjc146v3hA?si=dwwCp_KFd715bCdN", # Ian Van Dahl - Castles In The Sky (OFFICAL VIDEO)
+    "https://youtu.be/z3OKd5b2Rlw?si=NIlTFRlTGjWFdGKs", # Nightcore | Sweet Little Bumblebee (lyric video)
+    "https://youtu.be/LIgC1EwZczk?si=WIgG173BEneQe_y1", # CHROMANCE – Wrap Me In Plastic (Official Video) - Marcus Layton Mix
+    "https://youtu.be/yoZy2E17-50?si=_QERSK12jeBPBM1O", # Phao - 2 Phut Hon (KAIZ Remix) | TikTok Vietnamese Music 2020
+    "https://youtu.be/_mdMb6bRXt4?si=0RSTBgPZWjbvVA_o", # Loituma TECHNO!
+    "https://youtu.be/mBw3qzf4s18?si=szZxU1vQGbiX1nW9", # HEYYEYAAEYAAAEYAEYAA (HQ)
+    "https://youtu.be/PDJLvF1dUek?si=zFU92Rvi99FACO2E", # Caramella Girls - Caramelldansen HD Version (Swedish Original)
+    "https://youtu.be/989-7xsRLR4?si=5Ov0JGbwTEdTpMmF", # Vitas - The 7th Element
+    "https://youtu.be/MtN1YnoL46Q?si=b_qsGj-mvw45Fsgn", # The Duck Song
+    "https://youtu.be/LACbVhgtx9I?si=ujWk4DFitWQzU84P", # THE MUFFIN SONG (asdfmovie feat. Schmoyoho)
+    "https://youtu.be/WTxYp9ECnPY?si=S1f5PdSlNLlXR-vm", # Charlie Puth - Betty Boop Remix
+    "https://youtu.be/52Gg9CqhbP8?si=gUWo7nuCbHqKpiD5", # Stuck In the Sound - Let's Go [Official Video]
+    "https://youtu.be/OI3shBXlqsw?si=h3elcnF6GM7-1WUw", # Major Lazer - 'Get Free' feat. Amber (of Dirty Projectors) OFFICIAL LYRIC VIDEO + HQ AUDIO
+    "https://youtu.be/nGlIDlOqurA?si=YFN3DrKFBvxLsrlk", # Ellie Goulding - Lights (Bassnectar Remix) [FULL OFFICIAL]
+    "https://youtu.be/3Q9rewnLFYw?si=MOsKJ-E_5FDcANc-", # Flux Pavilion - I Can't Stop
+    "https://youtu.be/Tt3F2x0RuZI?si=_WvqVKJGq8xMVOIY", # Runaway (U & I)
+    "https://youtu.be/0g2OB-y8bW4?si=NSjNWeBVMEzeGiRv", # KORDHELL x KUTE - DEAD ON ARRIVAL
+    "https://youtu.be/yahUpxNPK98?si=Hb5b2Lyopzb0Sdga", # KORDHELL - LAND OF FIRE
+    "https://youtu.be/ywwTbMd_scc?si=wwrX6ctsJQPav9O5", # RAIZHELL - Faster | Phonk | NCS - Copyright Free Music
+    "https://youtu.be/KgayxOF4Y7E?si=k45jIQLsWG1uFkSA", # ATLXS - PASSO BEM SOLTO (SLOWED)
     "https://youtu.be/rMGkrWD5fNg?si=FPWNmWTFalkwIvxy", # Victoria Monét - Ass Like That (Lyric Video)
     "https://youtu.be/CcNo07Xp8aQ?si=e_0_q9XoRuR6xMTC", # Robyn - Dancing On My Own (Official Video)
     "https://youtu.be/kp_1J2XZaNI?si=DHQvd1ZClpCjxBi9", # Jet Voon - Roads (Original Mix) | Royalty Free Music
@@ -149,7 +149,7 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/nhBorPm6JjQ?si=jxpTP386oLdQMcMA", # Rihanna - California King Bed
     "https://youtu.be/au8QGTiPhEw?si=nIkfF1Vy88QYlzC8", # Azealia Banks - Anna Wintour
     "https://youtu.be/eJyG7CDYW4I?si=61sfeTdQsWLwflF0", # Azealia Banks - VENUS (Original Version)
-    "https://youtu.be/WL41kS5OFxQ?si=1FrIha9mQm625Rid", # Is this Love - Bob Marley (Looped and Extended)
+    "https://youtu.be/oz5Li-ba--w?si=IDKf6qavh9eHwPUz", # FUNK DO BOUNCE (Slowed)
     "https://youtu.be/LUXu4aTnK7E?si=ATZSnRfvSRxRCm7Z", # SLOW DANCING IN THE DARK
     "https://youtu.be/QMP-o8WXSPM?si=SLZmsIxmvbcZsHBA", # Love On The Brain
     "https://youtu.be/47dtFZ8CFo8?si=dvQgoBYnBjsv-0Y3", # Capital Cities - Safe And Sound
@@ -249,7 +249,7 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/3YXVdyA9Fxw?si=dtOIEiQoGPhctYQy", # Ganja White Night x Boogie T - Burnin | Official Music Video | Animation | 2024
     "https://youtu.be/Gjb0zDYnh5A?si=maelkCJOznYu--8F", # Flux Pavilion - Every Cable Goes Somewhere
     "https://youtu.be/fq8ZkL3-8Kg?si=bcXKOU2FR5MFoBAd", # Labrinth - Still Don’t Know My Name (Official Video) | euphoria (Original HBO Score)
-    "https://youtu.be/w-sQRS-Lc9k?si=HV7MvLeuLTATZkhy", # KORDHELL - MURDER IN MY MIND
+    "https://youtu.be/w-sQRS-Lc9k?si=HV7MvLeuLTATZkhy", # KORDHELL -  IN MY MIND
     "https://youtu.be/OvaL-ElQ8Lc?si=-skMhKSDyfpWXf1K", # KUTE - AVOID ME (Official Visualizer)
     "https://youtu.be/4_JJANRocU8?si=82G80PkrFrOfXr_W", # Chichen itza w/ creepmxne
     "https://youtu.be/aU8gR6gA-AQ?si=QmGOojsRIoSljfdc", # MISHASHI SENSEI - LIGHTNESS
