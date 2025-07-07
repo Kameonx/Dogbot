@@ -47,14 +47,15 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                 raise ValueError("No playable URL found")
 
             # Minimal FFmpeg options for cloud deployment
+            # Use robust reconnection options to handle transient network errors
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-nostdin -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+                before_options='-nostdin -reconnect 1 -reconnect_streamed 1 -reconnect_at_eof 1 -reconnect_delay_max 5',
                 options='-vn -nostats -hide_banner -loglevel error'
             )
             
             return cls(source, data=data)
-            
+        
         except Exception as e:
             print(f"Audio source error: {e}")
             raise ValueError(f"Failed to create audio source: {str(e)[:100]}")
@@ -203,6 +204,11 @@ class MusicBot:
                 return
             
             url = playlist[index]
+            # Skip empty or invalid URLs
+            if not url or not url.strip().startswith(('http://', 'https://')):
+                print(f"[MUSIC] Invalid URL at index {index}: '{url}', skipping.")
+                await self._advance_to_next_song(ctx)
+                return
             print(f"[MUSIC] Attempting to play song {index + 1}: {url}")
             
             # Stop current playback if playing
