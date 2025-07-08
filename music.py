@@ -236,16 +236,21 @@ class MusicBot:
             
             try:
                 voice_client.play(player, after=after_playing)
-                
-                # Send now playing message in designated channel
-                channel = self.bot.get_channel(NOW_PLAYING_CHANNEL_ID)
-                # Include YouTube link with title
+                # Send now playing message to appropriate text channel
+                # Prefer a text channel matching the voice channel name
+                voice_chan = ctx.voice_client.channel if ctx.voice_client else None
+                target_chan = None
+                if voice_chan:
+                    for text_chan in ctx.guild.text_channels:
+                        if text_chan.name == voice_chan.name:
+                            target_chan = text_chan
+                            break
+                # Fallback to command channel
+                if not target_chan:
+                    target_chan = ctx.channel
                 video_link = player.data.get('webpage_url') or player.url
                 message_content = f"🎵 Now playing: [{player.title}]({video_link}) ({index + 1}/{len(playlist)})"
-                if channel:
-                    await channel.send(message_content)
-                else:
-                    await ctx.send(message_content)
+                await target_chan.send(message_content)
                 print(f"[MUSIC] Successfully started playback: {player.title}")
             except Exception as e:
                 print(f"[MUSIC] Failed to start playback: {e}")
