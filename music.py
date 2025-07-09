@@ -204,10 +204,13 @@ class MusicBot:
             
             # Check if playlist finished
             if index >= len(playlist):
-                await ctx.send("🏁 Playlist finished!")
-                self._cleanup_guild_state(ctx.guild.id)
+                # Reshuffle and restart playlist
+                state['current_index'] = 0
+                random.shuffle(state['current_playlist'])
+                await ctx.send("🔁 Playlist finished, reshuffling and restarting!")
+                await self._play_current_song(ctx)
                 return
-            
+         
             url = playlist[index]
             # Skip empty or invalid URLs
             if not url or not url.strip().startswith(('http://', 'https://')):
