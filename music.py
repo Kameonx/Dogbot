@@ -5,9 +5,6 @@ import random
 import yt_dlp
 from playlist import MUSIC_PLAYLISTS
 
-# Channel ID for now playing messages
-NOW_PLAYING_CHANNEL_ID = 1389695684633952267
-
 class YouTubeAudioSource(discord.PCMVolumeTransformer):
     """Simplified audio source for cloud deployment"""
     
@@ -396,13 +393,20 @@ class MusicBot:
             except Exception as err:
                 print(f"[MUSIC] Error resuming playlist: {err}")
         voice_client.play(player, after=after)
-        # Send now playing message
-        channel = self.bot.get_channel(NOW_PLAYING_CHANNEL_ID)
+        # Send now playing message to appropriate text channel
         msg = f"🎵 Now playing URL: **{player.title}**"
-        if channel:
-            await channel.send(msg)
-        else:
-            await ctx.send(msg)
+        # Prefer a text channel matching the voice channel name
+        voice_chan = ctx.voice_client.channel if ctx.voice_client else None
+        target_chan = None
+        if voice_chan:
+            for text_chan in ctx.guild.text_channels:
+                if text_chan.name == voice_chan.name:
+                    target_chan = text_chan
+                    break
+        # Fallback to command channel
+        if not target_chan:
+            target_chan = ctx.channel
+        await target_chan.send(msg)
 
     async def voice_health_check(self):
         """Periodically ensure the bot stays connected to its voice channel."""
