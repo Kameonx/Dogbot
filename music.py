@@ -201,13 +201,17 @@ class MusicBot:
             
             # Check if playlist finished
             if index >= len(playlist):
-                # Reshuffle and restart playlist
+                # If playlist is empty, stop playback
+                if not playlist:
+                    self._cleanup_guild_state(ctx.guild.id)
+                    return
+                # Otherwise reshuffle and restart
                 state['current_index'] = 0
                 random.shuffle(state['current_playlist'])
                 await ctx.send("🔁 Playlist finished, reshuffling and restarting!")
                 await self._play_current_song(ctx)
                 return
-         
+    
             url = playlist[index]
             # Skip empty or invalid URLs
             if not url or not url.strip().startswith(('http://', 'https://')):
@@ -237,12 +241,13 @@ class MusicBot:
                     print(f"[MUSIC] Player error: {error}")
                 else:
                     print(f"[MUSIC] Song finished normally")
-                # Schedule next song in bot loop
-                try:
-                    self.bot.loop.create_task(self._advance_to_next_song(ctx))
-                except Exception as sched_err:
-                    print(f"[MUSIC] Error scheduling next song: {sched_err}")
-            
+                # Schedule next song only if state still exists (not after leave)
+                if ctx.guild.id in self.guild_states:
+                    try:
+                        self.bot.loop.create_task(self._advance_to_next_song(ctx))
+                    except Exception as sched_err:
+                        print(f"[MUSIC] Error scheduling next song: {sched_err}")
+    
             try:
                 voice_client.play(player, after=after_playing)
                 # Send now playing message to appropriate text channel
