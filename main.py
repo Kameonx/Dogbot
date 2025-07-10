@@ -388,7 +388,10 @@ async def on_ready():
     # Initialize music bot
     music_bot = MusicBot(bot)
     print("Music bot initialized")
-    
+    # Start periodic voice health check to prevent unexpected disconnects
+    asyncio.create_task(music_bot.voice_health_check())
+    print("Voice health check started")
+
     # Voice health check disabled for stability
     # asyncio.create_task(music_bot.voice_health_check())
     # print("Voice health check started")
@@ -439,13 +442,27 @@ async def on_message(message):
     # Just process commands, don't handle them manually here
     await bot.process_commands(message)
 
-# Commented out to prevent unwanted disconnections/reconnect loops
-# @bot.event
-# async def on_voice_state_update(member, before, after):
-#     """Track voice state changes to detect when the bot is disconnected"""
-#     if member == bot.user:
-#         return  # No action, rely on built-in reconnect
-#     # ...voice state update logic disabled for stability...
+@bot.event
+async def on_voice_state_update(member, before, after):
+    """Auto-rejoin if the bot is disconnected unexpectedly from voice."""
+    # Only act on bot's own voice state
+    if bot.user is None or member.id != bot.user.id:
+        return
+    # If bot was in a voice channel and now disconnected
+    if before.channel and after.channel is None:
+        guild_id = before.channel.guild.id
+        # Get last known voice channel
+        if music_bot:
+            state = music_bot._get_guild_state(guild_id)
+            channel_id = state.get('voice_channel_id')
+            if channel_id:
+                channel = before.channel.guild.get_channel(channel_id)
+                if channel:
+                    try:
+                        await channel.connect()
+                        print(f"[MUSIC] Auto-rejoined to voice channel {channel.name} in guild {guild_id}")
+                    except Exception as e:
+                        print(f"[MUSIC] Auto-rejoin failed: {e}")
 
 # Helper function to check for admin/moderator permissions
 def has_admin_or_moderator_role(ctx):
