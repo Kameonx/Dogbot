@@ -17,6 +17,8 @@ import subprocess
 from music import MusicBot, YouTubeAudioSource  # restore music functionality imports
 import base64
 import io
+import traceback
+import time
 
 # Ensure opus is loaded for voice support
 if not discord.opus.is_loaded():
@@ -69,9 +71,6 @@ YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3"
 VENICE_API_URL = "https://api.venice.ai/api/v1/chat/completions"
 VENICE_MODEL = "venice-uncensored"
 IMAGE_API_URL = "https://api.venice.ai/api/v1/image/generate"
-
-# YouTube Data API v3 Configuration
-YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3"
 
 class YouTubeAPI:
     """YouTube Data API v3 integration for reliable cloud deployment"""
@@ -648,13 +647,11 @@ async def join(ctx):
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    
-    # Join voice channel first
-    join_success = await music_bot.join_voice_channel(ctx)
-    if not join_success:
+
+    success = await music_bot.join_voice_channel(ctx)
+    if not success:
         return
-    
-    # Auto-start music after successful join
+    # Auto-start music after join
     await music_bot.play_music(ctx)
 
 @bot.command()
@@ -979,24 +976,47 @@ async def removelizardsrole(ctx):
         await ctx.send(f"❌ Error removing role: {e}")
 
 @bot.command()
-async def removepvprole(ctx):
-    """Remove the PVP role from yourself"""
-    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
-    if role is None:
-        await ctx.send(f"❌ The '{pvp_role_name}' role doesn't exist on this server!")
-        return
-    
-    if role not in ctx.author.roles:
-        await ctx.send(f"❌ You don't have the {pvp_role_name} role!")
-        return
-    
-    try:
-        await ctx.author.remove_roles(role)
-        await ctx.send(f"⚔️ Successfully removed the {pvp_role_name} role!")
-    except discord.Forbidden:
-        await ctx.send("❌ I don't have permission to remove roles!")
-    except Exception as e:
-        await ctx.send(f"❌ Error removing role: {e}")
+async def removepvprole(ctx, member: Optional[discord.Member] = None):
+    """Remove the PVP role from yourself or another user (moderator only)"""
+    # If no target, remove from self
+    if member is None:
+        role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+        if role is None:
+            await ctx.send(f"❌ The '{pvp_role_name}' role doesn't exist on this server!")
+            return
+        
+        if role not in ctx.author.roles:
+            await ctx.send(f"❌ You don't have the {pvp_role_name} role!")
+            return
+        
+        try:
+            await ctx.author.remove_roles(role)
+            await ctx.send(f"⚔️ Successfully removed your {pvp_role_name} role!")
+        except discord.Forbidden:
+            await ctx.send("❌ I don't have permission to remove roles!")
+        except Exception as e:
+            await ctx.send(f"❌ Error removing role: {e}")
+    else:
+        # Moderator removal
+        if not has_admin_or_moderator_role(ctx):
+            await ctx.send("❌ You need Admin or Moderator role to use this command!")
+            return
+        role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+        if role is None:
+            await ctx.send(f"❌ The '{pvp_role_name}' role doesn't exist on this server!")
+            return
+        
+        if role not in member.roles:
+            await ctx.send(f"❌ {member.mention} doesn't have the {pvp_role_name} role!")
+            return
+        
+        try:
+            await member.remove_roles(role)
+            await ctx.send(f"⚔️ Successfully removed the {pvp_role_name} role from {member.mention}!")
+        except discord.Forbidden:
+            await ctx.send("❌ I don't have permission to remove roles!")
+        except Exception as e:
+            await ctx.send(f"❌ Error removing role: {e}")
 
 @bot.command()
 async def modhelp(ctx):
@@ -1162,7 +1182,6 @@ async def download(ctx, *, url):
      
     # Clean up old downloads
     try:
-        import time
         now = time.time()
         for fname in os.listdir(download_dir):
             path = os.path.join(download_dir, fname)
@@ -1501,21 +1520,16 @@ async def removelizardsrolefrom(ctx, member: Optional[discord.Member] = None):
     if not has_admin_or_moderator_role(ctx):
         await ctx.send("❌ You need Admin or Moderator role to use this command!")
         return
-    
     if member is None:
         await ctx.send("❌ Please mention a user to remove the role from! Usage: `!removelizardsrolefrom @username`")
         return
-    
     role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
     if role is None:
         await ctx.send(f"❌ The '{lizards_role_name}' role doesn't exist on this server!")
         return
-    
     if role not in member.roles:
         await ctx.send(f"❌ {member.mention} doesn't have the {lizards_role_name} role!")
         return
-    
-    # Implement removal logic for moderators
     try:
         await member.remove_roles(role)
         await ctx.send(f"🦎 Successfully removed the {lizards_role_name} role from {member.mention}!")
@@ -1530,20 +1544,16 @@ async def assignpvprole(ctx, member: Optional[discord.Member] = None):
     if not has_admin_or_moderator_role(ctx):
         await ctx.send("❌ You need Admin or Moderator role to use this command!")
         return
-    
     if member is None:
         await ctx.send("❌ Please mention a user to assign the role to! Usage: `!assignpvprole @username`")
         return
-    
     role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
     if role is None:
         await ctx.send(f"❌ The '{pvp_role_name}' role doesn't exist on this server!")
         return
-    
     if role in member.roles:
         await ctx.send(f"⚔️ {member.mention} already has the {pvp_role_name} role!")
         return
-    
     try:
         await member.add_roles(role)
         await ctx.send(f"⚔️ Successfully assigned the {pvp_role_name} role to {member.mention}!")
@@ -1558,20 +1568,16 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
     if not has_admin_or_moderator_role(ctx):
         await ctx.send("❌ You need Admin or Moderator role to use this command!")
         return
-    
     if member is None:
         await ctx.send("❌ Please mention a user to remove the role from! Usage: `!removepvprolefrom @username`")
         return
-    
     role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
     if role is None:
         await ctx.send(f"❌ The '{pvp_role_name}' role doesn't exist on this server!")
         return
-    
     if role not in member.roles:
         await ctx.send(f"❌ {member.mention} doesn't have the {pvp_role_name} role!")
         return
-    
     try:
         await member.remove_roles(role)
         await ctx.send(f"⚔️ Successfully removed the {pvp_role_name} role from {member.mention}!")
@@ -1582,7 +1588,7 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
 
 @bot.command(name='generate')
 async def generate(ctx, *, prompt: Optional[str] = None):
-    """Generate an image using Venice AI HiDream model"""
+    """Generate an AI image using HiDream model"""
     if not prompt:
         await ctx.send("❌ Please provide a prompt for image generation!")
         return
