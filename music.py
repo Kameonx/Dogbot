@@ -353,22 +353,18 @@ class MusicBot:
                 return
             
             source = ctx.voice_client.source
-            if hasattr(source, 'title'):
-                title = source.title
-            else:
-                title = "Unknown"
+            title = source.title if hasattr(source, 'title') else "Unknown"
             
             state = self._get_guild_state(ctx.guild.id)
             current_index = state['current_index']
             playlist_length = len(state['current_playlist'])
             
             status = "▶️ Playing" if ctx.voice_client.is_playing() else "⏸️ Paused"
-            
-            await ctx.send(
-                f"{status}: **{title}**\n"
-                f"Track {current_index + 1} of {playlist_length}"
-            )
-            
+
+            # Include clickable link and track progress
+            video_link = getattr(source, 'data', {}).get('webpage_url') or getattr(source, 'url', None)
+            message_content = f"{status}: [{title}]({video_link}) ({current_index + 1}/{playlist_length})"
+            await ctx.send(message_content)
         except Exception as e:
             await ctx.send(f"❌ Error getting song info: {str(e)[:100]}")
 
