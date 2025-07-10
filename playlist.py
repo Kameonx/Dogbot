@@ -1,11 +1,13 @@
-# Music Bot Configuration
 MUSIC_PLAYLISTS = [
-    # Existing tracks
     "https://youtu.be/luQSQuCHtcI?si=EI1YvZzArPoC95M2", # INZO - Overthinker
+    "https://youtu.be/2SUwOgmvzK4?si=j6SFbbWjA4hmmbKy", # Tame Impala - The Less I Know The Better (Audio)
+    "https://youtu.be/iX-QaNzd-0Y?si=GqG8InXXGP4N9qFi", # Milky Chance - Stolen Dance (Official Video) [HD Version]
+    "https://youtu.be/SDTZ7iX4vTQ?si=nYjIJL-PLpZK5wGV", # Foster The People - Pumped Up Kicks (Official Video)
+    "https://youtu.be/K0HSD_i2DvA?si=4oNqU5mmIJxMXtSl", # Daft Punk - Around The World (Official Music Video Remastered)
     "https://youtu.be/DZiaXEIQgkE?si=hloGPU4HDy4NnqGp", # Salvatore Ganacci - Fight Dirty
     "https://youtu.be/UbQgXeY_zi4?si=Pvk238gFCPG8utZb", # Caravan Palace - Lone Digger (Official MV)
     "https://youtu.be/VW9wlPtDc50?si=PXgXkKuZ-ecnrgjg", # Stamp On The Ground (New Music Video)
-    "https://youtu.be/lRpxecLkUHQ?si=h37H5BC9uNHHabsE", # Nyan Cat - Genre Hopping
+    "https://youtu.be/-N4jf6rtyuw?si=GLxupjaocIeJN5dT", # Gnarls Barkley - Crazy (Official Video) [4K Remaster]
     "https://youtu.be/tJdgErAfiRQ?si=oVgm41KXz1Vy5gGV", # Propane Genesis Evangelion - King of the Hill Anime OP
     "https://youtu.be/Hu5QIP_95rk?si=zWZlX3PN6iiANPBD", # KAZKA - Plakala (R3HAB Remix)
     "https://youtu.be/ax3JAcUArZo?si=CI3dQfTw9Br7layW", # Inuyasha - Ending 2 HD
