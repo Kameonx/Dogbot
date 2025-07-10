@@ -2,6 +2,7 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/luQSQuCHtcI?si=EI1YvZzArPoC95M2", # INZO - Overthinker
     "https://youtu.be/2SUwOgmvzK4?si=j6SFbbWjA4hmmbKy", # Tame Impala - The Less I Know The Better (Audio)
     "https://youtu.be/iX-QaNzd-0Y?si=GqG8InXXGP4N9qFi", # Milky Chance - Stolen Dance (Official Video) [HD Version]
+    "https://youtu.be/ZuurdGpRCuU?si=RuDjHTloqhS8444G", # Techno - Tetris (Remix)
     "https://youtu.be/K-PdbfkA7LM?si=u3W2Tvcn9BTlPJA5", # Castle in the Sky - DJ Satomi
     "https://youtu.be/SDTZ7iX4vTQ?si=nYjIJL-PLpZK5wGV", # Foster The People - Pumped Up Kicks (Official Video)
     "https://youtu.be/K0HSD_i2DvA?si=4oNqU5mmIJxMXtSl", # Daft Punk - Around The World (Official Music Video Remastered)
