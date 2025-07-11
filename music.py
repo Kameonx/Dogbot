@@ -376,12 +376,17 @@ class MusicBot:
             if not await self.join_voice_channel(ctx):
                 return
             voice_client = ctx.voice_client or ctx.guild.voice_client
+        # Temporarily remove playlist state to avoid triggering its after callback
+        state_backup = self.guild_states.pop(ctx.guild.id, None)
         # Stop any current playback
         if voice_client.is_playing():
             voice_client.stop()
         try:
             player = await YouTubeAudioSource.from_url(url)
         except Exception as e:
+            # Restore previous playlist state on failure
+            if state_backup is not None:
+                self.guild_states[ctx.guild.id] = state_backup
             await ctx.send(f"❌ Failed to load URL: {e}")
             return
         # After URL, resume main playlist
