@@ -373,9 +373,21 @@ class MusicBot:
         # Ensure voice connection
         voice_client = ctx.voice_client or ctx.guild.voice_client
         if not voice_client or not voice_client.is_connected():
-            if not await self.join_voice_channel(ctx):
-                return
-            voice_client = ctx.voice_client or ctx.guild.voice_client
+            # Try to reconnect to previous channel without requiring user
+            state = self._get_guild_state(ctx.guild.id)
+            channel_id = state.get('voice_channel_id')
+            if channel_id:
+                channel = ctx.guild.get_channel(channel_id)
+                if channel:
+                    try:
+                        voice_client = await channel.connect()
+                    except Exception as e:
+                        print(f"[MUSIC] play_url reconnect error: {e}")
+            # Fallback to user-initiated join if still not connected
+            if not voice_client or not voice_client.is_connected():
+                if not await self.join_voice_channel(ctx):
+                    return
+                voice_client = ctx.voice_client or ctx.guild.voice_client
         # Temporarily remove playlist state to avoid triggering its after callback
         state_backup = self.guild_states.pop(ctx.guild.id, None)
         # Stop any current playback
