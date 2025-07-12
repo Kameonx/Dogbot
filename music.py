@@ -82,54 +82,23 @@ class MusicBot:
 
     async def join_voice_channel(self, ctx):
         """Join user's voice channel reliably"""
-        # Prepare guild state
-        state = self._get_guild_state(ctx.guild.id)
-        # If bot is already connected, update state and continue
-        vc = ctx.voice_client or ctx.guild.voice_client
-        if vc and vc.is_connected():
-            try:
-                state['voice_channel_id'] = vc.channel.id
-            except Exception:
-                pass
+        # Simple join: always join the user's current voice channel
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            await ctx.send("❌ Join a voice channel first!")
+            return False
+        channel = ctx.author.voice.channel
+        vc = ctx.voice_client
+        try:
+            if not vc:
+                vc = await channel.connect()
+            elif vc.channel.id != channel.id:
+                await vc.move_to(channel)
+            await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
-        # Try to reconnect to previous channel
-        prev_chan_id = state.get('voice_channel_id')
-        if prev_chan_id:
-            channel = ctx.guild.get_channel(prev_chan_id)
-            if channel:
-                try:
-                    vc = ctx.voice_client or ctx.guild.voice_client
-                    if not vc:
-                        vc = await channel.connect()
-                    elif vc.channel.id != channel.id:
-                        await vc.move_to(channel)
-                    state['voice_channel_id'] = channel.id
-                    await ctx.send(f"✅ Connected to previous channel **{channel.name}**")
-                    return True
-                except Exception as e:
-                    print(f"[MUSIC] join previous channel error: {e}")
-                    await ctx.send(f"❌ Could not join previous channel: {str(e)[:100]}")
-                    return False
-        # Fallback to user's current channel
-        user_voice = ctx.author.voice
-        if user_voice and user_voice.channel:
-            channel = user_voice.channel
-            try:
-                vc = ctx.voice_client or ctx.guild.voice_client
-                if not vc:
-                    vc = await channel.connect()
-                elif vc.channel.id != channel.id:
-                    await vc.move_to(channel)
-                state['voice_channel_id'] = channel.id
-                await ctx.send(f"✅ Connected to **{channel.name}**")
-                return True
-            except Exception as e:
-                print(f"[MUSIC] join user channel error: {e}")
-                await ctx.send(f"❌ Could not join your voice channel: {str(e)[:100]}")
-                return False
-        # No available channel
-        await ctx.send("❌ You need to be in a voice channel first or have a previous connection!")
-        return False
+        except Exception as e:
+            print(f"[MUSIC] join error: {e}")
+            await ctx.send(f"❌ Could not join voice channel: {str(e)[:100]}")
+            return False
 
     async def leave_voice_channel(self, ctx):
         """Leave voice channel and cleanup"""
