@@ -390,8 +390,16 @@ class MusicBot:
                 if not await self.join_voice_channel(ctx):
                     return
                 voice_client = ctx.voice_client or ctx.guild.voice_client
-        # Temporarily remove playlist state to avoid triggering its after callback
-        state_backup = self.guild_states.pop(ctx.guild.id, None)
+        # Save current playlist state to resume later
+        prev_state = self.guild_states.get(ctx.guild.id)
+        saved_state = None
+        if prev_state:
+            saved_state = {
+                'current_playlist': list(prev_state['current_playlist']),
+                'current_index': prev_state['current_index']
+            }
+        # Remove state so playlist callbacks are suppressed
+        self.guild_states.pop(ctx.guild.id, None)
         # Stop any current playback
         if voice_client.is_playing():
             voice_client.stop()
@@ -399,17 +407,29 @@ class MusicBot:
             player = await YouTubeAudioSource.from_url(url)
         except Exception as e:
             # Restore previous playlist state on failure
-            if state_backup is not None:
-                self.guild_states[ctx.guild.id] = state_backup
+            if saved_state is not None:
+                self.guild_states[ctx.guild.id] = saved_state
             await ctx.send(f"❌ Failed to load URL: {e}")
             return
-        # After URL, resume main playlist
         def after(error):
             if error:
                 print(f"[MUSIC] URL playback error: {error}")
-            # Resume playlist
+            # Restore previous playlist state and resume from next song
+            if saved_state is not None:
+                # Advance index to next track
+                restored_index = saved_state['current_index'] + 1
+                playlist = saved_state['current_playlist']
+                # Wrap around or reshuffle if at end
+                if restored_index >= len(playlist):
+                    restored_index = 0
+                    random.shuffle(playlist)
+                self.guild_states[ctx.guild.id] = {
+                    'current_playlist': playlist,
+                    'current_index': restored_index
+                }
             try:
-                self.bot.loop.create_task(self.play_music(ctx))
+                # Play next song from restored state
+                self.bot.loop.create_task(self._play_current_song(ctx))
             except Exception as err:
                 print(f"[MUSIC] Error resuming playlist: {err}")
         voice_client.play(player, after=after)
