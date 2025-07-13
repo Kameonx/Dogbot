@@ -82,22 +82,20 @@ class MusicBot:
 
     async def join_voice_channel(self, ctx):
         """Join the user's voice channel; no-op if already connected"""
-        # If already connected to a voice channel, do nothing
-        vc = ctx.guild.voice_client
-        if vc and vc.is_connected():
-            return True
-        # Not connected: user must be in a voice channel to join
-        user_voice = ctx.author.voice
-        if not user_voice or not user_voice.channel:
+        # User must be in a voice channel
+        if not ctx.author.voice or not ctx.author.voice.channel:
             await ctx.send("❌ You need to be in a voice channel first!")
             return False
-        channel = user_voice.channel
+        channel = ctx.author.voice.channel
+        vc = ctx.guild.voice_client
         try:
-            await channel.connect()
-        except discord.ClientException:
-            # Connection failed or already connected elsewhere
-            pass
-        return True
+            if not vc or not vc.is_connected():
+                await channel.connect()
+                await ctx.send(f"✅ Connected to **{channel.name}**")
+            return True
+        except Exception as e:
+            await ctx.send(f"❌ Could not join voice channel: {e}")
+            return False
 
     async def leave_voice_channel(self, ctx):
         """Leave voice channel and cleanup"""
@@ -114,15 +112,10 @@ class MusicBot:
     async def play_music(self, ctx, playlist_name="main"):
         """Improved music playback with better voice connection handling"""
         try:
-            # Ensure connected using join logic
-            if not await self.join_voice_channel(ctx):
+            # Require existing voice connection (use !join first)
+            if not ctx.voice_client or not ctx.voice_client.is_connected():
+                await ctx.send("❌ Not connected to a voice channel! Use `!join` first.")
                 return
-            voice_client = ctx.guild.voice_client
-            # Confirm connection
-            if not voice_client or not voice_client.is_connected():
-                await ctx.send("❌ Voice connection failed! Use `!join` first and retry `!start`.")
-                return
-            # Now voice_client is connected
             voice_client = ctx.voice_client
 
             print(f"[MUSIC] Voice client confirmed: {voice_client} (connected: {voice_client.is_connected()})")
