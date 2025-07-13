@@ -434,8 +434,19 @@ class MusicBot:
                         except Exception as err:
                             print(f"[MUSIC] Health check reconnect failed for guild {guild_id}: {err}")
                 else:
-                    # Skip keep-alive silence to avoid interrupting playback
-                    pass
+                    # Send short keep-alive silence when idle to prevent disconnection
+                    try:
+                        # Only send silence if not currently playing audio
+                        if not vc.is_playing():
+                            silence = discord.FFmpegPCMAudio(
+                                'anullsrc=channel_layout=stereo:sample_rate=48000',
+                                before_options='-nostdin',
+                                options='-f lavfi -t 1 -vn -hide_banner -loglevel panic'
+                            )
+                            vc.play(silence, after=lambda e: None)
+                            print(f"[MUSIC] Sent keep-alive silence to guild {guild_id}")
+                    except Exception as err:
+                        print(f"[MUSIC] Failed to send keep-alive silence for guild {guild_id}: {err}")
             await asyncio.sleep(60)
 
     def get_available_playlists(self):
