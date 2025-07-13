@@ -4,6 +4,7 @@ import asyncio
 import random
 import yt_dlp
 from playlist import MUSIC_PLAYLISTS
+import traceback
 
 class YouTubeAudioSource(discord.PCMVolumeTransformer):
     """Simplified audio source for cloud deployment"""
@@ -132,8 +133,10 @@ class MusicBot:
             await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
         except Exception as e:
-            print(f"[MUSIC] join_voice_channel error: {e}")
-            await ctx.send(f"❌ Could not join voice channel: {str(e)[:100]}")
+            tb = traceback.format_exc()
+            print(f"[MUSIC] join_voice_channel error: {tb}")
+            # Send full traceback to help debug connection issues
+            await ctx.send(f"❌ Could not join voice channel. Traceback:\n```{tb}```")
             return False
 
     async def leave_voice_channel(self, ctx):
