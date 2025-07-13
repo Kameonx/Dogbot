@@ -82,6 +82,10 @@ class MusicBot:
 
     async def join_voice_channel(self, ctx):
         """Join user's voice channel reliably"""
+        # If already connected, no need to rejoin
+        vc = ctx.voice_client or ctx.guild.voice_client
+        if vc and vc.is_connected():
+            return True
         # Determine target channel: user channel or last known
         state = self._get_guild_state(ctx.guild.id)
         user_voice = ctx.author.voice
