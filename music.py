@@ -81,24 +81,17 @@ class MusicBot:
             del self.guild_states[guild_id]
 
     async def join_voice_channel(self, ctx):
-        """Joins or moves bot to the user's current voice channel"""
-        # If already connected, do nothing
-        vc = ctx.voice_client
-        if vc and vc.is_connected():
+        """Simple join: connect to the user's voice channel if not already connected"""
+        # If already connected, skip
+        if ctx.voice_client and ctx.voice_client.is_connected():
             return True
-        # Ensure the user is in a voice channel
-        user_voice = ctx.author.voice
-        if not user_voice or not user_voice.channel:
-            await ctx.send("❌ You must be in a voice channel to use music commands!")
+        # User must be in a voice channel
+        if not ctx.author.voice or not ctx.author.voice.channel:
+            await ctx.send("❌ You must be in a voice channel to use this command!")
             return False
-        channel = user_voice.channel
-        vc = ctx.voice_client
+        channel = ctx.author.voice.channel
         try:
-            # Connect or move to user's channel
-            if not vc:
-                vc = await channel.connect()
-            elif vc.channel.id != channel.id:
-                await vc.move_to(channel)
+            await channel.connect()
             await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
         except Exception as e:
