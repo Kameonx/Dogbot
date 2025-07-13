@@ -81,23 +81,23 @@ class MusicBot:
             del self.guild_states[guild_id]
 
     async def join_voice_channel(self, ctx):
-        """Simple join: connect to the user's voice channel if not already connected"""
-        # If already connected, skip
-        if ctx.voice_client and ctx.voice_client.is_connected():
+        """Join the user's voice channel; no-op if already connected"""
+        # If already connected to a voice channel, do nothing
+        vc = ctx.guild.voice_client
+        if vc and vc.is_connected():
             return True
-        # User must be in a voice channel
-        if not ctx.author.voice or not ctx.author.voice.channel:
-            await ctx.send("❌ You must be in a voice channel to use this command!")
+        # Not connected: user must be in a voice channel to join
+        user_voice = ctx.author.voice
+        if not user_voice or not user_voice.channel:
+            await ctx.send("❌ You need to be in a voice channel first!")
             return False
-        channel = ctx.author.voice.channel
+        channel = user_voice.channel
         try:
             await channel.connect()
-            await ctx.send(f"✅ Connected to **{channel.name}**")
-            return True
-        except Exception as e:
-            print(f"[MUSIC] join error: {e}")
-            await ctx.send(f"❌ Could not join voice channel: {e}")
-            return False
+        except discord.ClientException:
+            # Connection failed or already connected elsewhere
+            pass
+        return True
 
     async def leave_voice_channel(self, ctx):
         """Leave voice channel and cleanup"""
@@ -114,14 +114,16 @@ class MusicBot:
     async def play_music(self, ctx, playlist_name="main"):
         """Improved music playback with better voice connection handling"""
         try:
-            # Ensure connected using join logic (supports previous channels)
+            # Ensure connected using join logic
             if not await self.join_voice_channel(ctx):
                 return
-            voice_client = ctx.voice_client or ctx.guild.voice_client
+            voice_client = ctx.guild.voice_client
             # Confirm connection
             if not voice_client or not voice_client.is_connected():
-                await ctx.send("❌ Voice connection failed! Please ensure I can connect to a voice channel.")
+                await ctx.send("❌ Voice connection failed! Use `!join` first and retry `!start`.")
                 return
+            # Now voice_client is connected
+            voice_client = ctx.voice_client
 
             print(f"[MUSIC] Voice client confirmed: {voice_client} (connected: {voice_client.is_connected()})")
 
@@ -155,15 +157,11 @@ class MusicBot:
     async def _play_current_song(self, ctx):
         """Play current song with improved error handling"""
         try:
-            # Enhanced voice client verification
-            voice_client = ctx.voice_client or ctx.guild.voice_client
-            if not voice_client or not voice_client.is_connected():
-                # Try to reconnect if disconnected
-                reconnected = await self.join_voice_channel(ctx)
-                if not reconnected:
-                    print("[MUSIC] Could not reconnect, stopping playback")
-                    return
-                voice_client = ctx.voice_client or ctx.guild.voice_client
+            # Use current voice client; do not auto-reconnect to avoid repeated join/leave
+            voice_client = ctx.voice_client
+            if not voice_client:
+                print("[MUSIC] No voice client available, stopping playback")
+                return
             
             state = self._get_guild_state(ctx.guild.id)
             playlist = state['current_playlist']
