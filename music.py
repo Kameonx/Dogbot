@@ -106,6 +106,8 @@ class MusicBot:
                 await vc.move_to(channel)
             # Remember this channel for future reconnects
             state['voice_channel_id'] = channel.id
+            # Mark music as active for this guild (enable auto reconnect)
+            state['active'] = True
             await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
         except Exception as e:
@@ -118,7 +120,12 @@ class MusicBot:
         try:
             if ctx.voice_client:
                 await ctx.voice_client.disconnect()
-                self._cleanup_guild_state(ctx.guild.id)
+                # Disable music for this guild (prevent auto-reconnect)
+                state = self._get_guild_state(ctx.guild.id)
+                state['active'] = False
+                # Clear playlist state
+                state['current_playlist'] = []
+                state['current_index'] = 0
                 await ctx.send("👋 Left the voice channel!")
             else:
                 await ctx.send("❌ I'm not connected to a voice channel!")
@@ -432,6 +439,9 @@ class MusicBot:
         await self.bot.wait_until_ready()
         while not self.bot.is_closed():
             for guild_id, state in list(self.guild_states.items()):
+                # Skip health check if music is not active for this guild
+                if not state.get('active', False):
+                    continue
                 channel_id = state.get('voice_channel_id')
                 guild = self.bot.get_guild(guild_id)
                 if not guild or not channel_id:
