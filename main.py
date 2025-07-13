@@ -651,8 +651,8 @@ async def join(ctx):
     success = await music_bot.join_voice_channel(ctx)
     if not success:
         return
-    # Auto-start music after join
-    await music_bot.play_music(ctx)
+    # Auto-start music after join, but don't auto-join again
+    await music_bot.play_music(ctx, auto_join=False)
 
 @bot.command()
 async def leave(ctx):
