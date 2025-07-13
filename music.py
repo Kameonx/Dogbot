@@ -373,9 +373,21 @@ class MusicBot:
         # Ensure voice connection
         voice_client = ctx.voice_client or ctx.guild.voice_client
         if not voice_client or not voice_client.is_connected():
-            if not await self.join_voice_channel(ctx):
-                return
-            voice_client = ctx.voice_client or ctx.guild.voice_client
+            # Try to reconnect to previous channel without requiring user
+            state = self._get_guild_state(ctx.guild.id)
+            channel_id = state.get('voice_channel_id')
+            if channel_id:
+                channel = ctx.guild.get_channel(channel_id)
+                if channel:
+                    try:
+                        voice_client = await channel.connect()
+                    except Exception as e:
+                        print(f"[MUSIC] play_url reconnect error: {e}")
+            # Fallback to user-initiated join if still not connected
+            if not voice_client or not voice_client.is_connected():
+                if not await self.join_voice_channel(ctx):
+                    return
+                voice_client = ctx.voice_client or ctx.guild.voice_client
         # Temporarily remove playlist state to avoid triggering its after callback
         state_backup = self.guild_states.pop(ctx.guild.id, None)
         # Stop any current playback
@@ -434,19 +446,8 @@ class MusicBot:
                         except Exception as err:
                             print(f"[MUSIC] Health check reconnect failed for guild {guild_id}: {err}")
                 else:
-                    # Send short keep-alive silence when idle to prevent disconnection
-                    try:
-                        # Only send silence if not currently playing audio
-                        if not vc.is_playing():
-                            silence = discord.FFmpegPCMAudio(
-                                'anullsrc=channel_layout=stereo:sample_rate=48000',
-                                before_options='-nostdin',
-                                options='-f lavfi -t 1 -vn -hide_banner -loglevel panic'
-                            )
-                            vc.play(silence, after=lambda e: None)
-                            print(f"[MUSIC] Sent keep-alive silence to guild {guild_id}")
-                    except Exception as err:
-                        print(f"[MUSIC] Failed to send keep-alive silence for guild {guild_id}: {err}")
+                    # Skip keep-alive silence to avoid interrupting playback
+                    pass
             await asyncio.sleep(60)
 
     def get_available_playlists(self):
