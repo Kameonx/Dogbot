@@ -82,17 +82,18 @@ class MusicBot:
 
     async def join_voice_channel(self, ctx):
         """Join user's voice channel reliably"""
-        # Simple join: always join the user's current voice channel
-        if not ctx.author.voice or not ctx.author.voice.channel:
+        # If bot is already connected in this guild, allow continuation
+        guild_vc = ctx.guild.voice_client
+        if guild_vc and guild_vc.is_connected():
+            return True
+        # Otherwise, join the user's current voice channel
+        user_voice = ctx.author.voice
+        if not user_voice or not user_voice.channel:
             await ctx.send("❌ Join a voice channel first!")
             return False
-        channel = ctx.author.voice.channel
-        vc = ctx.voice_client
+        channel = user_voice.channel
         try:
-            if not vc:
-                vc = await channel.connect()
-            elif vc.channel.id != channel.id:
-                await vc.move_to(channel)
+            vc = await channel.connect()
             await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
         except Exception as e:
