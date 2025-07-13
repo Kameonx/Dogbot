@@ -112,11 +112,14 @@ class MusicBot:
     async def play_music(self, ctx, playlist_name="main"):
         """Improved music playback with better voice connection handling"""
         try:
-            # Require existing voice connection (use !join first)
-            if not ctx.voice_client or not ctx.voice_client.is_connected():
-                await ctx.send("❌ Not connected to a voice channel! Use `!join` first.")
-                return
-            voice_client = ctx.voice_client
+            # Ensure voice connection: auto-join if not connected
+            vc = ctx.guild.voice_client
+            if not vc or not vc.is_connected():
+                joined = await self.join_voice_channel(ctx)
+                if not joined:
+                    return
+                vc = ctx.guild.voice_client
+            voice_client = vc
 
             print(f"[MUSIC] Voice client confirmed: {voice_client} (connected: {voice_client.is_connected()})")
 
