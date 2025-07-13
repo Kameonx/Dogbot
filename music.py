@@ -86,18 +86,15 @@ class MusicBot:
         vc = ctx.voice_client or ctx.guild.voice_client
         if vc and vc.is_connected():
             return True
-        # Determine target channel: user channel or last known
+        # Determine target channel: prefer last known channel, then user's current channel
         state = self._get_guild_state(ctx.guild.id)
-        user_voice = ctx.author.voice
-        if user_voice and user_voice.channel:
-            channel = user_voice.channel
-        elif state.get('voice_channel_id'):
+        channel = None
+        if state.get('voice_channel_id'):
             channel = ctx.guild.get_channel(state['voice_channel_id'])
-            if not channel:
-                await ctx.send("❌ Could not find previous voice channel to join.")
-                return False
-        else:
-            await ctx.send("❌ You need to be in a voice channel first!")
+        elif ctx.author.voice and ctx.author.voice.channel:
+            channel = ctx.author.voice.channel
+        if not channel:
+            await ctx.send("❌ No voice channel found to join.")
             return False
         try:
             vc = ctx.voice_client
