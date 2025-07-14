@@ -86,12 +86,18 @@ class MusicBot:
         guild_vc = ctx.guild.voice_client
         if guild_vc and guild_vc.is_connected():
             return True
-        # Otherwise, join the user's current voice channel
-        user_voice = ctx.author.voice
-        if not user_voice or not user_voice.channel:
+        # Determine channel to join: prefer existing bot channel, then user's channel
+        channel = None
+        # If bot was previously connected, reuse that channel
+        if guild_vc and hasattr(guild_vc, 'channel') and guild_vc.channel:
+            channel = guild_vc.channel
+        else:
+            user_voice = ctx.author.voice
+            if user_voice and user_voice.channel:
+                channel = user_voice.channel
+        if not channel:
             await ctx.send("❌ Join a voice channel first!")
             return False
-        channel = user_voice.channel
         try:
             vc = await channel.connect()
             await ctx.send(f"✅ Connected to **{channel.name}**")
