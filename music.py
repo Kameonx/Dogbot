@@ -103,8 +103,13 @@ class MusicBot:
             await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
         except Exception as e:
-            print(f"[MUSIC] join error: {e}")
-            await ctx.send(f"❌ Could not join voice channel: {str(e)[:100]}")
+            err = str(e)
+            # Treat already-connected error as success
+            if 'Already connected to a voice channel' in err:
+                print(f"[MUSIC] join warning (already connected): {err}")
+                return True
+            print(f"[MUSIC] join error: {err}")
+            await ctx.send(f"❌ Could not join voice channel: {err[:100]}")
             return False
 
     async def leave_voice_channel(self, ctx):
