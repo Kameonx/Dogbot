@@ -494,6 +494,7 @@ async def help(ctx):
         name="🎵 **Music Commands**",
         value=(
             "`!join` - Join your voice channel and start music\n"
+            "`!play [youtube_url]` - Play main playlist or a single YouTube URL\n"
             "`!start` - Start playing music (will join channel if needed)\n"
             "`!leave` - Leave voice channel\n"
             "`!stop` - Stop playing music\n"
