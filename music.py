@@ -81,32 +81,27 @@ class MusicBot:
             del self.guild_states[guild_id]
 
     async def join_voice_channel(self, ctx):
-        """Join user's voice channel reliably"""
-        # If bot is already connected in this guild, allow continuation
-        guild_vc = ctx.guild.voice_client
-        if guild_vc and guild_vc.is_connected():
+        """Join the invoking user's voice channel"""
+        # If already connected in this guild, do nothing
+        if ctx.voice_client and ctx.voice_client.is_connected():
             return True
-        # Determine channel to join: prefer existing bot channel, then user's channel
-        channel = None
-        # If bot was previously connected, reuse that channel
-        if guild_vc and hasattr(guild_vc, 'channel') and guild_vc.channel:
-            channel = guild_vc.channel
-        else:
-            user_voice = ctx.author.voice
-            if user_voice and user_voice.channel:
-                channel = user_voice.channel
-        if not channel:
+        # Ensure user is in a voice channel
+        user_voice = getattr(ctx.author, 'voice', None)
+        if not user_voice or not user_voice.channel:
             await ctx.send("❌ Join a voice channel first!")
             return False
+        channel = user_voice.channel
         try:
             vc = await channel.connect()
+            # Store voice channel in state for reconnect logic
+            state = self._get_guild_state(ctx.guild.id)
+            state['voice_channel_id'] = channel.id
             await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
         except Exception as e:
             err = str(e)
-            # Treat already-connected error as success
+            # Suppress already-connected warning
             if 'Already connected to a voice channel' in err:
-                print(f"[MUSIC] join warning (already connected): {err}")
                 return True
             print(f"[MUSIC] join error: {err}")
             await ctx.send(f"❌ Could not join voice channel: {err[:100]}")
@@ -449,8 +444,18 @@ class MusicBot:
                         except Exception as err:
                             print(f"[MUSIC] Health check reconnect failed for guild {guild_id}: {err}")
                 else:
-                    # Skip keep-alive silence to avoid interrupting playback
-                    pass
+                    # Send keep-alive silence if idle to prevent auto-disconnect
+                    try:
+                        if not vc.is_playing() and not vc.is_paused():
+                            silence = discord.FFmpegPCMAudio(
+                                'anullsrc=channel_layout=stereo:sample_rate=48000',
+                                before_options='-f lavfi -i anullsrc=channel_layout=stereo:duration=1',
+                                options='-vn -loglevel panic'
+                            )
+                            vc.play(silence, after=lambda e: None)
+                            print(f"[MUSIC] Sent keep-alive silence in guild {guild_id}")
+                    except Exception as err:
+                        print(f"[MUSIC] keep-alive error: {err}")
             await asyncio.sleep(60)
 
     def get_available_playlists(self):
