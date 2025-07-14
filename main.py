@@ -387,7 +387,9 @@ async def on_ready():
     # Initialize music bot
     music_bot = MusicBot(bot)
     print("Music bot initialized")
-    # Voice health check removed to simplify voice connection handling
+    # Start periodic voice health check to prevent unexpected disconnects
+    asyncio.create_task(music_bot.voice_health_check())
+    print("Voice health check started")
 
     # Voice health check disabled for stability
     # asyncio.create_task(music_bot.voice_health_check())
@@ -649,8 +651,8 @@ async def join(ctx):
     success = await music_bot.join_voice_channel(ctx)
     if not success:
         return
-    # Auto-start music after join, but don't auto-join again
-    await music_bot.play_music(ctx, auto_join=False)
+    # Auto-start music after join
+    await music_bot.play_music(ctx)
 
 @bot.command()
 async def leave(ctx):
