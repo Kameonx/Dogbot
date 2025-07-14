@@ -82,60 +82,33 @@ class MusicBot:
             del self.guild_states[guild_id]
 
     async def join_voice_channel(self, ctx):
-        """Join user's voice channel reliably"""
-        # If already connected and in the right channel, no need to rejoin
+        """Join a voice channel: prefer user's, fallback to last known."""
         vc = ctx.voice_client or ctx.guild.voice_client
-        if vc and vc.is_connected():
-            # Check if we're already in the target channel
-            state = self._get_guild_state(ctx.guild.id)
-            target_channel_id = None
-            if state.get('voice_channel_id'):
-                target_channel_id = state['voice_channel_id']
-            elif ctx.author.voice and ctx.author.voice.channel:
-                target_channel_id = ctx.author.voice.channel.id
-            
-            # If we're already in the right channel, just mark as active and return
-            if target_channel_id and vc.channel.id == target_channel_id:
-                state['active'] = True
-                return True
-        
-        # Determine target channel: prefer last known channel, then user's current channel
         state = self._get_guild_state(ctx.guild.id)
+        # Prefer user's channel, fallback to last known
         channel = None
-        if state.get('voice_channel_id'):
-            channel = ctx.guild.get_channel(state['voice_channel_id'])
-        elif ctx.author.voice and ctx.author.voice.channel:
+        if ctx.author.voice and ctx.author.voice.channel:
             channel = ctx.author.voice.channel
+        elif state.get('voice_channel_id'):
+            channel = ctx.guild.get_channel(state['voice_channel_id'])
         if not channel:
             await ctx.send("❌ No voice channel found to join.")
             return False
-        
         try:
-            vc = ctx.voice_client
             if not vc:
-                # Connect to the target channel
                 vc = await channel.connect()
-                await asyncio.sleep(0.5)  # Small delay to ensure connection is stable
             elif vc.channel.id != channel.id:
-                # Move if connected to a different channel
                 await vc.move_to(channel)
-                await asyncio.sleep(0.5)  # Small delay after moving
-            
-            # Verify connection is actually established
-            if not vc.is_connected():
+            if not vc or not vc.is_connected():
                 await ctx.send("❌ Failed to establish voice connection.")
                 return False
-            
-            # Remember this channel for future reconnects
             state['voice_channel_id'] = channel.id
-            # Mark music as active for this guild (enable auto reconnect)
             state['active'] = True
             await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
         except Exception as e:
             tb = traceback.format_exc()
             print(f"[MUSIC] join_voice_channel error: {tb}")
-            # Send full traceback to help debug connection issues
             await ctx.send(f"❌ Could not join voice channel. Traceback:\n```{tb}```")
             return False
 
