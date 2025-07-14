@@ -431,58 +431,6 @@ class MusicBot:
             target_chan = ctx.channel
         await target_chan.send(msg)
 
-    async def voice_health_check(self):
-        """Periodically ensure the bot stays connected to its voice channel and send keep-alive silence."""
-        await self.bot.wait_until_ready()
-        while not self.bot.is_closed():
-            try:
-                for guild_id, state in list(self.guild_states.items()):
-                    # Skip health check if music is not active for this guild
-                    if not state.get('active', False):
-                        continue
-                    
-                    channel_id = state.get('voice_channel_id')
-                    guild = self.bot.get_guild(guild_id)
-                    if not guild or not channel_id:
-                        continue
-                    
-                    vc = guild.voice_client
-                    channel = guild.get_channel(channel_id)
-                    
-                    # Only reconnect if we're truly disconnected and channel exists
-                    if not vc or not vc.is_connected():
-                        if channel:
-                            try:
-                                await channel.connect()
-                                print(f"[MUSIC] Health check reconnected to {channel.name} in guild {guild_id}")
-                                # Resume playing if we have a playlist
-                                if state.get('current_playlist'):
-                                    # Create a simple context object for reconnection
-                                    class SimpleCtx:
-                                        def __init__(self, guild, channel):
-                                            self.guild = guild
-                                            self.channel = channel  # text channel for messages
-                                            self.voice_client = guild.voice_client
-                                    
-                                    # Find a text channel to send messages to
-                                    text_channel = None
-                                    for text_chan in guild.text_channels:
-                                        if text_chan.name == channel.name:
-                                            text_channel = text_chan
-                                            break
-                                    if not text_channel:
-                                        text_channel = guild.text_channels[0] if guild.text_channels else None
-                                    
-                                    if text_channel:
-                                        simple_ctx = SimpleCtx(guild, text_channel)
-                                        await self._play_current_song(simple_ctx)
-                            except Exception as err:
-                                print(f"[MUSIC] Health check reconnect failed for guild {guild_id}: {err}")
-                
-                await asyncio.sleep(60)  # Check every minute
-            except Exception as e:
-                print(f"[MUSIC] Error in voice health check: {e}")
-                await asyncio.sleep(60)
 
     def get_available_playlists(self):
         """Get list of available playlists"""
