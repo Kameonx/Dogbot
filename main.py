@@ -387,9 +387,7 @@ async def on_ready():
     # Initialize music bot
     music_bot = MusicBot(bot)
     print("Music bot initialized")
-    # Start periodic voice health check to prevent unexpected disconnects
-    asyncio.create_task(music_bot.voice_health_check())
-    print("Voice health check started")
+    # Voice health check removed to simplify voice connection handling
 
     # Voice health check disabled for stability
     # asyncio.create_task(music_bot.voice_health_check())
