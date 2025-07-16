@@ -96,8 +96,6 @@ class MusicBot:
             # Store voice channel in state for reconnect logic
             state = self._get_guild_state(ctx.guild.id)
             state['voice_channel_id'] = channel.id
-            # Store text channel where join was invoked
-            state['text_channel_id'] = ctx.channel.id
             await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
         except Exception as e:
@@ -411,21 +409,17 @@ class MusicBot:
             except Exception as err:
                 print(f"[MUSIC] Error resuming playlist: {err}")
         voice_client.play(player, after=after)
-        # Send now playing message to the channel where join was used
+        # Send now playing message to appropriate text channel
         msg = f"🎵 Now playing URL: **{player.title}**"
-        # Determine stored join text channel
-        state = self._get_guild_state(ctx.guild.id)
-        join_channel_id = state.get('text_channel_id')
-        target_chan = ctx.guild.get_channel(join_channel_id) if join_channel_id else None
-        # Fallback to matching voice channel text channel
-        if not target_chan:
-            voice_chan = ctx.voice_client.channel if ctx.voice_client else None
-            if voice_chan:
-                for text_chan in ctx.guild.text_channels:
-                    if text_chan.name == voice_chan.name:
-                        target_chan = text_chan
-                        break
-        # Final fallback to command channel
+        # Prefer a text channel matching the voice channel name
+        voice_chan = ctx.voice_client.channel if ctx.voice_client else None
+        target_chan = None
+        if voice_chan:
+            for text_chan in ctx.guild.text_channels:
+                if text_chan.name == voice_chan.name:
+                    target_chan = text_chan
+                    break
+        # Fallback to command channel
         if not target_chan:
             target_chan = ctx.channel
         await target_chan.send(msg)
