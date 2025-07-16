@@ -217,18 +217,32 @@ class MusicBot:
                 await ctx.send(f"❌ No songs in playlist!")
                 return
 
-            # Use the MUSIC_PLAYLISTS list directly
-            playlist = MUSIC_PLAYLISTS.copy()
-            
-            # Set up guild state
+            # Get current guild state
             state = self._get_guild_state(ctx.guild.id)
-            state['current_playlist'] = playlist
-            state['current_index'] = 0
             
-            # Shuffle playlist
-            random.shuffle(state['current_playlist'])
+            # Check if music is already playing
+            if voice_client.is_playing():
+                await ctx.send("🎵 Music is already playing! Use `!stop` to stop current playback first.")
+                return
             
-            await ctx.send(f"🎵 Starting music playlist ({len(playlist)} songs)")
+            # Only set up new playlist if we don't have one or it's empty
+            if not state.get('current_playlist'):
+                # Use the MUSIC_PLAYLISTS list directly
+                playlist = MUSIC_PLAYLISTS.copy()
+                
+                # Set up guild state with new playlist
+                state['current_playlist'] = playlist
+                state['current_index'] = 0
+                
+                # Shuffle playlist
+                random.shuffle(state['current_playlist'])
+                
+                await ctx.send(f"🎵 Starting music playlist ({len(playlist)} songs)")
+            else:
+                # Resume existing playlist
+                playlist_length = len(state['current_playlist'])
+                current_index = state['current_index']
+                await ctx.send(f"🎵 Resuming playlist at song {current_index + 1}/{playlist_length}")
             
             # Start playing
             await self._play_current_song(ctx)
@@ -473,81 +487,90 @@ class MusicBot:
 
     async def play_url(self, ctx, url):
         """Play a single URL, then resume the main playlist"""
-        # Ensure voice connection
-        voice_client = ctx.voice_client or ctx.guild.voice_client
-        if not voice_client or not voice_client.is_connected():
-            # Try to reconnect to previous channel without requiring user
-            state = self._get_guild_state(ctx.guild.id)
-            channel_id = state.get('voice_channel_id')
-            if channel_id:
-                channel = ctx.guild.get_channel(channel_id)
-                if channel:
-                    try:
-                        voice_client = await channel.connect()
-                    except Exception as e:
-                        print(f"[MUSIC] play_url reconnect error: {e}")
-            # Fallback to user-initiated join if still not connected
-            if not voice_client or not voice_client.is_connected():
-                if not await self.join_voice_channel(ctx):
-                    return
-                voice_client = ctx.voice_client or ctx.guild.voice_client
-        # Save current playlist state to resume later
-        prev_state = self.guild_states.get(ctx.guild.id)
-        saved_state = None
-        if prev_state:
-            saved_state = {
-                'current_playlist': list(prev_state['current_playlist']),
-                'current_index': prev_state['current_index']
-            }
-        # Remove state so playlist callbacks are suppressed
-        self.guild_states.pop(ctx.guild.id, None)
-        # Stop any current playback
-        if voice_client.is_playing():
-            voice_client.stop()
         try:
-            player = await YouTubeAudioSource.from_url(url)
-        except Exception as e:
-            # Restore previous playlist state on failure
-            if saved_state is not None:
-                self.guild_states[ctx.guild.id] = saved_state
-            await ctx.send(f"❌ Failed to load URL: {e}")
-            return
-        def after(error):
-            if error:
-                print(f"[MUSIC] URL playback error: {error}")
-            # Restore previous playlist state and resume from next song
-            if saved_state is not None:
-                # Advance index to next track
-                restored_index = saved_state['current_index'] + 1
-                playlist = saved_state['current_playlist']
-                # Wrap around or reshuffle if at end
-                if restored_index >= len(playlist):
-                    restored_index = 0
-                    random.shuffle(playlist)
-                self.guild_states[ctx.guild.id] = {
-                    'current_playlist': playlist,
-                    'current_index': restored_index
-                }
+            # Ensure voice connection
+            if not await self.join_voice_channel(ctx):
+                return
+            
+            voice_client = ctx.voice_client or ctx.guild.voice_client
+            if not voice_client or not voice_client.is_connected():
+                await ctx.send("❌ Voice connection failed!")
+                return
+            
+            # Stop any current playback
+            if voice_client.is_playing():
+                voice_client.stop()
+                await asyncio.sleep(0.5)  # Brief pause to ensure clean stop
+            
+            # Create player for the URL
             try:
-                # Play next song from restored state
-                self.bot.loop.create_task(self._play_current_song(ctx))
-            except Exception as err:
-                print(f"[MUSIC] Error resuming playlist: {err}")
-        voice_client.play(player, after=after)
-        # Send now playing message to appropriate text channel
-        msg = f"🎵 Now playing URL: **{player.title}**"
-        # Prefer a text channel matching the voice channel name
-        voice_chan = ctx.voice_client.channel if ctx.voice_client else None
-        target_chan = None
-        if voice_chan:
-            for text_chan in ctx.guild.text_channels:
-                if text_chan.name == voice_chan.name:
-                    target_chan = text_chan
-                    break
-        # Fallback to command channel
-        if not target_chan:
-            target_chan = ctx.channel
-        await target_chan.send(msg)
+                player = await YouTubeAudioSource.from_url(url)
+            except Exception as e:
+                await ctx.send(f"❌ Failed to load URL: {str(e)[:100]}")
+                return
+            
+            # Play the URL
+            def after_url(error):
+                if error:
+                    print(f"[MUSIC] URL playback error: {error}")
+                # Resume playlist after URL finishes
+                try:
+                    state = self._get_guild_state(ctx.guild.id)
+                    if state.get('current_playlist'):
+                        # Continue with current playlist
+                        self.bot.loop.create_task(self._play_current_song(ctx))
+                except Exception as err:
+                    print(f"[MUSIC] Error resuming playlist after URL: {err}")
+            
+            voice_client.play(player, after=after_url)
+            
+            # Send now playing message
+            await ctx.send(f"🎵 Now playing URL: **{player.title}**")
+            
+        except Exception as e:
+            await ctx.send(f"❌ Error playing URL: {str(e)[:100]}")
+            print(f"[MUSIC] Error in play_url: {e}")
+
+    async def start_fresh_playlist(self, ctx):
+        """Start a fresh playlist from the beginning"""
+        try:
+            # Ensure connected using join logic
+            if not await self.join_voice_channel(ctx):
+                return
+            voice_client = ctx.voice_client or ctx.guild.voice_client
+            if not voice_client or not voice_client.is_connected():
+                await ctx.send("❌ Voice connection failed!")
+                return
+
+            # Check playlist availability
+            if not MUSIC_PLAYLISTS:
+                await ctx.send(f"❌ No songs in playlist!")
+                return
+
+            # Stop any current playback
+            if voice_client.is_playing():
+                voice_client.stop()
+                await asyncio.sleep(0.5)
+
+            # Always create a fresh playlist
+            playlist = MUSIC_PLAYLISTS.copy()
+            
+            # Set up guild state with new playlist
+            state = self._get_guild_state(ctx.guild.id)
+            state['current_playlist'] = playlist
+            state['current_index'] = 0
+            
+            # Shuffle playlist
+            random.shuffle(state['current_playlist'])
+            
+            await ctx.send(f"🎵 Starting fresh playlist ({len(playlist)} songs)")
+            
+            # Start playing
+            await self._play_current_song(ctx)
+            
+        except Exception as e:
+            await ctx.send(f"❌ Error starting fresh playlist: {str(e)[:100]}")
+            print(f"[MUSIC] Error in start_fresh_playlist: {e}")
 
     async def voice_health_check(self):
         """Periodically check voice connection health and reconnect if needed."""
