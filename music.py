@@ -85,6 +85,21 @@ class MusicBot:
         # If already connected in this guild, do nothing
         if ctx.voice_client and ctx.voice_client.is_connected():
             return True
+
+        # Attempt to reconnect using stored channel id
+        state = self._get_guild_state(ctx.guild.id)
+        saved_channel_id = state.get('voice_channel_id')
+        if saved_channel_id:
+            channel = ctx.guild.get_channel(saved_channel_id)
+            if channel:
+                try:
+                    vc = await channel.connect()
+                    state['voice_channel_id'] = channel.id
+                    await ctx.send(f"✅ Reconnected to **{channel.name}**")
+                    return True
+                except Exception as e:
+                    print(f"[MUSIC] reconnect error: {e}")
+
         # Ensure user is in a voice channel
         user_voice = getattr(ctx.author, 'voice', None)
         if not user_voice or not user_voice.channel:
