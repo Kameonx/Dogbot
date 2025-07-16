@@ -76,32 +76,70 @@ class MusicBot:
         return self.guild_states[guild_id]
 
     def _cleanup_guild_state(self, guild_id):
-        """Clean up guild state"""
+        """Clean up guild state and voice client"""
         if guild_id in self.guild_states:
             del self.guild_states[guild_id]
+        
+        # Also clean up any stale voice client references
+        guild = self.bot.get_guild(guild_id)
+        if guild and guild.voice_client:
+            try:
+                guild.voice_client.cleanup()
+            except:
+                pass
 
     async def join_voice_channel(self, ctx):
         """Join the invoking user's voice channel"""
-        # If already connected in this guild, do nothing
-        if ctx.voice_client and ctx.voice_client.is_connected():
-            return True
+        # First, always check if we have a stale voice client and clean it up
+        if ctx.voice_client:
+            try:
+                # Test if the connection is actually alive
+                is_actually_connected = (
+                    ctx.voice_client.is_connected() and 
+                    ctx.voice_client.channel is not None and
+                    ctx.guild.me in ctx.voice_client.channel.members
+                )
+                
+                if is_actually_connected:
+                    print(f"[MUSIC] Already connected to voice channel: {ctx.voice_client.channel.name}")
+                    return True
+                else:
+                    print(f"[MUSIC] Cleaning up stale voice client")
+                    await ctx.voice_client.disconnect()
+                    # Give a moment for the cleanup to complete
+                    await asyncio.sleep(0.5)
+            except Exception as e:
+                print(f"[MUSIC] Error during voice client cleanup: {e}")
+                # Force cleanup by setting to None if disconnect fails
+                try:
+                    ctx.voice_client.cleanup()
+                except:
+                    pass
+        
         # Ensure user is in a voice channel
         user_voice = getattr(ctx.author, 'voice', None)
         if not user_voice or not user_voice.channel:
             await ctx.send("❌ Join a voice channel first!")
             return False
+        
         channel = user_voice.channel
         try:
+            print(f"[MUSIC] Attempting to connect to channel: {channel.name}")
             vc = await channel.connect()
             # Store voice channel in state for reconnect logic
             state = self._get_guild_state(ctx.guild.id)
             state['voice_channel_id'] = channel.id
+            print(f"[MUSIC] Successfully connected to: {channel.name}")
             await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
         except Exception as e:
             err = str(e)
-            # Suppress already-connected warning
+            # Handle specific connection errors
             if 'Already connected to a voice channel' in err:
+                print(f"[MUSIC] Already connected (caught exception)")
+                # Still store the channel info in state
+                state = self._get_guild_state(ctx.guild.id)
+                state['voice_channel_id'] = channel.id
                 return True
             print(f"[MUSIC] join error: {err}")
             await ctx.send(f"❌ Could not join voice channel: {err[:100]}")
@@ -112,12 +150,53 @@ class MusicBot:
         try:
             if ctx.voice_client:
                 await ctx.voice_client.disconnect()
+                # Give a moment for the disconnect to complete
+                await asyncio.sleep(0.5)
                 self._cleanup_guild_state(ctx.guild.id)
                 await ctx.send("👋 Left the voice channel!")
             else:
                 await ctx.send("❌ I'm not connected to a voice channel!")
         except Exception as e:
             await ctx.send(f"❌ Error leaving voice channel: {str(e)[:100]}")
+            # Force cleanup even if disconnect fails
+            self._cleanup_guild_state(ctx.guild.id)
+
+    async def force_cleanup(self, ctx):
+        """Force cleanup of voice connection and state"""
+        try:
+            guild_id = ctx.guild.id
+            
+            # Force disconnect all voice clients
+            if ctx.voice_client:
+                try:
+                    await ctx.voice_client.disconnect()
+                except:
+                    pass
+                try:
+                    ctx.voice_client.cleanup()
+                except:
+                    pass
+            
+            # Also check guild voice client
+            if ctx.guild.voice_client:
+                try:
+                    await ctx.guild.voice_client.disconnect()
+                except:
+                    pass
+                try:
+                    ctx.guild.voice_client.cleanup()
+                except:
+                    pass
+            
+            # Clean up state
+            self._cleanup_guild_state(guild_id)
+            
+            await ctx.send("🧹 Force cleanup completed!")
+            
+        except Exception as e:
+            await ctx.send(f"❌ Error during force cleanup: {str(e)[:100]}")
+            # Still try to clean up state
+            self._cleanup_guild_state(ctx.guild.id)
 
     async def play_music(self, ctx, playlist_name="main"):
         """Improved music playback with better voice connection handling"""
@@ -165,13 +244,53 @@ class MusicBot:
         try:
             # Enhanced voice client verification
             voice_client = ctx.voice_client or ctx.guild.voice_client
+            
+            # Check if we need to reconnect
             if not voice_client or not voice_client.is_connected():
-                # Try to reconnect if disconnected
-                reconnected = await self.join_voice_channel(ctx)
-                if not reconnected:
-                    print("[MUSIC] Could not reconnect, stopping playback")
-                    return
-                voice_client = ctx.voice_client or ctx.guild.voice_client
+                print("[MUSIC] Voice client disconnected, attempting to reconnect...")
+                
+                # Try to get the stored voice channel first
+                state = self._get_guild_state(ctx.guild.id)
+                channel_id = state.get('voice_channel_id')
+                
+                if channel_id:
+                    # Try to reconnect to the stored channel
+                    channel = ctx.guild.get_channel(channel_id)
+                    if channel:
+                        try:
+                            print(f"[MUSIC] Reconnecting to stored channel: {channel.name}")
+                            # Force cleanup first
+                            if voice_client:
+                                try:
+                                    await voice_client.disconnect()
+                                except:
+                                    pass
+                                try:
+                                    voice_client.cleanup()
+                                except:
+                                    pass
+                            
+                            await channel.connect()
+                            voice_client = ctx.voice_client or ctx.guild.voice_client
+                        except Exception as e:
+                            print(f"[MUSIC] Failed to reconnect to stored channel: {e}")
+                            # Clear invalid channel ID
+                            state.pop('voice_channel_id', None)
+                            voice_client = None
+                
+                # If we still don't have a connection, try regular join
+                if not voice_client or not voice_client.is_connected():
+                    print("[MUSIC] Attempting regular join...")
+                    reconnected = await self.join_voice_channel(ctx)
+                    if not reconnected:
+                        print("[MUSIC] Could not reconnect, stopping playback")
+                        return
+                    voice_client = ctx.voice_client or ctx.guild.voice_client
+            
+            # Double-check the voice client is valid
+            if not voice_client or not voice_client.is_connected():
+                print("[MUSIC] Voice client still not connected after reconnection attempts")
+                return
             
             state = self._get_guild_state(ctx.guild.id)
             playlist = state['current_playlist']
@@ -260,15 +379,21 @@ class MusicBot:
         """Advance to next song"""
         try:
             # Check if still connected to voice
-            if not ctx.voice_client:
-                print("Voice client disconnected, stopping music")
+            voice_client = ctx.voice_client or ctx.guild.voice_client
+            if not voice_client or not voice_client.is_connected():
+                print("[MUSIC] Voice client disconnected during advance, stopping music")
                 return
                 
             state = self._get_guild_state(ctx.guild.id)
             state['current_index'] += 1
             await self._play_current_song(ctx)
         except Exception as e:
-            print(f"Error advancing to next song: {e}")
+            print(f"[MUSIC] Error advancing to next song: {e}")
+            # Try to continue playing if possible
+            try:
+                await self._play_current_song(ctx)
+            except Exception as e2:
+                print(f"[MUSIC] Failed to recover from advance error: {e2}")
 
     async def skip_song(self, ctx):
         """Skip current song"""
@@ -425,38 +550,96 @@ class MusicBot:
         await target_chan.send(msg)
 
     async def voice_health_check(self):
-        """Periodically ensure the bot stays connected to its voice channel and send keep-alive silence."""
+        """Periodically check voice connection health and reconnect if needed."""
         await self.bot.wait_until_ready()
+        print("[MUSIC] Voice health check started")
+        
         while not self.bot.is_closed():
-            for guild_id, state in list(self.guild_states.items()):
-                channel_id = state.get('voice_channel_id')
-                guild = self.bot.get_guild(guild_id)
-                if not guild or not channel_id:
-                    continue
-                vc = guild.voice_client
-                # Reconnect if disconnected
-                if not vc or not getattr(vc, 'is_connected', lambda: False)():
+            try:
+                for guild_id, state in list(self.guild_states.items()):
+                    channel_id = state.get('voice_channel_id')
+                    guild = self.bot.get_guild(guild_id)
+                    
+                    if not guild or not channel_id:
+                        continue
+                    
                     channel = guild.get_channel(channel_id)
-                    if channel:
+                    if not channel:
+                        # Channel no longer exists, clean up state
+                        print(f"[MUSIC] Cleaning up state for non-existent channel in guild {guild_id}")
+                        state.pop('voice_channel_id', None)
+                        continue
+                    
+                    vc = guild.voice_client
+                    
+                    # Check if we should be connected but aren't, or if connection is stale
+                    needs_reconnect = False
+                    reason = "unknown"
+                    
+                    if not vc or not vc.is_connected():
+                        needs_reconnect = True
+                        reason = "no voice client or not connected"
+                    else:
+                        # Check if the connection is actually alive by verifying bot is in channel
                         try:
+                            if vc.channel != channel or guild.me not in vc.channel.members:
+                                needs_reconnect = True
+                                reason = "bot not in expected voice channel"
+                        except Exception as e:
+                            needs_reconnect = True
+                            reason = f"error checking connection: {e}"
+                    
+                    if needs_reconnect:
+                        print(f"[MUSIC] Voice client needs reconnection in guild {guild_id}: {reason}")
+                        try:
+                            # Clean up old connection first
+                            if vc:
+                                try:
+                                    await vc.disconnect()
+                                except:
+                                    pass
+                                await asyncio.sleep(1)  # Wait for cleanup
+                            
+                            # Reconnect
                             await channel.connect()
-                            print(f"[MUSIC] Reconnected to voice channel {channel.name} in guild {guild_id}")
+                            print(f"[MUSIC] Successfully reconnected to {channel.name} in guild {guild_id}")
+                            
+                            # If we have a playlist and should be playing, restart playback
+                            if (state.get('current_playlist') and 
+                                not guild.voice_client.is_playing() and 
+                                not guild.voice_client.is_paused()):
+                                print(f"[MUSIC] Restarting playback after reconnection in guild {guild_id}")
+                                # Create a minimal context for playback
+                                class MinimalContext:
+                                    def __init__(self, guild, channel):
+                                        self.guild = guild
+                                        self.channel = channel
+                                        self.voice_client = guild.voice_client
+                                        self.send = lambda msg: None  # Dummy send function
+                                
+                                # Find a text channel to send messages to
+                                text_channel = None
+                                for tc in guild.text_channels:
+                                    if tc.name == channel.name:
+                                        text_channel = tc
+                                        break
+                                if not text_channel:
+                                    text_channel = guild.text_channels[0] if guild.text_channels else None
+                                
+                                if text_channel:
+                                    minimal_ctx = MinimalContext(guild, text_channel)
+                                    self.bot.loop.create_task(self._play_current_song(minimal_ctx))
+                                    
                         except Exception as err:
                             print(f"[MUSIC] Health check reconnect failed for guild {guild_id}: {err}")
-                else:
-                    # Send keep-alive silence if idle to prevent auto-disconnect
-                    try:
-                        if not vc.is_playing() and not vc.is_paused():
-                            silence = discord.FFmpegPCMAudio(
-                                'anullsrc=channel_layout=stereo:sample_rate=48000',
-                                before_options='-f lavfi -i anullsrc=channel_layout=stereo:duration=1',
-                                options='-vn -loglevel panic'
-                            )
-                            vc.play(silence, after=lambda e: None)
-                            print(f"[MUSIC] Sent keep-alive silence in guild {guild_id}")
-                    except Exception as err:
-                        print(f"[MUSIC] keep-alive error: {err}")
-            await asyncio.sleep(60)
+                            # Clean up state on persistent failure
+                            state.pop('voice_channel_id', None)
+                            
+                await asyncio.sleep(30)  # Check every 30 seconds
+                
+            except Exception as e:
+                print(f"[MUSIC] Voice health check error: {e}")
+                await asyncio.sleep(30)  # Continue checking even if there's an error
 
     def get_available_playlists(self):
         """Get list of available playlists"""
