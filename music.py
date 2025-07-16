@@ -101,8 +101,6 @@ class MusicBot:
             # Store voice channel in state for reconnect logic
             state['voice_channel'] = channel
             state['voice_channel_id'] = channel.id
-            # Remember text channel where join was invoked
-            state['text_channel_id'] = ctx.channel.id
             await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
         except Exception as e:
@@ -252,9 +250,10 @@ class MusicBot:
                             if text_chan.name == voice_chan.name:
                                 target_chan = text_chan
                                 break
-                # Final fallback to current context
+                # Do not fallback to invoking channel; require stored join channel or matching channel
                 if not target_chan:
-                    target_chan = ctx.channel
+                    print(f"[MUSIC] now-playing: no valid text channel found for guild {ctx.guild.id}, skipping message")
+                    return
                 video_link = player.data.get('webpage_url') or player.url
                 message_content = f"🎵 Now playing: [{player.title}]({video_link}) ({index + 1}/{len(playlist)})"
                 await target_chan.send(message_content)
@@ -400,12 +399,19 @@ class MusicBot:
                     return
                 voice_client = ctx.voice_client or ctx.guild.voice_client
         # Save current playlist state to resume later
-        prev_state = self.guild_states.get(ctx.guild.id)
+        # Preserve text channel for now-playing
+        initial_state = self._get_guild_state(ctx.guild.id)
+        text_channel_id = initial_state.get('text_channel_id')
+        # Save current playlist state and context to resume later
+        prev_state = initial_state
         saved_state = None
         if prev_state:
             saved_state = {
-                'current_playlist': list(prev_state['current_playlist']),
-                'current_index': prev_state['current_index']
+                'current_playlist': list(prev_state.get('current_playlist', [])),
+                'current_index': prev_state.get('current_index', 0),
+                'text_channel_id': prev_state.get('text_channel_id'),
+                'voice_channel': prev_state.get('voice_channel'),
+                'voice_channel_id': prev_state.get('voice_channel_id')
             }
         # Remove state so playlist callbacks are suppressed
         self.guild_states.pop(ctx.guild.id, None)
@@ -456,9 +462,10 @@ class MusicBot:
                     if text_chan.name == voice_chan.name:
                         target_chan = text_chan
                         break
-        # Final fallback to context channel
+        # Only send to stored join channel or matching voice named channel
         if not target_chan:
-            target_chan = ctx.channel
+            print(f"[MUSIC] now-playing-url: no valid text channel for guild {ctx.guild.id}, skipping message")
+            return
         await target_chan.send(f"🎵 Now playing URL: **{player.title}**")
 
     async def voice_health_check(self):
