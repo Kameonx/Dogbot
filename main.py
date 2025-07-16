@@ -648,17 +648,10 @@ async def join(ctx):
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    # If already playing, stop and reset before joining
-    if ctx.voice_client and ctx.voice_client.is_playing():
-        ctx.voice_client.stop()
-        music_bot._cleanup_guild_state(ctx.guild.id)
 
     success = await music_bot.join_voice_channel(ctx)
     if not success:
         return
-    # Record join channel for now-playing messages
-    state = music_bot._get_guild_state(ctx.guild.id)
-    state['text_channel_id'] = ctx.channel.id
     # Auto-start music after join
     await music_bot.play_music(ctx)
 
@@ -673,18 +666,9 @@ async def leave(ctx):
 @bot.command()
 async def start(ctx):
     """Start playing music"""
-    print(f"[MUSIC] !start invoked by {ctx.author} in #{ctx.channel.name}")  # Debug log start invocation
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    # If connected to a voice channel, disconnect to fully reset audio
-    if ctx.voice_client:
-        await ctx.voice_client.disconnect()
-        music_bot._cleanup_guild_state(ctx.guild.id)
-    # Remember this channel for now-playing messages
-    state = music_bot._get_guild_state(ctx.guild.id)
-    state['text_channel_id'] = ctx.channel.id
-    # Start playback
     await music_bot.play_music(ctx)
 
 @bot.command()
@@ -726,22 +710,12 @@ async def previous(ctx):
     await ctx.send("❌ Previous song not available in simplified mode!")
 
 @bot.command()
-async def play(ctx, *, url: Optional[str] = None):
-    """Play the main playlist or a single YouTube URL if provided."""
+async def play(ctx, *, url: str):
+    """Play a single YouTube URL, then resume the main playlist."""
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    if url:
-        await music_bot.play_url(ctx, url)
-    else:
-        # Mirror !start: fully disconnect and reset
-        if ctx.voice_client:
-            await ctx.voice_client.disconnect()
-            music_bot._cleanup_guild_state(ctx.guild.id)
-        # Record channel for now-playing
-        state = music_bot._get_guild_state(ctx.guild.id)
-        state['text_channel_id'] = ctx.channel.id
-        await music_bot.play_music(ctx)
+    await music_bot.play_url(ctx, url)
 
 @bot.command()
 async def playlist(ctx):
