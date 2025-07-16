@@ -537,8 +537,9 @@ async def help(ctx):
         name="🎵 **Music Commands**",
         value=(
             "`!join` - Join your voice channel and start music\n"
-            "`!play [youtube_url]` - Play main playlist or a single YouTube URL\n"
-            "`!start` - Start playing music (will join channel if needed)\n"
+            "`!play [youtube_url]` - Play a YouTube URL or resume playlist\n"
+            "`!start` - Start a fresh playlist from the beginning\n"
+            "`!resume_playlist` - Resume current playlist where it left off\n"
             "`!leave` - Leave voice channel\n"
             "`!stop` - Stop playing music\n"
             "`!next` / `!skip` - Skip to next song\n"
@@ -687,7 +688,7 @@ async def hello(ctx):
 # Music Bot Commands
 @bot.command()
 async def join(ctx):
-    """Join voice channel and auto-start music"""
+    """Join voice channel and start a fresh playlist"""
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
@@ -705,12 +706,8 @@ async def join(ctx):
     except Exception as e:
         print(f"[MUSIC] Error during pre-join cleanup: {e}")
 
-    success = await music_bot.join_voice_channel(ctx)
-    if not success:
-        return
-    
-    # Auto-start music after successful join
-    await music_bot.play_music(ctx)
+    # Start fresh playlist
+    await music_bot.start_fresh_playlist(ctx)
 
 @bot.command()
 async def leave(ctx):
@@ -722,7 +719,15 @@ async def leave(ctx):
 
 @bot.command()
 async def start(ctx):
-    """Start playing music"""
+    """Start playing music (fresh playlist)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.start_fresh_playlist(ctx)
+
+@bot.command()
+async def resume_playlist(ctx):
+    """Resume the current playlist where it left off"""
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
@@ -851,16 +856,20 @@ async def voicestatus(ctx):
 
 @bot.command()
 async def play(ctx, *, url: Optional[str] = None):
-    """Play main playlist or a single YouTube URL"""
+    """Play a single YouTube URL or resume current playlist"""
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
     
     if url:
+        # Validate URL
+        if not any(domain in url.lower() for domain in ['youtube.com', 'youtu.be']):
+            await ctx.send("❌ Please provide a valid YouTube URL!")
+            return
         # Play single URL
         await music_bot.play_url(ctx, url)
     else:
-        # Start main playlist
+        # Resume current playlist
         await music_bot.play_music(ctx)
 
 @bot.command()
