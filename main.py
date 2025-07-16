@@ -387,13 +387,10 @@ async def on_ready():
     # Initialize music bot
     music_bot = MusicBot(bot)
     print("Music bot initialized")
-    # Voice health check disabled to prevent unintentional disconnects
-    # asyncio.create_task(music_bot.voice_health_check())
-    # print("Voice health check started")
-
-    # Voice health check disabled for stability
-    # asyncio.create_task(music_bot.voice_health_check())
-    # print("Voice health check started")
+    
+    # Enable voice health check to prevent disconnections
+    asyncio.create_task(music_bot.voice_health_check())
+    print("Voice health check started")
 
 @bot.event
 async def on_disconnect():
@@ -447,9 +444,12 @@ async def on_voice_state_update(member, before, after):
     # Only act on bot's own voice state
     if bot.user is None or member.id != bot.user.id:
         return
+    
     # If bot was in a voice channel and now disconnected
     if before.channel and after.channel is None:
         guild_id = before.channel.guild.id
+        print(f"[MUSIC] Bot disconnected from voice channel {before.channel.name} in guild {guild_id}")
+        
         # Get last known voice channel
         if music_bot:
             state = music_bot._get_guild_state(guild_id)
@@ -458,10 +458,53 @@ async def on_voice_state_update(member, before, after):
                 channel = before.channel.guild.get_channel(channel_id)
                 if channel:
                     try:
+                        print(f"[MUSIC] Attempting to auto-rejoin channel {channel.name}")
+                        await asyncio.sleep(2)  # Brief delay to prevent rapid reconnection
                         await channel.connect()
-                        print(f"[MUSIC] Auto-rejoined to voice channel {channel.name} in guild {guild_id}")
+                        print(f"[MUSIC] Successfully auto-rejoined to voice channel {channel.name}")
+                        
+                        # If we have a playlist and should be playing, restart playback
+                        if (state.get('current_playlist') and 
+                            not before.channel.guild.voice_client.is_playing() and 
+                            not before.channel.guild.voice_client.is_paused()):
+                            print(f"[MUSIC] Restarting playback after auto-rejoin")
+                            # Create a minimal context for playback
+                            class MinimalContext:
+                                def __init__(self, guild, channel):
+                                    self.guild = guild
+                                    self.channel = channel
+                                    self.voice_client = guild.voice_client
+                                    self.send = lambda msg: None  # Dummy send function
+                            
+                            # Find a text channel to send messages to
+                            text_channel = None
+                            for tc in before.channel.guild.text_channels:
+                                if tc.name == channel.name:
+                                    text_channel = tc
+                                    break
+                            if not text_channel:
+                                text_channel = before.channel.guild.text_channels[0] if before.channel.guild.text_channels else None
+                            
+                            if text_channel:
+                                minimal_ctx = MinimalContext(before.channel.guild, text_channel)
+                                bot.loop.create_task(music_bot._play_current_song(minimal_ctx))
+                                
                     except Exception as e:
                         print(f"[MUSIC] Auto-rejoin failed: {e}")
+                        # Clear the voice channel ID if auto-rejoin fails
+                        state.pop('voice_channel_id', None)
+                else:
+                    print(f"[MUSIC] Could not find channel with ID {channel_id}")
+                    # Clear invalid channel ID
+                    state.pop('voice_channel_id', None)
+    
+    # If bot joined a voice channel, ensure we have it stored
+    elif after.channel and not before.channel:
+        guild_id = after.channel.guild.id
+        print(f"[MUSIC] Bot joined voice channel {after.channel.name} in guild {guild_id}")
+        if music_bot:
+            state = music_bot._get_guild_state(guild_id)
+            state['voice_channel_id'] = after.channel.id
 
 # Helper function to check for admin/moderator permissions
 def has_admin_or_moderator_role(ctx):
@@ -649,10 +692,24 @@ async def join(ctx):
         await ctx.send("❌ Music bot is not initialized!")
         return
 
+    # Check if user is in a voice channel
+    user_voice = getattr(ctx.author, 'voice', None)
+    if not user_voice or not user_voice.channel:
+        await ctx.send("❌ Join a voice channel first!")
+        return
+
+    # Do a force cleanup first to ensure clean state
+    try:
+        await music_bot.force_cleanup(ctx)
+        await asyncio.sleep(1)  # Brief pause after cleanup
+    except Exception as e:
+        print(f"[MUSIC] Error during pre-join cleanup: {e}")
+
     success = await music_bot.join_voice_channel(ctx)
     if not success:
         return
-    # Auto-start music after join
+    
+    # Auto-start music after successful join
     await music_bot.play_music(ctx)
 
 @bot.command()
@@ -710,12 +767,101 @@ async def previous(ctx):
     await ctx.send("❌ Previous song not available in simplified mode!")
 
 @bot.command()
-async def play(ctx, *, url: str):
-    """Play a single YouTube URL, then resume the main playlist."""
+async def forcecleanup(ctx):
+    """Force cleanup voice connection and state (use if bot is stuck)"""
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    await music_bot.play_url(ctx, url)
+    await music_bot.force_cleanup(ctx)
+
+@bot.command()
+async def voicestatus(ctx):
+    """Check voice connection status"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    embed = discord.Embed(
+        title="🔊 Voice Connection Status",
+        color=discord.Color.blue()
+    )
+    
+    # Check user's voice state
+    user_voice = getattr(ctx.author, 'voice', None)
+    if user_voice and user_voice.channel:
+        embed.add_field(
+            name="👤 Your Voice Channel",
+            value=f"**{user_voice.channel.name}** (ID: {user_voice.channel.id})",
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="👤 Your Voice Channel",
+            value="❌ Not in any voice channel",
+            inline=False
+        )
+    
+    # Check bot's voice state
+    bot_voice = ctx.voice_client
+    if bot_voice and bot_voice.is_connected():
+        embed.add_field(
+            name="🤖 Bot Voice Channel",
+            value=f"**{bot_voice.channel.name}** (ID: {bot_voice.channel.id})",
+            inline=False
+        )
+        embed.add_field(
+            name="🎵 Playback Status",
+            value=f"Playing: {'✅' if bot_voice.is_playing() else '❌'}\nPaused: {'✅' if bot_voice.is_paused() else '❌'}",
+            inline=True
+        )
+    else:
+        embed.add_field(
+            name="🤖 Bot Voice Channel",
+            value="❌ Not connected to any voice channel",
+            inline=False
+        )
+    
+    # Check music bot state
+    state = music_bot._get_guild_state(ctx.guild.id)
+    stored_channel_id = state.get('voice_channel_id')
+    if stored_channel_id:
+        stored_channel = ctx.guild.get_channel(stored_channel_id)
+        channel_name = stored_channel.name if stored_channel else "Unknown"
+        embed.add_field(
+            name="💾 Stored Voice Channel",
+            value=f"**{channel_name}** (ID: {stored_channel_id})",
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="💾 Stored Voice Channel",
+            value="❌ No stored channel",
+            inline=False
+        )
+    
+    playlist_length = len(state.get('current_playlist', []))
+    current_index = state.get('current_index', 0)
+    embed.add_field(
+        name="📝 Playlist Status",
+        value=f"Songs: {playlist_length}\nCurrent: {current_index + 1}/{playlist_length}" if playlist_length > 0 else "No active playlist",
+        inline=True
+    )
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def play(ctx, *, url: Optional[str] = None):
+    """Play main playlist or a single YouTube URL"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    if url:
+        # Play single URL
+        await music_bot.play_url(ctx, url)
+    else:
+        # Start main playlist
+        await music_bot.play_music(ctx)
 
 @bot.command()
 async def playlist(ctx):
@@ -1065,6 +1211,8 @@ async def modhelp(ctx):
             "`!status` - Check voice channel status\n"
             "`!audiotest` - Test audio system components\n"
             "`!voicediag` - Detailed voice connection diagnostics\n"
+            "`!voicestatus` - Check voice connection status\n"
+            "`!forcecleanup` - Force cleanup voice connection if stuck\n"
             "`!download <youtube_url>` - Download YouTube as MP3 (pytube) ⚠️"
         ),
         inline=False
