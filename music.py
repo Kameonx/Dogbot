@@ -21,7 +21,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         
         # Minimal yt-dlp options for cloud deployment
         ytdl_options = {
-            'format': 'bestaudio',
+            # Try M4A audio first, then fallback to best audio format
+            'format': 'bestaudio[ext=m4a]/bestaudio/best',
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
@@ -142,10 +143,10 @@ class MusicBot:
             # Ensure connected using join logic (supports previous channels)
             if not await self.join_voice_channel(ctx):
                 return
-            voice_client = ctx.voice_client or ctx.guild.voice_client
-            # Confirm connection
-            if not voice_client or not voice_client.is_connected():
-                await ctx.send("❌ Voice connection failed! Please ensure I can connect to a voice channel.")
+            voice_client = ctx.guild.voice_client or ctx.voice_client
+            # Confirm there is a voice client
+            if not voice_client:
+                await ctx.send("❌ Voice connection failed! Please ensure I'm in a voice channel.")
                 return
 
             print(f"[MUSIC] Voice client confirmed: {voice_client} (connected: {voice_client.is_connected()})")
