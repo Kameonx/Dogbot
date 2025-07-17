@@ -82,16 +82,12 @@ class MusicBot:
 
     async def join_voice_channel(self, ctx):
         """Join the invoking user's voice channel"""
-        # If a voice client exists, check health; disconnect stale clients
+        # Disconnect any existing voice client to ensure a fresh connection
         if ctx.voice_client:
-            if ctx.voice_client.is_connected():
-                return True
-            else:
-                # Clean up stale voice client before reconnecting
-                try:
-                    await ctx.voice_client.disconnect()
-                except:
-                    pass
+            try:
+                await ctx.voice_client.disconnect()
+            except Exception as e:
+                print(f"[MUSIC] Error disconnecting stale voice client: {e}")
         # Determine channel to join: prefer user's voice channel, otherwise saved channel
         state = self._get_guild_state(ctx.guild.id)
         # Check if user is in a voice channel
@@ -112,12 +108,14 @@ class MusicBot:
             await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
         except Exception as e:
+            # Use repr(e) if str(e) is empty, provide generic fallback
             err = str(e)
-            # Suppress already-connected warning
-            if 'Already connected to a voice channel' in err:
+            error_msg = err or repr(e) or "Unknown error"
+            # Suppress already-connected warnings
+            if 'Already connected to a voice channel' in error_msg or 'Already connected' in error_msg:
                 return True
-            print(f"[MUSIC] join error: {err}")
-            await ctx.send(f"❌ Could not join voice channel: {err[:100]}")
+            print(f"[MUSIC] join error: {error_msg}")
+            await ctx.send(f"❌ Could not join voice channel: {error_msg[:100]}")
             return False
 
     async def leave_voice_channel(self, ctx):
