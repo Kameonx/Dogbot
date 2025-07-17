@@ -387,13 +387,9 @@ async def on_ready():
     # Initialize music bot
     music_bot = MusicBot(bot)
     print("Music bot initialized")
-    # Voice health check disabled to prevent unintentional disconnects
-    # asyncio.create_task(music_bot.voice_health_check())
-    # print("Voice health check started")
-
-    # Voice health check disabled for stability
-    # asyncio.create_task(music_bot.voice_health_check())
-    # print("Voice health check started")
+    # Start voice health check to auto-reconnect on disconnects
+    asyncio.create_task(music_bot.voice_health_check())
+    print("Voice health check started")
 
 @bot.event
 async def on_disconnect():
