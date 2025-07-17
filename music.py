@@ -435,22 +435,10 @@ class MusicBot:
         await self.bot.wait_until_ready()
         while not self.bot.is_closed():
             for guild_id, state in list(self.guild_states.items()):
-                channel_id = state.get('voice_channel_id')
+                # Only send keep-alive silence if still connected to voice channel
                 guild = self.bot.get_guild(guild_id)
-                if not guild or not channel_id:
-                    continue
-                vc = guild.voice_client
-                # Reconnect if disconnected
-                if not vc or not getattr(vc, 'is_connected', lambda: False)():
-                    channel = guild.get_channel(channel_id)
-                    if channel:
-                        try:
-                            await channel.connect()
-                            print(f"[MUSIC] Reconnected to voice channel {channel.name} in guild {guild_id}")
-                        except Exception as err:
-                            print(f"[MUSIC] Health check reconnect failed for guild {guild_id}: {err}")
-                else:
-                    # Keep-alive to prevent auto-disconnect, with cleanup to avoid memory leaks
+                vc = guild.voice_client if guild else None
+                if vc and getattr(vc, 'is_connected', lambda: False)():
                     try:
                         if not vc.is_playing() and not vc.is_paused():
                             silence = discord.FFmpegPCMAudio(
@@ -458,12 +446,7 @@ class MusicBot:
                                 before_options='-f lavfi -i anullsrc=channel_layout=stereo:duration=1',
                                 options='-vn -loglevel panic'
                             )
-                            def after_silence(error, sl=silence):
-                                try:
-                                    sl.cleanup()
-                                except:
-                                    pass
-                            vc.play(silence, after=after_silence)
+                            vc.play(silence, after=lambda e: None)
                             print(f"[MUSIC] Sent keep-alive silence in guild {guild_id}")
                     except Exception as err:
                         print(f"[MUSIC] keep-alive error: {err}")
