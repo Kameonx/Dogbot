@@ -80,32 +80,15 @@ class MusicBot:
         if guild_id in self.guild_states:
             del self.guild_states[guild_id]
 
-    async def join_voice_channel(self, ctx, prompt_user=True):
+    async def join_voice_channel(self, ctx):
         """Join the invoking user's voice channel"""
-        # If already connected in this guild (via ctx or guild), do nothing
-        voice_client = ctx.voice_client or ctx.guild.voice_client
-        if voice_client and voice_client.is_connected():
+        # If already connected in this guild, do nothing
+        if ctx.voice_client and ctx.voice_client.is_connected():
             return True
-
-        # Attempt to reconnect using stored channel id
-        state = self._get_guild_state(ctx.guild.id)
-        saved_channel_id = state.get('voice_channel_id')
-        if saved_channel_id:
-            channel = ctx.guild.get_channel(saved_channel_id)
-            if channel:
-                try:
-                    vc = await channel.connect()
-                    state['voice_channel_id'] = channel.id
-                    await ctx.send(f"✅ Reconnected to **{channel.name}**")
-                    return True
-                except Exception as e:
-                    print(f"[MUSIC] reconnect error: {e}")
-
         # Ensure user is in a voice channel
         user_voice = getattr(ctx.author, 'voice', None)
         if not user_voice or not user_voice.channel:
-            if prompt_user:
-                await ctx.send("❌ Join a voice channel first!")
+            await ctx.send("❌ Join a voice channel first!")
             return False
         channel = user_voice.channel
         try:
@@ -184,7 +167,7 @@ class MusicBot:
             voice_client = ctx.voice_client or ctx.guild.voice_client
             if not voice_client or not voice_client.is_connected():
                 # Try to reconnect if disconnected
-                reconnected = await self.join_voice_channel(ctx, prompt_user=False)
+                reconnected = await self.join_voice_channel(ctx)
                 if not reconnected:
                     print("[MUSIC] Could not reconnect, stopping playback")
                     return
@@ -276,9 +259,8 @@ class MusicBot:
     async def _advance_to_next_song(self, ctx):
         """Advance to next song"""
         try:
-            # Check if still connected to voice (via ctx or guild)
-            voice_client = ctx.voice_client or ctx.guild.voice_client
-            if not voice_client or not getattr(voice_client, 'is_connected', lambda: False)():
+            # Check if still connected to voice
+            if not ctx.voice_client:
                 print("Voice client disconnected, stopping music")
                 return
                 
