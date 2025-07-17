@@ -21,8 +21,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         
         # Minimal yt-dlp options for cloud deployment
         ytdl_options = {
-            # Try M4A audio first, then fallback to best audio format
-            'format': 'bestaudio[ext=m4a]/bestaudio/best',
+            'format': 'bestaudio',
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
@@ -86,22 +85,16 @@ class MusicBot:
         # If already connected in this guild, do nothing
         if ctx.voice_client and ctx.voice_client.is_connected():
             return True
-        # Determine channel to join: prefer user's voice channel, otherwise saved channel
-        state = self._get_guild_state(ctx.guild.id)
-        # Check if user is in a voice channel
+        # Ensure user is in a voice channel
         user_voice = getattr(ctx.author, 'voice', None)
-        if user_voice and user_voice.channel:
-            channel = user_voice.channel
-        else:
-            # Fallback to previously used voice channel
-            channel_id = state.get('voice_channel_id')
-            channel = ctx.guild.get_channel(channel_id) if channel_id else None
-        if not channel:
+        if not user_voice or not user_voice.channel:
             await ctx.send("❌ Join a voice channel first!")
             return False
+        channel = user_voice.channel
         try:
             vc = await channel.connect()
             # Store voice channel in state for reconnect logic
+            state = self._get_guild_state(ctx.guild.id)
             state['voice_channel_id'] = channel.id
             await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
@@ -109,17 +102,6 @@ class MusicBot:
             err = str(e)
             # Suppress already-connected warning
             if 'Already connected to a voice channel' in err:
-                # Existing voice_client might be stale; force reconnect if not actually connected
-                existing_vc = ctx.voice_client
-                if existing_vc and not existing_vc.is_connected():
-                    try:
-                        await existing_vc.disconnect()
-                        vc = await channel.connect()
-                        state['voice_channel_id'] = channel.id
-                        await ctx.send(f"✅ Connected to **{channel.name}**")
-                        return True
-                    except Exception:
-                        pass
                 return True
             print(f"[MUSIC] join error: {err}")
             await ctx.send(f"❌ Could not join voice channel: {err[:100]}")
@@ -143,10 +125,10 @@ class MusicBot:
             # Ensure connected using join logic (supports previous channels)
             if not await self.join_voice_channel(ctx):
                 return
-            voice_client = ctx.guild.voice_client or ctx.voice_client
-            # Confirm there is a voice client
-            if not voice_client:
-                await ctx.send("❌ Voice connection failed! Please ensure I'm in a voice channel.")
+            voice_client = ctx.voice_client or ctx.guild.voice_client
+            # Confirm connection
+            if not voice_client or not voice_client.is_connected():
+                await ctx.send("❌ Voice connection failed! Please ensure I can connect to a voice channel.")
                 return
 
             print(f"[MUSIC] Voice client confirmed: {voice_client} (connected: {voice_client.is_connected()})")
@@ -443,28 +425,26 @@ class MusicBot:
         await target_chan.send(msg)
 
     async def voice_health_check(self):
-         """Periodically ensure the bot stays connected to its voice channel and send keep-alive silence."""
-         await self.bot.wait_until_ready()
-         while not self.bot.is_closed():
-             for guild_id, state in list(self.guild_states.items()):
-                 channel_id = state.get('voice_channel_id')
-                 guild = self.bot.get_guild(guild_id)
-                 if not guild or not channel_id:
-                     continue
-                 vc = guild.voice_client
-                 # Reconnect if disconnected
-                 if not vc or not getattr(vc, 'is_connected', lambda: False)():
-                     channel = guild.get_channel(channel_id)
-                     if channel:
-                         try:
-                             await channel.connect()
-                             print(f"[MUSIC] Reconnected to voice channel {channel.name} in guild {guild_id}")
-                         except Exception as err:
-                             print(f"[MUSIC] Health check reconnect failed for guild {guild_id}: {err}")
-                 else:
-                    # Keep-alive silence disabled to avoid memory growth
-                    pass
-             await asyncio.sleep(60)
+          """Periodically ensure the bot stays connected to its voice channel and send keep-alive silence."""
+          await self.bot.wait_until_ready()
+          while not self.bot.is_closed():
+              for guild_id, state in list(self.guild_states.items()):
+                  channel_id = state.get('voice_channel_id')
+                  guild = self.bot.get_guild(guild_id)
+                  if not guild or not channel_id:
+                      continue
+                  vc = guild.voice_client
+                  # Reconnect if disconnected
+                  if not vc or not getattr(vc, 'is_connected', lambda: False)():
+                      channel = guild.get_channel(channel_id)
+                      if channel:
+                          try:
+                              await channel.connect()
+                              print(f"[MUSIC] Reconnected to voice channel {channel.name} in guild {guild_id}")
+                          except Exception as err:
+                              print(f"[MUSIC] Health check reconnect failed for guild {guild_id}: {err}")
+                # No keep-alive silence to prevent resource and bandwidth issues
+              await asyncio.sleep(60)
 
     def get_available_playlists(self):
         """Get list of available playlists"""
