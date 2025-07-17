@@ -108,6 +108,17 @@ class MusicBot:
             err = str(e)
             # Suppress already-connected warning
             if 'Already connected to a voice channel' in err:
+                # Existing voice_client might be stale; force reconnect if not actually connected
+                existing_vc = ctx.voice_client
+                if existing_vc and not existing_vc.is_connected():
+                    try:
+                        await existing_vc.disconnect()
+                        vc = await channel.connect()
+                        state['voice_channel_id'] = channel.id
+                        await ctx.send(f"✅ Connected to **{channel.name}**")
+                        return True
+                    except Exception:
+                        pass
                 return True
             print(f"[MUSIC] join error: {err}")
             await ctx.send(f"❌ Could not join voice channel: {err[:100]}")
