@@ -80,7 +80,7 @@ class MusicBot:
         if guild_id in self.guild_states:
             del self.guild_states[guild_id]
 
-    async def join_voice_channel(self, ctx):
+    async def join_voice_channel(self, ctx, prompt_user=True):
         """Join the invoking user's voice channel"""
         # If already connected in this guild (via ctx or guild), do nothing
         voice_client = ctx.voice_client or ctx.guild.voice_client
@@ -104,7 +104,8 @@ class MusicBot:
         # Ensure user is in a voice channel
         user_voice = getattr(ctx.author, 'voice', None)
         if not user_voice or not user_voice.channel:
-            await ctx.send("❌ Join a voice channel first!")
+            if prompt_user:
+                await ctx.send("❌ Join a voice channel first!")
             return False
         channel = user_voice.channel
         try:
@@ -183,7 +184,7 @@ class MusicBot:
             voice_client = ctx.voice_client or ctx.guild.voice_client
             if not voice_client or not voice_client.is_connected():
                 # Try to reconnect if disconnected
-                reconnected = await self.join_voice_channel(ctx)
+                reconnected = await self.join_voice_channel(ctx, prompt_user=False)
                 if not reconnected:
                     print("[MUSIC] Could not reconnect, stopping playback")
                     return
@@ -275,8 +276,9 @@ class MusicBot:
     async def _advance_to_next_song(self, ctx):
         """Advance to next song"""
         try:
-            # Check if still connected to voice
-            if not ctx.voice_client:
+            # Check if still connected to voice (via ctx or guild)
+            voice_client = ctx.voice_client or ctx.guild.voice_client
+            if not voice_client or not getattr(voice_client, 'is_connected', lambda: False)():
                 print("Voice client disconnected, stopping music")
                 return
                 
