@@ -82,8 +82,9 @@ class MusicBot:
 
     async def join_voice_channel(self, ctx):
         """Join the invoking user's voice channel"""
-        # If already connected in this guild, do nothing
-        if ctx.voice_client and ctx.voice_client.is_connected():
+        # If already connected in this guild (via ctx or guild), do nothing
+        voice_client = ctx.voice_client or ctx.guild.voice_client
+        if voice_client and voice_client.is_connected():
             return True
 
         # Attempt to reconnect using stored channel id
