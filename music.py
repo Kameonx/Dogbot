@@ -431,14 +431,26 @@ class MusicBot:
         await target_chan.send(msg)
 
     async def voice_health_check(self):
-        """Periodically ensure the bot stays connected to its voice channel."""
+        """Periodically ensure the bot stays connected to its voice channel and send keep-alive silence."""
         await self.bot.wait_until_ready()
         while not self.bot.is_closed():
             for guild_id, state in list(self.guild_states.items()):
-                # Only send keep-alive silence if still connected to voice channel
+                channel_id = state.get('voice_channel_id')
                 guild = self.bot.get_guild(guild_id)
-                vc = guild.voice_client if guild else None
-                if vc and getattr(vc, 'is_connected', lambda: False)():
+                if not guild or not channel_id:
+                    continue
+                vc = guild.voice_client
+                # Reconnect if disconnected
+                if not vc or not getattr(vc, 'is_connected', lambda: False)():
+                    channel = guild.get_channel(channel_id)
+                    if channel:
+                        try:
+                            await channel.connect()
+                            print(f"[MUSIC] Reconnected to voice channel {channel.name} in guild {guild_id}")
+                        except Exception as err:
+                            print(f"[MUSIC] Health check reconnect failed for guild {guild_id}: {err}")
+                else:
+                    # Send keep-alive silence if idle to prevent auto-disconnect
                     try:
                         if not vc.is_playing() and not vc.is_paused():
                             silence = discord.FFmpegPCMAudio(
