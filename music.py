@@ -85,16 +85,22 @@ class MusicBot:
         # If already connected in this guild, do nothing
         if ctx.voice_client and ctx.voice_client.is_connected():
             return True
-        # Ensure user is in a voice channel
+        # Determine channel to join: prefer user's voice channel, otherwise saved channel
+        state = self._get_guild_state(ctx.guild.id)
+        # Check if user is in a voice channel
         user_voice = getattr(ctx.author, 'voice', None)
-        if not user_voice or not user_voice.channel:
+        if user_voice and user_voice.channel:
+            channel = user_voice.channel
+        else:
+            # Fallback to previously used voice channel
+            channel_id = state.get('voice_channel_id')
+            channel = ctx.guild.get_channel(channel_id) if channel_id else None
+        if not channel:
             await ctx.send("❌ Join a voice channel first!")
             return False
-        channel = user_voice.channel
         try:
             vc = await channel.connect()
             # Store voice channel in state for reconnect logic
-            state = self._get_guild_state(ctx.guild.id)
             state['voice_channel_id'] = channel.id
             await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
