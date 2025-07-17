@@ -450,7 +450,7 @@ class MusicBot:
                         except Exception as err:
                             print(f"[MUSIC] Health check reconnect failed for guild {guild_id}: {err}")
                 else:
-                    # Keep-alive silence removed to prevent memory spikes.
+                    # Keep-alive disabled to prevent memory issues
                     pass
             await asyncio.sleep(60)
 
