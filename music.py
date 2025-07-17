@@ -82,9 +82,16 @@ class MusicBot:
 
     async def join_voice_channel(self, ctx):
         """Join the invoking user's voice channel"""
-        # If already connected in this guild, do nothing
-        if ctx.voice_client and ctx.voice_client.is_connected():
-            return True
+        # If a voice client exists, check health; disconnect stale clients
+        if ctx.voice_client:
+            if ctx.voice_client.is_connected():
+                return True
+            else:
+                # Clean up stale voice client before reconnecting
+                try:
+                    await ctx.voice_client.disconnect()
+                except:
+                    pass
         # Determine channel to join: prefer user's voice channel, otherwise saved channel
         state = self._get_guild_state(ctx.guild.id)
         # Check if user is in a voice channel
@@ -449,19 +456,6 @@ class MusicBot:
                             print(f"[MUSIC] Reconnected to voice channel {channel.name} in guild {guild_id}")
                         except Exception as err:
                             print(f"[MUSIC] Health check reconnect failed for guild {guild_id}: {err}")
-                else:
-                    # Send keep-alive silence if idle to prevent auto-disconnect
-                    try:
-                        if not vc.is_playing() and not vc.is_paused():
-                            silence = discord.FFmpegPCMAudio(
-                                'anullsrc=channel_layout=stereo:sample_rate=48000',
-                                before_options='-f lavfi -i anullsrc=channel_layout=stereo:duration=1',
-                                options='-vn -loglevel panic'
-                            )
-                            vc.play(silence, after=lambda e: None)
-                            print(f"[MUSIC] Sent keep-alive silence in guild {guild_id}")
-                    except Exception as err:
-                        print(f"[MUSIC] keep-alive error: {err}")
             await asyncio.sleep(60)
 
     def get_available_playlists(self):
