@@ -102,7 +102,7 @@ class MusicBot:
             channel_id = state.get('voice_channel_id')
             channel = ctx.guild.get_channel(channel_id) if channel_id else None
         if not channel:
-            # Channel not found; explicit commands will handle user prompting
+            await ctx.send("❌ Join a voice channel first!")
             return False
         try:
             vc = await channel.connect()
