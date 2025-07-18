@@ -445,6 +445,10 @@ async def on_voice_state_update(member, before, after):
         return
     # If bot was in a voice channel and now disconnected
     if before.channel and after.channel is None:
+        # Skip auto-rejoin if already connected to voice
+        vc = before.channel.guild.voice_client
+        if vc and getattr(vc, 'is_connected', lambda: False)():
+            return
         guild_id = before.channel.guild.id
         # Get last known voice channel
         if music_bot:
