@@ -14,7 +14,6 @@ from typing import Optional
 import re
 import yt_dlp
 import subprocess
-from types import SimpleNamespace  # for dummy context in resume
 from music import MusicBot, YouTubeAudioSource  # restore music functionality imports
 import base64
 import io
@@ -457,18 +456,6 @@ async def on_voice_state_update(member, before, after):
                     try:
                         await channel.connect()
                         print(f"[MUSIC] Auto-rejoined to voice channel {channel.name} in guild {guild_id}")
-                        # Resume playback after auto-rejoin
-                        try:
-                            # Build dummy context to resume music
-                            ctx_resume = SimpleNamespace(
-                                guild=before.channel.guild,
-                                channel=before.channel.guild.text_channels[0] if before.channel.guild.text_channels else None,
-                                voice_client=before.channel.guild.voice_client,
-                                author=before.channel.guild.me
-                            )
-                            await music_bot._play_current_song(ctx_resume)
-                        except Exception as resume_err:
-                            print(f"[MUSIC] Failed to resume music after auto-rejoin: {resume_err}")
                     except Exception as e:
                         print(f"[MUSIC] Auto-rejoin failed: {e}")
 
@@ -660,7 +647,6 @@ async def join(ctx):
 
     success = await music_bot.join_voice_channel(ctx)
     if not success:
-        await ctx.send("❌ Join a voice channel first!")
         return
     # Auto-start music after join
     await music_bot.play_music(ctx)
