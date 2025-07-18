@@ -420,12 +420,10 @@ class MusicBot:
         def after(error):
             if error:
                 print(f"[MUSIC] URL playback error: {error}")
-            # Restore previous playlist state and resume from next song
+            # Restore previous playlist state
             if saved_state is not None:
-                # Advance index to next track
                 restored_index = saved_state['current_index'] + 1
                 playlist = saved_state['current_playlist']
-                # Wrap around or reshuffle if at end
                 if restored_index >= len(playlist):
                     restored_index = 0
                     random.shuffle(playlist)
@@ -433,9 +431,10 @@ class MusicBot:
                     'current_playlist': playlist,
                     'current_index': restored_index
                 }
+            # Advance to next song from restored state
             try:
-                # Play next song from restored state
-                self.bot.loop.create_task(self._play_current_song(ctx))
+                print(f"[MUSIC] Resuming playlist after URL playback in guild {ctx.guild.id}")
+                self.bot.loop.create_task(self._advance_to_next_song(ctx))
             except Exception as err:
                 print(f"[MUSIC] Error resuming playlist: {err}")
         voice_client.play(player, after=after)
