@@ -80,10 +80,13 @@ class MusicBot:
         if guild_id in self.guild_states:
             del self.guild_states[guild_id]
 
-    async def join_voice_channel(self, ctx):
+    async def join_voice_channel(self, ctx, announce=True):
         """Join the invoking user's voice channel"""
-        # Disconnect any existing voice client to ensure a fresh connection
-        if ctx.voice_client:
+        # Skip reconnect if already connected healthily
+        if ctx.voice_client and ctx.voice_client.is_connected():
+            return True
+        # Disconnect stale client if exists
+        if ctx.voice_client and not ctx.voice_client.is_connected():
             try:
                 await ctx.voice_client.disconnect()
             except Exception as e:
@@ -105,9 +108,21 @@ class MusicBot:
             vc = await channel.connect()
             # Store voice channel in state for reconnect logic
             state['voice_channel_id'] = channel.id
-            await ctx.send(f"✅ Connected to **{channel.name}**")
+            if announce:
+                await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
         except Exception as e:
+            # Retry on TimeoutError
+            if isinstance(e, asyncio.TimeoutError):
+                try:
+                    vc = await channel.connect()
+                    state['voice_channel_id'] = channel.id
+                    if announce:
+                        await ctx.send(f"✅ Connected to **{channel.name}**")
+                    return True
+                except Exception as retry_exc:
+                    retry_err = str(retry_exc) or repr(retry_exc)
+                    print(f"[MUSIC] retry join error: {retry_err}")
             # Use repr(e) if str(e) is empty, provide generic fallback
             err = str(e)
             error_msg = err or repr(e) or "Unknown error"
@@ -115,13 +130,17 @@ class MusicBot:
             if 'Already connected to a voice channel' in error_msg or 'Already connected' in error_msg:
                 return True
             print(f"[MUSIC] join error: {error_msg}")
-            await ctx.send(f"❌ Could not join voice channel: {error_msg[:100]}")
+            if announce:
+                await ctx.send(f"❌ Could not join voice channel: {error_msg[:100]}")
             return False
 
     async def leave_voice_channel(self, ctx):
         """Leave voice channel and cleanup"""
         try:
             if ctx.voice_client:
+                # Stop any current playback
+                if getattr(ctx.voice_client, 'is_playing', lambda: False)():
+                    ctx.voice_client.stop()
                 await ctx.voice_client.disconnect()
                 self._cleanup_guild_state(ctx.guild.id)
                 await ctx.send("👋 Left the voice channel!")
@@ -134,7 +153,7 @@ class MusicBot:
         """Improved music playback with better voice connection handling"""
         try:
             # Ensure connected using join logic (supports previous channels)
-            if not await self.join_voice_channel(ctx):
+            if not await self.join_voice_channel(ctx, announce=False):
                 return
             voice_client = ctx.voice_client or ctx.guild.voice_client
             # Confirm connection
@@ -177,8 +196,8 @@ class MusicBot:
             # Enhanced voice client verification
             voice_client = ctx.voice_client or ctx.guild.voice_client
             if not voice_client or not voice_client.is_connected():
-                # Try to reconnect if disconnected
-                reconnected = await self.join_voice_channel(ctx)
+                # Try to reconnect if disconnected (silent)
+                reconnected = await self.join_voice_channel(ctx, announce=False)
                 if not reconnected:
                     print("[MUSIC] Could not reconnect, stopping playback")
                     return
