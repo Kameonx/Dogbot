@@ -459,28 +459,17 @@ async def on_voice_state_update(member, before, after):
                 channel = before.channel.guild.get_channel(channel_id)
                 if channel:
                     try:
-                        # Add delay to prevent rapid reconnect attempts and let Discord settle
-                        await asyncio.sleep(3)
-                        
-                        # Check if we're already reconnected by another process
-                        current_vc = before.channel.guild.voice_client
-                        if current_vc and current_vc.is_connected():
-                            print(f"[MUSIC] Auto-rejoin skipped: Already reconnected")
-                            return
-                        
+                        # Simple reconnect attempt with a delay
+                        await asyncio.sleep(2)
                         await channel.connect()
                         print(f"[MUSIC] Auto-rejoined to voice channel {channel.name} in guild {guild_id}")
-                    except discord.ClientException as e:
-                        if "already connected" in str(e).lower():
-                            print(f"[MUSIC] Auto-rejoin skipped: {e}")
-                        else:
-                            print(f"[MUSIC] Auto-rejoin failed: {e}")
                     except Exception as e:
-                        print(f"[MUSIC] Auto-rejoin failed: {e}")
+                        if "already connected" not in str(e).lower():
+                            print(f"[MUSIC] Auto-rejoin failed: {e}")
                 else:
                     print(f"[MUSIC] Auto-rejoin failed: Channel {channel_id} not found")
             else:
-                print(f"[MUSIC] Auto-rejoin skipped: No active playlist or stored channel")
+                print(f"[MUSIC] Auto-rejoin skipped: No active playlist")
 
 # Helper function to check for admin/moderator permissions
 def has_admin_or_moderator_role(ctx):
