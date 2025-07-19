@@ -443,13 +443,18 @@ async def on_voice_state_update(member, before, after):
     # Only act on bot's own voice state
     if bot.user is None or member.id != bot.user.id:
         return
+    
     # If bot was in a voice channel and now disconnected
     if before.channel and after.channel is None:
         # Skip auto-rejoin if already connected to voice
         vc = before.channel.guild.voice_client
         if vc and getattr(vc, 'is_connected', lambda: False)():
+            print(f"[MUSIC] Auto-rejoin skipped: Already connected to voice channel")
             return
+            
         guild_id = before.channel.guild.id
+        print(f"[MUSIC] Bot disconnected from voice channel {before.channel.name}, attempting auto-rejoin")
+        
         # Get last known voice channel
         if music_bot:
             state = music_bot._get_guild_state(guild_id)
@@ -458,10 +463,21 @@ async def on_voice_state_update(member, before, after):
                 channel = before.channel.guild.get_channel(channel_id)
                 if channel:
                     try:
+                        # Add delay to prevent rapid reconnect attempts
+                        await asyncio.sleep(2)
                         await channel.connect()
                         print(f"[MUSIC] Auto-rejoined to voice channel {channel.name} in guild {guild_id}")
                     except Exception as e:
-                        print(f"[MUSIC] Auto-rejoin failed: {e}")
+                        error_msg = str(e)
+                        # Only log if it's not "already connected" error
+                        if "already connected" not in error_msg.lower():
+                            print(f"[MUSIC] Auto-rejoin failed: {e}")
+                        else:
+                            print(f"[MUSIC] Auto-rejoin skipped: {e}")
+                else:
+                    print(f"[MUSIC] Auto-rejoin failed: Channel {channel_id} not found")
+            else:
+                print(f"[MUSIC] Auto-rejoin failed: No stored channel ID")
 
 # Helper function to check for admin/moderator permissions
 def has_admin_or_moderator_role(ctx):
