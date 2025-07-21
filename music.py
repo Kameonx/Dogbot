@@ -67,6 +67,8 @@ class MusicBot:
         self.guild_states = {}  # guild_id -> {'current_playlist': [], 'current_index': 0}
         # Global cooldown to prevent rapid operations
         self._operation_cooldown = {}  # guild_id -> last_operation_time
+        # Prevent concurrent song processing
+        self._processing_next_song = set()  # guild_ids currently processing next song
 
     def _get_guild_state(self, guild_id):
         """Get or create guild state"""
@@ -83,6 +85,9 @@ class MusicBot:
         """Clean up guild state"""
         if guild_id in self.guild_states:
             del self.guild_states[guild_id]
+        # Also clean up processing state
+        self._processing_next_song.discard(guild_id)
+        self._operation_cooldown.pop(guild_id, None)
 
     async def join_voice_channel(self, ctx, announce=True):
         """Join the invoking user's voice channel"""
@@ -226,6 +231,11 @@ class MusicBot:
     async def _play_current_song(self, ctx):
         """Play current song with improved error handling"""
         try:
+            # Prevent concurrent playback attempts
+            if ctx.guild.id in self._processing_next_song:
+                print(f"[MUSIC] Song processing already in progress for guild {ctx.guild.id}")
+                return
+                
             # Simple voice client check
             voice_client = ctx.voice_client or ctx.guild.voice_client
             
@@ -262,10 +272,12 @@ class MusicBot:
                 return
             print(f"[MUSIC] Attempting to play song {index + 1}: {url}")
             
-            # Stop current playback if playing
+            # Stop current playback if playing and wait for it to finish
             if voice_client.is_playing():
+                print(f"[MUSIC] Stopping current playback before starting next song")
                 voice_client.stop()
-                await asyncio.sleep(0.5)  # Brief pause to ensure clean stop
+                # Wait longer to ensure the current song fully stops
+                await asyncio.sleep(1.5)  # Increased from 0.5 to 1.5 seconds
             
             # Create and play audio source
             try:
@@ -284,17 +296,29 @@ class MusicBot:
                 else:
                     print(f"[MUSIC] Song finished normally")
                 
+                # Prevent concurrent processing of next song
+                guild_id = ctx.guild.id
+                if guild_id in self._processing_next_song:
+                    print(f"[MUSIC] Next song already being processed for guild {guild_id}, skipping")
+                    return
+                
                 # Schedule next song only if state still exists (not after leave)
-                if ctx.guild.id in self.guild_states:
+                if guild_id in self.guild_states:
+                    self._processing_next_song.add(guild_id)
                     try:
                         # Add a longer delay to prevent rapid-fire transitions
                         async def delayed_next():
-                            await asyncio.sleep(3)  # Increased from 1 to 3 seconds
-                            await self._advance_to_next_song(ctx)
+                            try:
+                                await asyncio.sleep(3)  # Increased from 1 to 3 seconds
+                                await self._advance_to_next_song(ctx)
+                            finally:
+                                # Always remove from processing set
+                                self._processing_next_song.discard(guild_id)
                         
                         self.bot.loop.create_task(delayed_next())
                     except Exception as sched_err:
                         print(f"[MUSIC] Error scheduling next song: {sched_err}")
+                        self._processing_next_song.discard(guild_id)
     
             try:
                 # Validate connection before attempting to play - simplified check
@@ -304,6 +328,10 @@ class MusicBot:
                 # Basic check - just ensure we have a channel
                 if not voice_client.channel:
                     raise Exception("Voice client has no channel")
+                
+                # Final check - ensure nothing is currently playing
+                if voice_client.is_playing():
+                    raise Exception("Already playing audio")
                 
                 voice_client.play(player, after=after_playing)
                 
@@ -348,15 +376,21 @@ class MusicBot:
         import time
         
         try:
+            # Prevent multiple concurrent advances for the same guild
+            guild_id = ctx.guild.id
+            if guild_id in self._processing_next_song:
+                print(f"[MUSIC] Song advance already in progress for guild {guild_id}")
+                return
+                
             # Add cooldown to prevent rapid-fire operations
             current_time = time.time()
-            last_op_time = self._operation_cooldown.get(ctx.guild.id, 0)
+            last_op_time = self._operation_cooldown.get(guild_id, 0)
             if current_time - last_op_time < 2:  # Minimum 2 seconds between operations
                 print(f"[MUSIC] Operation cooldown active, skipping advance")
                 return
-            self._operation_cooldown[ctx.guild.id] = current_time
+            self._operation_cooldown[guild_id] = current_time
             
-            state = self._get_guild_state(ctx.guild.id)
+            state = self._get_guild_state(guild_id)
             
             # Circuit breaker: if we've had too many failures recently, stop
             current_time = time.time()
