@@ -65,6 +65,8 @@ class MusicBot:
         self.bot = bot
         # Minimal state management
         self.guild_states = {}  # guild_id -> {'current_playlist': [], 'current_index': 0}
+        # Global cooldown to prevent rapid operations
+        self._operation_cooldown = {}  # guild_id -> last_operation_time
 
     def _get_guild_state(self, guild_id):
         """Get or create guild state"""
@@ -88,8 +90,10 @@ class MusicBot:
         if ctx.voice_client and ctx.voice_client.is_connected():
             try:
                 # Test if connection is actually working by checking channel access
-                if ctx.voice_client.channel and len(ctx.voice_client.channel.members) >= 0:
-                    # Connection seems healthy
+                # Use a simpler check to avoid false positives
+                if ctx.voice_client.channel:
+                    # Connection seems healthy - just check if channel exists
+                    print(f"[MUSIC] Already connected to {ctx.voice_client.channel.name}, connection looks good")
                     return True
             except Exception as e:
                 print(f"[MUSIC] Voice connection validation failed: {e}, will reconnect")
@@ -283,9 +287,9 @@ class MusicBot:
                 # Schedule next song only if state still exists (not after leave)
                 if ctx.guild.id in self.guild_states:
                     try:
-                        # Add a small delay to prevent rapid-fire errors
+                        # Add a longer delay to prevent rapid-fire transitions
                         async def delayed_next():
-                            await asyncio.sleep(1)
+                            await asyncio.sleep(3)  # Increased from 1 to 3 seconds
                             await self._advance_to_next_song(ctx)
                         
                         self.bot.loop.create_task(delayed_next())
@@ -293,16 +297,13 @@ class MusicBot:
                         print(f"[MUSIC] Error scheduling next song: {sched_err}")
     
             try:
-                # Validate connection before attempting to play
+                # Validate connection before attempting to play - simplified check
                 if not voice_client.is_connected():
                     raise Exception("Voice client reports not connected")
                 
-                # Additional check - try to access the channel
+                # Basic check - just ensure we have a channel
                 if not voice_client.channel:
                     raise Exception("Voice client has no channel")
-                    
-                # Test channel access
-                _ = voice_client.channel.name
                 
                 voice_client.play(player, after=after_playing)
                 
@@ -347,6 +348,14 @@ class MusicBot:
         import time
         
         try:
+            # Add cooldown to prevent rapid-fire operations
+            current_time = time.time()
+            last_op_time = self._operation_cooldown.get(ctx.guild.id, 0)
+            if current_time - last_op_time < 2:  # Minimum 2 seconds between operations
+                print(f"[MUSIC] Operation cooldown active, skipping advance")
+                return
+            self._operation_cooldown[ctx.guild.id] = current_time
+            
             state = self._get_guild_state(ctx.guild.id)
             
             # Circuit breaker: if we've had too many failures recently, stop
