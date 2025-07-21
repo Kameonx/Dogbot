@@ -65,10 +65,6 @@ class MusicBot:
         self.bot = bot
         # Minimal state management
         self.guild_states = {}  # guild_id -> {'current_playlist': [], 'current_index': 0}
-        # Global cooldown to prevent rapid operations
-        self._operation_cooldown = {}  # guild_id -> last_operation_time
-        # Prevent concurrent song processing
-        self._processing_next_song = set()  # guild_ids currently processing next song
 
     def _get_guild_state(self, guild_id):
         """Get or create guild state"""
@@ -85,9 +81,6 @@ class MusicBot:
         """Clean up guild state"""
         if guild_id in self.guild_states:
             del self.guild_states[guild_id]
-        # Also clean up processing state
-        self._processing_next_song.discard(guild_id)
-        self._operation_cooldown.pop(guild_id, None)
 
     async def join_voice_channel(self, ctx, announce=True):
         """Join the invoking user's voice channel"""
@@ -231,11 +224,6 @@ class MusicBot:
     async def _play_current_song(self, ctx):
         """Play current song with improved error handling"""
         try:
-            # Prevent concurrent playback attempts
-            if ctx.guild.id in self._processing_next_song:
-                print(f"[MUSIC] Song processing already in progress for guild {ctx.guild.id}")
-                return
-                
             # Simple voice client check
             voice_client = ctx.voice_client or ctx.guild.voice_client
             
@@ -296,29 +284,15 @@ class MusicBot:
                 else:
                     print(f"[MUSIC] Song finished normally")
                 
-                # Prevent concurrent processing of next song
-                guild_id = ctx.guild.id
-                if guild_id in self._processing_next_song:
-                    print(f"[MUSIC] Next song already being processed for guild {guild_id}, skipping")
-                    return
-                
-                # Schedule next song only if state still exists (not after leave)
-                if guild_id in self.guild_states:
-                    self._processing_next_song.add(guild_id)
-                    try:
-                        # Add a longer delay to prevent rapid-fire transitions
-                        async def delayed_next():
-                            try:
-                                await asyncio.sleep(3)  # Increased from 1 to 3 seconds
-                                await self._advance_to_next_song(ctx)
-                            finally:
-                                # Always remove from processing set
-                                self._processing_next_song.discard(guild_id)
-                        
-                        self.bot.loop.create_task(delayed_next())
-                    except Exception as sched_err:
-                        print(f"[MUSIC] Error scheduling next song: {sched_err}")
-                        self._processing_next_song.discard(guild_id)
+                # Schedule next song directly
+                async def delayed_next():
+                    await asyncio.sleep(2)
+                    # Increment index and play next song
+                    state = self._get_guild_state(ctx.guild.id)
+                    state['current_index'] += 1
+                    await self._play_current_song(ctx)
+                # Schedule next song safely from non-async callback
+                asyncio.run_coroutine_threadsafe(delayed_next(), self.bot.loop)
     
             try:
                 # Validate connection before attempting to play - simplified check
@@ -329,9 +303,6 @@ class MusicBot:
                 if not voice_client.channel:
                     raise Exception("Voice client has no channel")
                 
-                # Final check - ensure nothing is currently playing
-                if voice_client.is_playing():
-                    raise Exception("Already playing audio")
                 
                 voice_client.play(player, after=after_playing)
                 
@@ -372,84 +343,13 @@ class MusicBot:
             await self._advance_to_next_song(ctx)
 
     async def _advance_to_next_song(self, ctx):
-        """Advance to next song with circuit breaker to prevent infinite loops"""
-        import time
-        
+        """Advance to next song in playlist"""
         try:
-            # Prevent multiple concurrent advances for the same guild
-            guild_id = ctx.guild.id
-            if guild_id in self._processing_next_song:
-                print(f"[MUSIC] Song advance already in progress for guild {guild_id}")
-                return
-                
-            # Add cooldown to prevent rapid-fire operations
-            current_time = time.time()
-            last_op_time = self._operation_cooldown.get(guild_id, 0)
-            if current_time - last_op_time < 2:  # Minimum 2 seconds between operations
-                print(f"[MUSIC] Operation cooldown active, skipping advance")
-                return
-            self._operation_cooldown[guild_id] = current_time
-            
-            state = self._get_guild_state(guild_id)
-            
-            # Circuit breaker: if we've had too many failures recently, stop
-            current_time = time.time()
-            if current_time - state.get('last_failure_time', 0) < 60:  # Within last minute
-                failure_count = state.get('connection_failures', 0)
-                if failure_count >= 5:
-                    print(f"[MUSIC] Circuit breaker activated: {failure_count} failures in last minute, stopping")
-                    await ctx.send("🚫 Music stopped due to repeated connection failures. Use `!start` to try again.")
-                    self._cleanup_guild_state(ctx.guild.id)
-                    return
-            else:
-                # Reset failure count if it's been more than a minute
-                state['connection_failures'] = 0
-            
-            # Check if still connected to voice
-            voice_client = ctx.voice_client or ctx.guild.voice_client
-            if not voice_client or not voice_client.is_connected():
-                print("[MUSIC] Voice client disconnected, attempting to reconnect before next song")
-                reconnected = await self.join_voice_channel(ctx, announce=False)
-                if not reconnected:
-                    print("[MUSIC] Could not reconnect, incrementing failure count")
-                    state['connection_failures'] = state.get('connection_failures', 0) + 1
-                    state['last_failure_time'] = current_time
-                    
-                    # If we've failed too many times, stop completely
-                    if state['connection_failures'] >= 3:
-                        print("[MUSIC] Too many reconnect failures, stopping music")
-                        await ctx.send("❌ Unable to maintain voice connection. Music stopped.")
-                        self._cleanup_guild_state(ctx.guild.id)
-                        return
-                    else:
-                        # Wait longer before next attempt
-                        await asyncio.sleep(5)
-                        return
-                
-            # Reset failure count on successful connection
-            state['connection_failures'] = 0
+            state = self._get_guild_state(ctx.guild.id)
             state['current_index'] += 1
             await self._play_current_song(ctx)
-            
         except Exception as e:
             print(f"[MUSIC] Error advancing to next song: {e}")
-            state = self._get_guild_state(ctx.guild.id)
-            state['connection_failures'] = state.get('connection_failures', 0) + 1
-            state['last_failure_time'] = time.time()
-            
-            # Try to continue anyway, but with limits
-            if state['connection_failures'] < 3:
-                try:
-                    state['current_index'] += 1
-                    await asyncio.sleep(3)  # Longer delay before retry
-                    await self._play_current_song(ctx)
-                except Exception as retry_e:
-                    print(f"[MUSIC] Retry also failed: {retry_e}")
-                    state['connection_failures'] += 1
-            else:
-                print(f"[MUSIC] Too many failures, stopping")
-                await ctx.send("❌ Music stopped due to repeated errors.")
-                self._cleanup_guild_state(ctx.guild.id)
 
     async def skip_song(self, ctx):
         """Skip current song"""
