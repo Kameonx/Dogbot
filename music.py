@@ -73,8 +73,7 @@ class MusicBot:
                 'current_playlist': [],
                 'current_index': 0,
                 'connection_failures': 0,
-                'last_failure_time': 0,
-                'manual_stop': False
+                'last_failure_time': 0
             }
         return self.guild_states[guild_id]
 
@@ -89,10 +88,8 @@ class MusicBot:
         if ctx.voice_client and ctx.voice_client.is_connected():
             try:
                 # Test if connection is actually working by checking channel access
-                # Use a simpler check to avoid false positives
-                if ctx.voice_client.channel:
-                    # Connection seems healthy - just check if channel exists
-                    print(f"[MUSIC] Already connected to {ctx.voice_client.channel.name}, connection looks good")
+                if ctx.voice_client.channel and len(ctx.voice_client.channel.members) >= 0:
+                    # Connection seems healthy
                     return True
             except Exception as e:
                 print(f"[MUSIC] Voice connection validation failed: {e}, will reconnect")
@@ -261,17 +258,10 @@ class MusicBot:
                 return
             print(f"[MUSIC] Attempting to play song {index + 1}: {url}")
             
-            # Ensure clean playback state: stop any playing or paused audio and wait until stopped
-            if voice_client.is_playing() or voice_client.is_paused():
-                print("[MUSIC] Stopping current playback before starting next song")
-                # Mark manual stop to suppress after_playing scheduling
-                state['manual_stop'] = True
+            # Stop current playback if playing
+            if voice_client.is_playing():
                 voice_client.stop()
-                # Wait for playback to fully stop
-                for _ in range(5):
-                    if not voice_client.is_playing():
-                        break
-                    await asyncio.sleep(0.5)
+                await asyncio.sleep(0.5)  # Brief pause to ensure clean stop
             
             # Create and play audio source
             try:
@@ -285,31 +275,35 @@ class MusicBot:
                 return
             
             def after_playing(error):
-                # Handle manual stops without scheduling next
-                state = self._get_guild_state(ctx.guild.id)
-                if state.get('manual_stop'):
-                    state['manual_stop'] = False
-                    return
                 if error:
                     print(f"[MUSIC] Player error: {error}")
                 else:
                     print(f"[MUSIC] Song finished normally")
                 
-                # Schedule next song directly
-                async def delayed_next():
-                    await asyncio.sleep(2)
-                    # Increment index and play next song
-                    state = self._get_guild_state(ctx.guild.id)
-                    state['current_index'] += 1
-                    await self._play_current_song(ctx)
-                # Schedule next song safely from non-async callback
-                asyncio.run_coroutine_threadsafe(delayed_next(), self.bot.loop)
+                # Schedule next song only if state still exists (not after leave)
+                if ctx.guild.id in self.guild_states:
+                    try:
+                        # Add a small delay to prevent rapid-fire errors
+                        async def delayed_next():
+                            await asyncio.sleep(1)
+                            await self._advance_to_next_song(ctx)
+                        
+                        self.bot.loop.create_task(delayed_next())
+                    except Exception as sched_err:
+                        print(f"[MUSIC] Error scheduling next song: {sched_err}")
     
             try:
-                # Validate connection and ensure voice client is ready
-                if not voice_client.is_connected() or not voice_client.channel:
-                    raise Exception("Voice client not ready for playback")
-                # Play the new audio player
+                # Validate connection before attempting to play
+                if not voice_client.is_connected():
+                    raise Exception("Voice client reports not connected")
+                
+                # Additional check - try to access the channel
+                if not voice_client.channel:
+                    raise Exception("Voice client has no channel")
+                    
+                # Test channel access
+                _ = voice_client.channel.name
+                
                 voice_client.play(player, after=after_playing)
                 
                 # Send now playing message to appropriate text channel
@@ -329,39 +323,17 @@ class MusicBot:
                 await target_chan.send(message_content)
                 print(f"[MUSIC] Successfully started playback: {player.title}")
             except Exception as e:
-                err_str = str(e).lower()
                 print(f"[MUSIC] Failed to start playback: {e}")
-                # Retry on 'already playing audio' error
-                if "already playing audio" in err_str:
-                    print("[MUSIC] Detected AlreadyPlayingAudio, retrying playback")
-                    # Stop and wait for clean state
-                    voice_client.stop()
-                    await asyncio.sleep(1)
-                    # Retry play
-                    voice_client.play(player, after=after_playing)
-                    # Resend now playing message
-                    voice_chan = ctx.voice_client.channel if ctx.voice_client else None
-                    target_chan = None
-                    if voice_chan:
-                        for text_chan in ctx.guild.text_channels:
-                            if text_chan.name == voice_chan.name:
-                                target_chan = text_chan
-                                break
-                    if not target_chan:
-                        target_chan = ctx.channel
-                    video_link = player.data.get('webpage_url') or player.url
-                    message_content = f"🎵 Now playing: [{player.title}]({video_link}) ({index + 1}/{len(playlist)})"
-                    await target_chan.send(message_content)
-                    print(f"[MUSIC] Successfully retried playback: {player.title}")
-                    return
-                # Connection errors handling
-                if "not connected" in err_str or "no channel" in err_str:
+                
+                # If it's a connection error, mark as connection failure
+                if "not connected" in str(e).lower() or "no channel" in str(e).lower():
                     import time
                     state = self._get_guild_state(ctx.guild.id)
                     state['connection_failures'] = state.get('connection_failures', 0) + 1
                     state['last_failure_time'] = time.time()
                     print(f"[MUSIC] Connection failure #{state['connection_failures']} detected")
-                # Advance to next song for other errors
+                
+                # Try to advance to next song
                 await self._advance_to_next_song(ctx)
             
         except Exception as e:
@@ -371,13 +343,70 @@ class MusicBot:
             await self._advance_to_next_song(ctx)
 
     async def _advance_to_next_song(self, ctx):
-        """Advance to next song in playlist"""
+        """Advance to next song with circuit breaker to prevent infinite loops"""
+        import time
+        
         try:
             state = self._get_guild_state(ctx.guild.id)
+            
+            # Circuit breaker: if we've had too many failures recently, stop
+            current_time = time.time()
+            if current_time - state.get('last_failure_time', 0) < 60:  # Within last minute
+                failure_count = state.get('connection_failures', 0)
+                if failure_count >= 5:
+                    print(f"[MUSIC] Circuit breaker activated: {failure_count} failures in last minute, stopping")
+                    await ctx.send("🚫 Music stopped due to repeated connection failures. Use `!start` to try again.")
+                    self._cleanup_guild_state(ctx.guild.id)
+                    return
+            else:
+                # Reset failure count if it's been more than a minute
+                state['connection_failures'] = 0
+            
+            # Check if still connected to voice
+            voice_client = ctx.voice_client or ctx.guild.voice_client
+            if not voice_client or not voice_client.is_connected():
+                print("[MUSIC] Voice client disconnected, attempting to reconnect before next song")
+                reconnected = await self.join_voice_channel(ctx, announce=False)
+                if not reconnected:
+                    print("[MUSIC] Could not reconnect, incrementing failure count")
+                    state['connection_failures'] = state.get('connection_failures', 0) + 1
+                    state['last_failure_time'] = current_time
+                    
+                    # If we've failed too many times, stop completely
+                    if state['connection_failures'] >= 3:
+                        print("[MUSIC] Too many reconnect failures, stopping music")
+                        await ctx.send("❌ Unable to maintain voice connection. Music stopped.")
+                        self._cleanup_guild_state(ctx.guild.id)
+                        return
+                    else:
+                        # Wait longer before next attempt
+                        await asyncio.sleep(5)
+                        return
+                
+            # Reset failure count on successful connection
+            state['connection_failures'] = 0
             state['current_index'] += 1
             await self._play_current_song(ctx)
+            
         except Exception as e:
             print(f"[MUSIC] Error advancing to next song: {e}")
+            state = self._get_guild_state(ctx.guild.id)
+            state['connection_failures'] = state.get('connection_failures', 0) + 1
+            state['last_failure_time'] = time.time()
+            
+            # Try to continue anyway, but with limits
+            if state['connection_failures'] < 3:
+                try:
+                    state['current_index'] += 1
+                    await asyncio.sleep(3)  # Longer delay before retry
+                    await self._play_current_song(ctx)
+                except Exception as retry_e:
+                    print(f"[MUSIC] Retry also failed: {retry_e}")
+                    state['connection_failures'] += 1
+            else:
+                print(f"[MUSIC] Too many failures, stopping")
+                await ctx.send("❌ Music stopped due to repeated errors.")
+                self._cleanup_guild_state(ctx.guild.id)
 
     async def skip_song(self, ctx):
         """Skip current song"""
@@ -460,49 +489,77 @@ class MusicBot:
         # Ensure voice connection
         voice_client = ctx.voice_client or ctx.guild.voice_client
         if not voice_client or not voice_client.is_connected():
-            if not await self.join_voice_channel(ctx):
-                return
-            voice_client = ctx.voice_client or ctx.guild.voice_client
-        # Interrupt current playlist playback
-        state = self._get_guild_state(ctx.guild.id)
-        saved_playlist = list(state['current_playlist'])
-        saved_index = state['current_index']
-        state['manual_stop'] = True
-        # Clear state to suppress scheduling
+            # Try to reconnect to previous channel without requiring user
+            state = self._get_guild_state(ctx.guild.id)
+            channel_id = state.get('voice_channel_id')
+            if channel_id:
+                channel = ctx.guild.get_channel(channel_id)
+                if channel:
+                    try:
+                        voice_client = await channel.connect()
+                    except Exception as e:
+                        print(f"[MUSIC] play_url reconnect error: {e}")
+            # Fallback to user-initiated join if still not connected
+            if not voice_client or not voice_client.is_connected():
+                if not await self.join_voice_channel(ctx):
+                    return
+                voice_client = ctx.voice_client or ctx.guild.voice_client
+        # Save current playlist state to resume later
+        prev_state = self.guild_states.get(ctx.guild.id)
+        saved_state = None
+        if prev_state:
+            saved_state = {
+                'current_playlist': list(prev_state['current_playlist']),
+                'current_index': prev_state['current_index']
+            }
+        # Remove state so playlist callbacks are suppressed
         self.guild_states.pop(ctx.guild.id, None)
-        # Stop any current playback and ensure it's stopped
+        # Stop any current playback
         if voice_client.is_playing():
             voice_client.stop()
-            await asyncio.sleep(1)
-        # Load and play the single URL
         try:
             player = await YouTubeAudioSource.from_url(url)
         except Exception as e:
-            # Restore playlist state on failure
-            self.guild_states[ctx.guild.id] = {'current_playlist': saved_playlist, 'current_index': saved_index}
+            # Restore previous playlist state on failure
+            if saved_state is not None:
+                self.guild_states[ctx.guild.id] = saved_state
             await ctx.send(f"❌ Failed to load URL: {e}")
             return
-        def after_url(error):
-            # Restore playlist and resume
-            state = self._get_guild_state(ctx.guild.id)
-            state['current_playlist'] = saved_playlist
-            # Resume from next track
-            next_idx = (saved_index + 1) % len(saved_playlist) if saved_playlist else 0
-            state['current_index'] = next_idx
-            state['manual_stop'] = False
-            # Start playlist playback
-            asyncio.run_coroutine_threadsafe(self._play_current_song(ctx), self.bot.loop)
-        voice_client.play(player, after=after_url)
-        # Send now playing message for URL
+        def after(error):
+            if error:
+                print(f"[MUSIC] URL playback error: {error}")
+            # Restore previous playlist state
+            if saved_state is not None:
+                restored_index = saved_state['current_index'] + 1
+                playlist = saved_state['current_playlist']
+                if restored_index >= len(playlist):
+                    restored_index = 0
+                    random.shuffle(playlist)
+                self.guild_states[ctx.guild.id] = {
+                    'current_playlist': playlist,
+                    'current_index': restored_index
+                }
+            # Advance to next song from restored state
+            try:
+                print(f"[MUSIC] Resuming playlist after URL playback in guild {ctx.guild.id}")
+                self.bot.loop.create_task(self._advance_to_next_song(ctx))
+            except Exception as err:
+                print(f"[MUSIC] Error resuming playlist: {err}")
+        voice_client.play(player, after=after)
+        # Send now playing message to appropriate text channel
         msg = f"🎵 Now playing URL: **{player.title}**"
-        target = ctx.guild.text_channels[0] if ctx.guild.text_channels else ctx.channel
-        # Try matching voice channel name if possible
-        if ctx.voice_client and ctx.voice_client.channel:
+        # Prefer a text channel matching the voice channel name
+        voice_chan = ctx.voice_client.channel if ctx.voice_client else None
+        target_chan = None
+        if voice_chan:
             for text_chan in ctx.guild.text_channels:
-                if text_chan.name == ctx.voice_client.channel.name:
-                    target = text_chan
+                if text_chan.name == voice_chan.name:
+                    target_chan = text_chan
                     break
-        await target.send(msg)
+        # Fallback to command channel
+        if not target_chan:
+            target_chan = ctx.channel
+        await target_chan.send(msg)
 
     async def voice_health_check(self):
         """Temporarily disabled to prevent connection conflicts"""
