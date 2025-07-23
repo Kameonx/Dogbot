@@ -732,12 +732,15 @@ async def previous(ctx):
     await ctx.send("❌ Previous song not available in simplified mode!")
 
 @bot.command()
-async def play(ctx, *, url: str):
-    """Play a single YouTube URL, then resume the main playlist."""
+async def play(ctx, *, url: Optional[str] = None):
+    """Play the main playlist or a single YouTube URL."""
     if not music_bot:
         await ctx.send("❌ Music bot is not initialized!")
         return
-    await music_bot.play_url(ctx, url)
+    if url:
+        await music_bot.play_url(ctx, url)
+    else:
+        await music_bot.play_music(ctx)
 
 @bot.command()
 async def playlist(ctx):
