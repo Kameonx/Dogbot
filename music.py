@@ -502,7 +502,7 @@ class MusicBot:
                 if text_chan.name == ctx.voice_client.channel.name:
                     target = text_chan
                     break
-        target.send(msg)
+        await target.send(msg)
 
     async def voice_health_check(self):
         """Temporarily disabled to prevent connection conflicts"""
