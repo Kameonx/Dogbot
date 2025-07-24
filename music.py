@@ -102,6 +102,8 @@ class MusicBot:
         
         # Determine channel to join: prefer user's voice channel, otherwise saved channel
         state = self._get_guild_state(ctx.guild.id)
+        # Suppress auto-rejoin events during manual join/cleanup
+        state['suppress_auto_rejoin'] = True
         # Check if user is in a voice channel
         user_voice = getattr(ctx.author, 'voice', None)
         if user_voice and user_voice.channel:
@@ -132,6 +134,8 @@ class MusicBot:
             # Store voice channel in state for reconnect logic
             state['voice_channel_id'] = channel.id
             print(f"[MUSIC] Successfully connected to {channel.name}")
+            # Clear any suppression of auto-rejoin
+            state.pop('suppress_auto_rejoin', None)
             if announce:
                 await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
@@ -148,6 +152,8 @@ class MusicBot:
                     vc = await channel.connect()
                     state['voice_channel_id'] = channel.id
                     print(f"[MUSIC] Reconnected after cleanup to {channel.name}")
+                    # Clear any suppression of auto-rejoin
+                    state.pop('suppress_auto_rejoin', None)
                     return True
                 except Exception as retry_e:
                     print(f"[MUSIC] Reconnect after cleanup failed: {retry_e}")
