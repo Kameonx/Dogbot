@@ -458,6 +458,13 @@ async def on_voice_state_update(member, before, after):
             
         print(f"[MUSIC] Bot disconnected from voice channel {before.channel.name}, attempting auto-rejoin")
         _auto_rejoin_in_progress.add(guild_id)
+        # Check suppression flag from manual join
+        state = music_bot._get_guild_state(guild_id) if music_bot else {}
+        if state.get('suppress_auto_rejoin'):
+            print(f"[MUSIC] Auto-rejoin suppressed for guild {guild_id}, skipping")
+            state.pop('suppress_auto_rejoin', None)
+            _auto_rejoin_in_progress.discard(guild_id)
+            return
         
         try:
             # Get last known voice channel and ensure we have music state
@@ -470,10 +477,15 @@ async def on_voice_state_update(member, before, after):
                     channel = before.channel.guild.get_channel(channel_id)
                     if channel:
                         try:
-                            # Simple reconnect attempt with a delay
+                            # Delegate reconnection to MusicBot logic with a brief delay
                             await asyncio.sleep(2)
-                            await channel.connect()
-                            print(f"[MUSIC] Auto-rejoined to voice channel {channel.name} in guild {guild_id}")
+                            from types import SimpleNamespace
+                            fake_ctx = SimpleNamespace(author=bot.user, guild=before.channel.guild)
+                            success = await music_bot.join_voice_channel(fake_ctx, announce=False)
+                            if success:
+                                print(f"[MUSIC] Auto-rejoined via join_voice_channel to {channel.name} in guild {guild_id}")
+                            else:
+                                print(f"[MUSIC] Auto-rejoin via join_voice_channel failed for guild {guild_id}")
                         except Exception as e:
                             if "already connected" not in str(e).lower():
                                 print(f"[MUSIC] Auto-rejoin failed: {e}")
