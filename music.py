@@ -116,28 +116,22 @@ class MusicBot:
             return False
         
         try:
-            # Check if already connected to the desired channel
+            # Force cleanup any existing connection first
             existing_vc = ctx.voice_client or ctx.guild.voice_client
-            if existing_vc and existing_vc.is_connected() and existing_vc.channel and existing_vc.channel.id == channel.id:
-                # Already in the correct voice channel
-                return True
-            # Otherwise, only disconnect stale connections (different channel)
-            if existing_vc and existing_vc.is_connected():
+            if existing_vc:
                 try:
-                    print(f"[MUSIC] Cleaning up stale connection before reconnecting")
+                    print(f"[MUSIC] Cleaning up existing connection before reconnecting")
                     await existing_vc.disconnect()
                     await asyncio.sleep(1)
                 except Exception as cleanup_e:
                     print(f"[MUSIC] Cleanup error (continuing): {cleanup_e}")
-
+            
             # Fresh connection attempt
             print(f"[MUSIC] Connecting to {channel.name}")
             vc = await channel.connect()
             # Store voice channel in state for reconnect logic
             state['voice_channel_id'] = channel.id
             print(f"[MUSIC] Successfully connected to {channel.name}")
-            # Clear any suppression of auto-rejoin
-            state.pop('suppress_auto_rejoin', None)
             if announce:
                 await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
@@ -154,8 +148,6 @@ class MusicBot:
                     vc = await channel.connect()
                     state['voice_channel_id'] = channel.id
                     print(f"[MUSIC] Reconnected after cleanup to {channel.name}")
-                    # Clear any suppression of auto-rejoin
-                    state.pop('suppress_auto_rejoin', None)
                     return True
                 except Exception as retry_e:
                     print(f"[MUSIC] Reconnect after cleanup failed: {retry_e}")
