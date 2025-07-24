@@ -443,6 +443,8 @@ _auto_rejoin_in_progress = set()
 @bot.event
 async def on_voice_state_update(member, before, after):
     """Auto-rejoin if the bot is disconnected unexpectedly from voice."""
+    # Disabled auto-rejoin to prevent join/disconnect loops
+    return
     # Only act on bot's own voice state
     if bot.user is None or member.id != bot.user.id:
         return
