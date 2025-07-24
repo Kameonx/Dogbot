@@ -102,8 +102,6 @@ class MusicBot:
         
         # Determine channel to join: prefer user's voice channel, otherwise saved channel
         state = self._get_guild_state(ctx.guild.id)
-        # Suppress auto-rejoin events during manual join/cleanup
-        state['suppress_auto_rejoin'] = True
         # Check if user is in a voice channel
         user_voice = getattr(ctx.author, 'voice', None)
         if user_voice and user_voice.channel:
