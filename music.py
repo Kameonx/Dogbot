@@ -15,11 +15,11 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         self.url = data.get('url')
 
     @classmethod
-    async def from_url(cls, url, *, loop=None):
+    async def from_url(cls, url, *, loop=None, retry_count=0):
         """Create audio source with minimal options for cloud reliability"""
         loop = loop or asyncio.get_event_loop()
         
-        # Minimal yt-dlp options for cloud deployment
+        # Enhanced yt-dlp options for cloud deployment with network resilience
         ytdl_options = {
             'format': 'bestaudio',
             'noplaylist': True,
@@ -27,6 +27,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'no_warnings': True,
             'extract_flat': False,
             'cookiefile': 'cookies.txt' if 'cookies.txt' else None,
+            'socket_timeout': 30,
+            'retries': 2,
         }
 
         ytdl = yt_dlp.YoutubeDL(ytdl_options)
@@ -43,17 +45,24 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             if not data.get('url'):
                 raise ValueError("No playable URL found")
 
-            # Stable FFmpeg options for cloud deployment
-            # Removed aggressive reconnection options that cause instability
+            # Enhanced FFmpeg options for cloud deployment with network resilience
+            # Added minimal reconnection options for network stability
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-nostdin',
-                options='-vn -nostats -hide_banner -loglevel warning'
+                before_options='-nostdin -reconnect 1 -reconnect_at_eof 1 -reconnect_delay_max 2',
+                options='-vn -nostats -hide_banner -loglevel error'
             )
             
             return cls(source, data=data)
         
         except Exception as e:
+            error_str = str(e).lower()
+            # Retry once for network-related errors
+            if retry_count == 0 and any(keyword in error_str for keyword in ["connection", "network", "timeout", "tls"]):
+                print(f"[MUSIC] Network error, retrying: {e}")
+                await asyncio.sleep(1)
+                return await cls.from_url(url, loop=loop, retry_count=1)
+            
             print(f"Audio source error: {e}")
             raise ValueError(f"Failed to create audio source: {str(e)[:100]}")
 
@@ -248,13 +257,27 @@ class MusicBot:
             except Exception as e:
                 print(f"[MUSIC] Failed to create audio source: {e}")
                 err_msg = str(e)
+                
+                # Check if it's a network-related error that might resolve with retry
+                if any(keyword in err_msg.lower() for keyword in ["connection", "network", "timeout", "tls", "io error"]):
+                    print(f"[MUSIC] Network error detected, will retry this song later")
+                    # Don't skip immediately, try next song and come back to this one
+                    state = self._get_guild_state(ctx.guild.id)
+                    current_url = state['current_playlist'][state['current_index']]
+                    # Move failed song to end of playlist for retry
+                    state['current_playlist'].append(current_url)
+                
                 # Suppressed per-song load failure notification to avoid spam
                 await self._advance_to_next_song(ctx)
                 return
             
             def after_playing(error):
                 if error:
-                    print(f"[MUSIC] Player error: {error}")
+                    error_str = str(error).lower()
+                    if any(keyword in error_str for keyword in ["connection reset", "tls", "io error", "network"]):
+                        print(f"[MUSIC] Network error during playback: {error}")
+                    else:
+                        print(f"[MUSIC] Player error: {error}")
                 else:
                     print(f"[MUSIC] Song finished normally")
                 
@@ -262,8 +285,10 @@ class MusicBot:
                 if ctx.guild.id in self.guild_states:
                     try:
                         # Add a longer delay to prevent rapid transitions and connection stress
+                        # Increase delay after network errors
+                        delay = 3 if error and any(keyword in str(error).lower() for keyword in ["connection", "tls", "network"]) else 2
                         async def delayed_next():
-                            await asyncio.sleep(2)
+                            await asyncio.sleep(delay)
                             await self._advance_to_next_song(ctx)
                         
                         self.bot.loop.create_task(delayed_next())
@@ -308,9 +333,12 @@ class MusicBot:
                     state['connection_failures'] = state.get('connection_failures', 0) + 1
                     state['last_failure_time'] = time.time()
                     print(f"[MUSIC] Connection failure #{state['connection_failures']} detected")
+                elif any(keyword in error_str for keyword in ["tls", "network", "io error", "reset by peer"]):
+                    # Network errors are often temporary, don't count them as harshly
+                    print(f"[MUSIC] Network error detected (not counting as connection failure): {e}")
                 
                 # Try to advance to next song with a longer delay
-                await asyncio.sleep(2)
+                await asyncio.sleep(3 if "network" in error_str or "tls" in error_str else 2)
                 await self._advance_to_next_song(ctx)
             
         except Exception as e:
