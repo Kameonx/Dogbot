@@ -387,9 +387,6 @@ async def on_ready():
     # Initialize music bot
     music_bot = MusicBot(bot)
     print("Music bot initialized")
-    # Start voice health check to auto-reconnect on disconnects
-    asyncio.create_task(music_bot.voice_health_check())
-    print("Voice health check started")
 
 @bot.event
 async def on_disconnect():
@@ -437,53 +434,19 @@ async def on_message(message):
     # Just process commands, don't handle them manually here
     await bot.process_commands(message)
 
-# Global variable to prevent concurrent auto-rejoin attempts
-_auto_rejoin_in_progress = set()
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    """Auto-rejoin if the bot is disconnected unexpectedly from voice."""
+    """Handle voice state updates - simplified to avoid reconnection loops"""
     # Only act on bot's own voice state
     if bot.user is None or member.id != bot.user.id:
         return
     
-    # If bot was in a voice channel and now disconnected
+    # Just log disconnections without auto-rejoin to prevent loops
     if before.channel and after.channel is None:
-        guild_id = before.channel.guild.id
-        
-        # Prevent concurrent auto-rejoin attempts for the same guild
-        if guild_id in _auto_rejoin_in_progress:
-            print(f"[MUSIC] Auto-rejoin already in progress for guild {guild_id}, skipping")
-            return
-            
-        print(f"[MUSIC] Bot disconnected from voice channel {before.channel.name}, attempting auto-rejoin")
-        _auto_rejoin_in_progress.add(guild_id)
-        
-        try:
-            # Get last known voice channel and ensure we have music state
-            if music_bot:
-                state = music_bot._get_guild_state(guild_id)
-                channel_id = state.get('voice_channel_id')
-                
-                # Only auto-rejoin if we have an active playlist
-                if channel_id and state.get('current_playlist'):
-                    channel = before.channel.guild.get_channel(channel_id)
-                    if channel:
-                        try:
-                            # Simple reconnect attempt with a delay
-                            await asyncio.sleep(2)
-                            await channel.connect()
-                            print(f"[MUSIC] Auto-rejoined to voice channel {channel.name} in guild {guild_id}")
-                        except Exception as e:
-                            if "already connected" not in str(e).lower():
-                                print(f"[MUSIC] Auto-rejoin failed: {e}")
-                    else:
-                        print(f"[MUSIC] Auto-rejoin failed: Channel {channel_id} not found")
-                else:
-                    print(f"[MUSIC] Auto-rejoin skipped: No active playlist")
-        finally:
-            # Always remove from progress set
-            _auto_rejoin_in_progress.discard(guild_id)
+        print(f"[MUSIC] Bot disconnected from voice channel {before.channel.name}")
+    elif after.channel and before.channel is None:
+        print(f"[MUSIC] Bot connected to voice channel {after.channel.name}")
 
 # Helper function to check for admin/moderator permissions
 def has_admin_or_moderator_role(ctx):
