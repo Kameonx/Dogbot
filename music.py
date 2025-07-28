@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import asyncio
+import os
 import random
 import yt_dlp
 from playlist import MUSIC_PLAYLISTS
@@ -26,7 +27,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
-            'cookiefile': 'cookies.txt' if 'cookies.txt' else None,
+            'cookiefile': 'cookies.txt' if os.path.isfile('cookies.txt') else None,
             'socket_timeout': 30,
             'retries': 2,
         }
@@ -49,8 +50,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             # Added minimal reconnection options for network stability
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-nostdin -reconnect 1 -reconnect_at_eof 1 -reconnect_delay_max 2',
-                options='-vn -nostats -hide_banner -loglevel error'
+                before_options='-nostdin -reconnect 1 -reconnect_streamed 1 -reconnect_at_eof 1 -reconnect_delay_max 2',
+                options='-vn -nostats -hide_banner -loglevel error -ignore_io_errors 1'
             )
             
             return cls(source, data=data)
