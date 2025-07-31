@@ -48,10 +48,12 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
 
             # Enhanced FFmpeg options for cloud deployment with network resilience
             # Added minimal reconnection options for network stability
+            # Simplify FFmpeg options for Render.com compatibility
+            ffmpeg_executable = os.getenv('FFMPEG_PATH', 'ffmpeg')
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-nostdin -reconnect 1 -reconnect_streamed 1 -reconnect_at_eof 1 -reconnect_delay_max 2',
-                options='-vn -nostats -hide_banner -loglevel error -ignore_io_errors 1'
+                executable=ffmpeg_executable,
+                options='-vn -loglevel error'
             )
             
             return cls(source, data=data)
