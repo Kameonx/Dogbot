@@ -48,14 +48,10 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
 
             # Enhanced FFmpeg options for cloud deployment with network resilience
             # Added minimal reconnection options for network stability
-            # Simplify FFmpeg options for Render.com compatibility but ensure PCM formatting
-            ffmpeg_executable = os.getenv('FFMPEG_PATH', 'ffmpeg')
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                executable=ffmpeg_executable,
-                # Add reconnection flags to handle intermittent network/TLS disconnections
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -reconnect_at_eof 1 -nostdin',
-                options='-vn -map a -f s16le -ar 48000 -ac 2 -loglevel error'
+                before_options='-nostdin -reconnect 1 -reconnect_streamed 1 -reconnect_at_eof 1 -reconnect_delay_max 2',
+                options='-vn -nostats -hide_banner -loglevel error -ignore_io_errors 1'
             )
             
             return cls(source, data=data)
@@ -216,8 +212,14 @@ class MusicBot:
             voice_client = ctx.voice_client or ctx.guild.voice_client
             
             if not voice_client or not voice_client.is_connected():
-                print("[MUSIC] Voice client not connected, aborting playback")
-                return
+                print("[MUSIC] Voice client not connected, attempting to reconnect")
+                # Try reconnection once with a delay
+                await asyncio.sleep(1)
+                reconnected = await self.join_voice_channel(ctx, announce=False)
+                if not reconnected:
+                    print("[MUSIC] Could not reconnect, stopping playback")
+                    return
+                voice_client = ctx.voice_client or ctx.guild.voice_client
             
             state = self._get_guild_state(ctx.guild.id)
             playlist = state['current_playlist']
@@ -294,28 +296,51 @@ class MusicBot:
                     except Exception as sched_err:
                         print(f"[MUSIC] Error scheduling next song: {sched_err}")
     
-            # Ensure connection still valid before playing
-            if not voice_client.is_connected():
-                print("[MUSIC] Voice client disconnected, aborting play_current_song")
-                return
-            voice_client.play(player, after=after_playing)
-
-            # Send now playing message to appropriate text channel
-            # Prefer a text channel matching the voice channel name
-            voice_chan = ctx.voice_client.channel if ctx.voice_client else None
-            target_chan = None
-            if voice_chan:
-                for text_chan in ctx.guild.text_channels:
-                    if text_chan.name == voice_chan.name:
-                        target_chan = text_chan
-                        break
-            # Fallback to command channel
-            if not target_chan:
-                target_chan = ctx.channel
-            video_link = player.data.get('webpage_url') or player.url
-            message_content = f"🎵 Now playing: [{player.title}]({video_link}) ({index + 1}/{len(playlist)})"
-            await target_chan.send(message_content)
-            print(f"[MUSIC] Successfully started playback: {player.title}")
+            try:
+                # Simple connection check before playing
+                if not voice_client.is_connected():
+                    print("[MUSIC] Voice client disconnected during playback attempt")
+                    # Try to reconnect once
+                    if not await self.join_voice_channel(ctx, announce=False):
+                        raise Exception("Could not reconnect to voice channel")
+                    voice_client = ctx.voice_client or ctx.guild.voice_client
+                
+                voice_client.play(player, after=after_playing)
+                
+                # Send now playing message to appropriate text channel
+                # Prefer a text channel matching the voice channel name
+                voice_chan = ctx.voice_client.channel if ctx.voice_client else None
+                target_chan = None
+                if voice_chan:
+                    for text_chan in ctx.guild.text_channels:
+                        if text_chan.name == voice_chan.name:
+                            target_chan = text_chan
+                            break
+                # Fallback to command channel
+                if not target_chan:
+                    target_chan = ctx.channel
+                video_link = player.data.get('webpage_url') or player.url
+                message_content = f"🎵 Now playing: [{player.title}]({video_link}) ({index + 1}/{len(playlist)})"
+                await target_chan.send(message_content)
+                print(f"[MUSIC] Successfully started playback: {player.title}")
+            except Exception as e:
+                print(f"[MUSIC] Failed to start playback: {e}")
+                
+                # Don't mark every playback issue as a connection failure
+                error_str = str(e).lower()
+                if any(keyword in error_str for keyword in ["not connected", "no channel", "connection"]):
+                    import time
+                    state = self._get_guild_state(ctx.guild.id)
+                    state['connection_failures'] = state.get('connection_failures', 0) + 1
+                    state['last_failure_time'] = time.time()
+                    print(f"[MUSIC] Connection failure #{state['connection_failures']} detected")
+                elif any(keyword in error_str for keyword in ["tls", "network", "io error", "reset by peer"]):
+                    # Network errors are often temporary, don't count them as harshly
+                    print(f"[MUSIC] Network error detected (not counting as connection failure): {e}")
+                
+                # Try to advance to next song with a longer delay
+                await asyncio.sleep(3 if "network" in error_str or "tls" in error_str else 2)
+                await self._advance_to_next_song(ctx)
             
         except Exception as e:
             print(f"[MUSIC] Error in _play_current_song: {e}")
@@ -343,12 +368,27 @@ class MusicBot:
                 # Reset failure count if it's been more than a minute
                 state['connection_failures'] = 0
             
-            # Stop playback if disconnected
+            # Check if still connected to voice
             voice_client = ctx.voice_client or ctx.guild.voice_client
             if not voice_client or not voice_client.is_connected():
-                print("[MUSIC] Voice client disconnected, aborting playlist")
-                self._cleanup_guild_state(ctx.guild.id)
-                return
+                print("[MUSIC] Voice client disconnected, attempting to reconnect before next song")
+                reconnected = await self.join_voice_channel(ctx, announce=False)
+                if not reconnected:
+                    print("[MUSIC] Could not reconnect, incrementing failure count")
+                    state['connection_failures'] = state.get('connection_failures', 0) + 1
+                    state['last_failure_time'] = current_time
+                    
+                    # If we've failed too many times, wait longer before trying again
+                    if state['connection_failures'] >= 5:
+                        print("[MUSIC] Multiple connection failures, pausing for recovery")
+                        await ctx.send("⚠️ Connection issues detected. Pausing briefly for recovery...")
+                        await asyncio.sleep(10)
+                        # Reset failure count after pause
+                        state['connection_failures'] = 0
+                    else:
+                        # Wait longer before next attempt
+                        await asyncio.sleep(3)
+                        return
                 
             # Reset failure count on successful connection
             state['connection_failures'] = 0
