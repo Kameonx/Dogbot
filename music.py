@@ -82,7 +82,8 @@ class MusicBot:
                 'current_playlist': [],
                 'current_index': 0,
                 'connection_failures': 0,
-                'last_failure_time': 0
+                'last_failure_time': 0,
+                'skip_requested': False  # Track manual skip requests
             }
         return self.guild_states[guild_id]
 
@@ -208,6 +209,10 @@ class MusicBot:
     async def _play_current_song(self, ctx):
         """Play current song with improved error handling"""
         try:
+            # Reset skip flag at start of each song
+            state = self._get_guild_state(ctx.guild.id)
+            state['skip_requested'] = False
+            
             # Simple voice client check
             voice_client = ctx.voice_client or ctx.guild.voice_client
             
@@ -284,6 +289,13 @@ class MusicBot:
                 
                 # Schedule next song only if state still exists (not after leave)
                 if ctx.guild.id in self.guild_states:
+                    # Check if this was a manual skip - if so, don't advance again
+                    state = self.guild_states[ctx.guild.id]
+                    if state.get('skip_requested', False):
+                        print(f"[MUSIC] Manual skip detected, not auto-advancing")
+                        state['skip_requested'] = False  # Reset flag
+                        return
+                    
                     try:
                         # Add a longer delay to prevent rapid transitions and connection stress
                         # Increase delay after network errors
@@ -416,14 +428,30 @@ class MusicBot:
                 self._cleanup_guild_state(ctx.guild.id)
 
     async def skip_song(self, ctx):
-        """Skip current song"""
+        """Skip current song without disconnecting from voice channel"""
         try:
             if not ctx.voice_client or not ctx.voice_client.is_playing():
                 await ctx.send("❌ Nothing is playing!")
                 return
             
-            ctx.voice_client.stop()  # This will trigger the after callback
-            await ctx.send("⏭️ Skipped song!")
+            # Instead of stopping the voice client, advance to next song directly
+            state = self._get_guild_state(ctx.guild.id)
+            if state['current_playlist']:
+                # Set skip flag to prevent double advancement
+                state['skip_requested'] = True
+                
+                # Stop current audio but don't disconnect
+                if ctx.voice_client.is_playing():
+                    ctx.voice_client.stop()
+                
+                # Advance to next song
+                state['current_index'] += 1
+                await ctx.send("⏭️ Skipping to next song...")
+                
+                # Play next song immediately without waiting for the callback
+                await self._play_current_song(ctx)
+            else:
+                await ctx.send("❌ No playlist is active!")
             
         except Exception as e:
             await ctx.send(f"❌ Error skipping song: {str(e)[:100]}")
