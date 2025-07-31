@@ -102,10 +102,13 @@ class MusicBot:
             return False
             
         target_channel = user_voice.channel
+        print(f"[MUSIC] Target channel: {target_channel.name} (ID: {target_channel.id})")
         
         # Check if already connected to the right channel
         if ctx.voice_client and ctx.voice_client.is_connected():
-            if ctx.voice_client.channel.id == target_channel.id:
+            current_channel_id = ctx.voice_client.channel.id
+            print(f"[MUSIC] Currently connected to channel ID: {current_channel_id}")
+            if current_channel_id == target_channel.id:
                 print(f"[MUSIC] Already connected to {target_channel.name}")
                 if announce:
                     await ctx.send(f"✅ Already connected to **{target_channel.name}**")
@@ -115,15 +118,47 @@ class MusicBot:
                 print(f"[MUSIC] Switching from {ctx.voice_client.channel.name} to {target_channel.name}")
                 try:
                     await ctx.voice_client.disconnect()
-                    await asyncio.sleep(1.0)  # Give time for clean disconnect
+                    print("[MUSIC] Disconnected successfully, waiting...")
+                    await asyncio.sleep(1.5)  # Increase delay for cleaner disconnect
                 except Exception as e:
                     print(f"[MUSIC] Error during disconnect: {e}")
         
+        # Ensure we're not still connected after disconnect
+        if ctx.voice_client:
+            print(f"[MUSIC] Warning: voice_client still exists after disconnect attempt")
+        
         # Connect to the target channel
         try:
-            print(f"[MUSIC] Connecting to {target_channel.name}")
-            vc = await target_channel.connect()
+            print(f"[MUSIC] Attempting connection to {target_channel.name}")
             
+            # Force cleanup any existing connection first
+            if hasattr(ctx.guild, 'voice_client') and ctx.guild.voice_client:
+                print("[MUSIC] Found existing guild voice client, cleaning up...")
+                try:
+                    await ctx.guild.voice_client.disconnect(force=True)
+                    await asyncio.sleep(0.5)
+                except:
+                    pass
+            
+            vc = await target_channel.connect(timeout=20.0, reconnect=False)  # Disable auto-reconnect
+            print(f"[MUSIC] Connection object created: {vc}")
+            
+            # Wait a moment for connection to stabilize
+            await asyncio.sleep(0.5)
+            
+            # Verify connection with multiple checks
+            if vc and vc.is_connected():
+                print(f"[MUSIC] Connection verified: connected to {vc.channel.name}")
+                # Double-check the connection is actually working
+                try:
+                    ws_state = vc.ws and not vc.ws.closed if hasattr(vc, 'ws') else "unknown"
+                    print(f"[MUSIC] WebSocket state: {ws_state}")
+                except Exception as ws_e:
+                    print(f"[MUSIC] Could not check WebSocket state: {ws_e}")
+            else:
+                print(f"[MUSIC] Warning: Connection object exists but not connected")
+                raise Exception("Connection failed verification")
+                
             # Store channel info for later use
             state = self._get_guild_state(ctx.guild.id)
             state['voice_channel_id'] = target_channel.id
@@ -135,6 +170,7 @@ class MusicBot:
             
         except discord.ClientException as e:
             error_msg = str(e).lower()
+            print(f"[MUSIC] ClientException: {e}")
             if "already connected" in error_msg:
                 print(f"[MUSIC] Already connected (ClientException), continuing...")
                 return True
@@ -143,6 +179,11 @@ class MusicBot:
                 if announce:
                     await ctx.send(f"❌ Could not connect: {str(e)[:100]}")
                 return False
+        except asyncio.TimeoutError:
+            print(f"[MUSIC] Connection timeout")
+            if announce:
+                await ctx.send(f"❌ Connection timeout - try again")
+            return False
         except Exception as e:
             print(f"[MUSIC] Connection error: {e}")
             if announce:
