@@ -292,51 +292,28 @@ class MusicBot:
                     except Exception as sched_err:
                         print(f"[MUSIC] Error scheduling next song: {sched_err}")
     
-            try:
-                # Simple connection check before playing
-                if not voice_client.is_connected():
-                    print("[MUSIC] Voice client disconnected during playback attempt")
-                    # Try to reconnect once
-                    if not await self.join_voice_channel(ctx, announce=False):
-                        raise Exception("Could not reconnect to voice channel")
-                    voice_client = ctx.voice_client or ctx.guild.voice_client
-                
-                voice_client.play(player, after=after_playing)
-                
-                # Send now playing message to appropriate text channel
-                # Prefer a text channel matching the voice channel name
-                voice_chan = ctx.voice_client.channel if ctx.voice_client else None
-                target_chan = None
-                if voice_chan:
-                    for text_chan in ctx.guild.text_channels:
-                        if text_chan.name == voice_chan.name:
-                            target_chan = text_chan
-                            break
-                # Fallback to command channel
-                if not target_chan:
-                    target_chan = ctx.channel
-                video_link = player.data.get('webpage_url') or player.url
-                message_content = f"🎵 Now playing: [{player.title}]({video_link}) ({index + 1}/{len(playlist)})"
-                await target_chan.send(message_content)
-                print(f"[MUSIC] Successfully started playback: {player.title}")
-            except Exception as e:
-                print(f"[MUSIC] Failed to start playback: {e}")
-                
-                # Don't mark every playback issue as a connection failure
-                error_str = str(e).lower()
-                if any(keyword in error_str for keyword in ["not connected", "no channel", "connection"]):
-                    import time
-                    state = self._get_guild_state(ctx.guild.id)
-                    state['connection_failures'] = state.get('connection_failures', 0) + 1
-                    state['last_failure_time'] = time.time()
-                    print(f"[MUSIC] Connection failure #{state['connection_failures']} detected")
-                elif any(keyword in error_str for keyword in ["tls", "network", "io error", "reset by peer"]):
-                    # Network errors are often temporary, don't count them as harshly
-                    print(f"[MUSIC] Network error detected (not counting as connection failure): {e}")
-                
-                # Try to advance to next song with a longer delay
-                await asyncio.sleep(3 if "network" in error_str or "tls" in error_str else 2)
-                await self._advance_to_next_song(ctx)
+            # Ensure connection still valid before playing
+            if not voice_client.is_connected():
+                print("[MUSIC] Voice client disconnected, aborting play_current_song")
+                return
+            voice_client.play(player, after=after_playing)
+
+            # Send now playing message to appropriate text channel
+            # Prefer a text channel matching the voice channel name
+            voice_chan = ctx.voice_client.channel if ctx.voice_client else None
+            target_chan = None
+            if voice_chan:
+                for text_chan in ctx.guild.text_channels:
+                    if text_chan.name == voice_chan.name:
+                        target_chan = text_chan
+                        break
+            # Fallback to command channel
+            if not target_chan:
+                target_chan = ctx.channel
+            video_link = player.data.get('webpage_url') or player.url
+            message_content = f"🎵 Now playing: [{player.title}]({video_link}) ({index + 1}/{len(playlist)})"
+            await target_chan.send(message_content)
+            print(f"[MUSIC] Successfully started playback: {player.title}")
             
         except Exception as e:
             print(f"[MUSIC] Error in _play_current_song: {e}")
