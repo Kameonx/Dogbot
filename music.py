@@ -48,12 +48,13 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
 
             # Enhanced FFmpeg options for cloud deployment with network resilience
             # Added minimal reconnection options for network stability
-            # Simplify FFmpeg options for Render.com compatibility
+            # Simplify FFmpeg options for Render.com compatibility but ensure PCM formatting
             ffmpeg_executable = os.getenv('FFMPEG_PATH', 'ffmpeg')
             source = discord.FFmpegPCMAudio(
                 data['url'],
                 executable=ffmpeg_executable,
-                options='-vn -loglevel error'
+                before_options='-nostdin',
+                options='-vn -map a -f s16le -ar 48000 -ac 2 -loglevel error'
             )
             
             return cls(source, data=data)
@@ -341,27 +342,12 @@ class MusicBot:
                 # Reset failure count if it's been more than a minute
                 state['connection_failures'] = 0
             
-            # Check if still connected to voice
+            # Stop playback if disconnected
             voice_client = ctx.voice_client or ctx.guild.voice_client
             if not voice_client or not voice_client.is_connected():
-                print("[MUSIC] Voice client disconnected, attempting to reconnect before next song")
-                reconnected = await self.join_voice_channel(ctx, announce=False)
-                if not reconnected:
-                    print("[MUSIC] Could not reconnect, incrementing failure count")
-                    state['connection_failures'] = state.get('connection_failures', 0) + 1
-                    state['last_failure_time'] = current_time
-                    
-                    # If we've failed too many times, wait longer before trying again
-                    if state['connection_failures'] >= 5:
-                        print("[MUSIC] Multiple connection failures, pausing for recovery")
-                        await ctx.send("⚠️ Connection issues detected. Pausing briefly for recovery...")
-                        await asyncio.sleep(10)
-                        # Reset failure count after pause
-                        state['connection_failures'] = 0
-                    else:
-                        # Wait longer before next attempt
-                        await asyncio.sleep(3)
-                        return
+                print("[MUSIC] Voice client disconnected, aborting playlist")
+                self._cleanup_guild_state(ctx.guild.id)
+                return
                 
             # Reset failure count on successful connection
             state['connection_failures'] = 0
