@@ -48,10 +48,22 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
 
             # Enhanced FFmpeg options for cloud deployment with network resilience
             # Added minimal reconnection options for network stability
+            # Enhanced FFmpeg options: HTTP reconnects and I/O error tolerance
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options='-nostdin -reconnect 1 -reconnect_streamed 1 -reconnect_at_eof 1 -reconnect_delay_max 2',
-                options='-vn -nostats -hide_banner -loglevel error -ignore_io_errors 1'
+                before_options=(' -nostdin '
+                                '-re '
+                                '-reconnect 1 '
+                                '-reconnect_streamed 1 '
+                                '-reconnect_at_eof 1 '
+                                '-reconnect_delay_max 2 '
+                                '-reconnect_on_http_error 404,500,502,403,429 '
+                                '-rw_timeout 15000000'),
+                options=(' -vn '
+                         '-nostats '
+                         '-hide_banner '
+                         '-loglevel error '
+                         '-err_detect ignore_err')
             )
             
             return cls(source, data=data)
