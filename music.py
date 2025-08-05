@@ -105,9 +105,17 @@ class MusicBot:
 
     async def join_voice_channel(self, ctx, announce=True):
         """Join the invoking user's voice channel"""
+        # Cleanup stale/phantom voice clients to avoid false positives
+        existing_vc = ctx.voice_client or ctx.guild.voice_client
+        if existing_vc and not existing_vc.is_connected():
+            try:
+                print("[MUSIC] Cleaning up stale voice client")
+                await existing_vc.disconnect()
+            except Exception as cleanup_e:
+                print(f"[MUSIC] Cleanup stale voice client error: {cleanup_e}")
+            existing_vc = None
         # Check if already connected properly
-        if ctx.voice_client and ctx.voice_client.is_connected():
-            # Simple connection check - if it's connected, trust it
+        if existing_vc and existing_vc.is_connected():
             return True
         
         # Determine channel to join: prefer user's voice channel, otherwise saved channel
@@ -154,11 +162,15 @@ class MusicBot:
                 print(f"[MUSIC] Connection failed: {e}")
                 if announce:
                     await ctx.send(f"❌ Could not connect: {str(e)[:100]}")
+                # Throttle to prevent tight retry loops
+                await asyncio.sleep(1)
                 return False
         except Exception as e:
             print(f"[MUSIC] Connection error: {e}")
             if announce:
                 await ctx.send(f"❌ Could not join voice channel: {str(e)[:100]}")
+            # Throttle to prevent tight retry loops
+            await asyncio.sleep(1)
             return False
 
     async def leave_voice_channel(self, ctx):
@@ -371,7 +383,7 @@ class MusicBot:
             current_time = time.time()
             if current_time - state.get('last_failure_time', 0) < 60:  # Within last minute
                 failure_count = state.get('connection_failures', 0)
-                if failure_count >= 5:
+                if failure_count >= 3:
                     print(f"[MUSIC] Circuit breaker activated: {failure_count} failures in last minute, stopping")
                     await ctx.send("🚫 Music stopped due to repeated connection failures. Use `!start` to try again.")
                     self._cleanup_guild_state(ctx.guild.id)
@@ -391,7 +403,7 @@ class MusicBot:
                     state['last_failure_time'] = current_time
                     
                     # If we've failed too many times, wait longer before trying again
-                    if state['connection_failures'] >= 5:
+                    if state['connection_failures'] >= 3:
                         print("[MUSIC] Multiple connection failures, pausing for recovery")
                         await ctx.send("⚠️ Connection issues detected. Pausing briefly for recovery...")
                         await asyncio.sleep(10)
@@ -414,7 +426,7 @@ class MusicBot:
             state['last_failure_time'] = time.time()
             
             # Try to continue anyway, but with limits
-            if state['connection_failures'] < 5:
+            if state['connection_failures'] < 3:
                 try:
                     state['current_index'] += 1
                     await asyncio.sleep(5)  # Longer delay before retry
