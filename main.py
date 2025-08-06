@@ -634,18 +634,8 @@ async def join(ctx):
         await ctx.send("❌ Music bot is not initialized!")
         return
 
-    # Try joining with retry to ensure reliable connection
     success = await music_bot.join_voice_channel(ctx)
     if not success:
-        # Retry once after a brief delay
-        await asyncio.sleep(1)
-        success = await music_bot.join_voice_channel(ctx)
-        if not success:
-            await ctx.send("❌ Failed to join voice channel after retry.")
-            return
-    # Confirm the bot is connected
-    if not ctx.voice_client or not ctx.voice_client.is_connected():
-        await ctx.send("❌ Could not establish voice connection.")
         return
     # Auto-start music after join
     await music_bot.play_music(ctx)
