@@ -236,18 +236,8 @@ class MusicBot:
     async def _play_current_song(self, ctx):
         """Play current song with improved error handling"""
         try:
-            # Simple voice client check
+            # Assume voice client remains connected after initial join
             voice_client = ctx.voice_client or ctx.guild.voice_client
-            
-            if not voice_client or not voice_client.is_connected():
-                print("[MUSIC] Voice client not connected, attempting to reconnect")
-                # Try reconnection once with a delay
-                await asyncio.sleep(1)
-                reconnected = await self.join_voice_channel(ctx, announce=False)
-                if not reconnected:
-                    print("[MUSIC] Could not reconnect, stopping playback")
-                    return
-                voice_client = ctx.voice_client or ctx.guild.voice_client
             
             state = self._get_guild_state(ctx.guild.id)
             playlist = state['current_playlist']
