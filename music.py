@@ -86,6 +86,10 @@ class MusicBot:
         self.bot = bot
         # Minimal state management
         self.guild_states = {}  # guild_id -> {'current_playlist': [], 'current_index': 0}
+        # Suppression flag for playlist resume after manual URL play
+        self.suppress_next = set()
+        # Guilds flagged to suppress auto-resume after manual play_url
+        self.manual_resume_suppressed = set()
 
     def _get_guild_state(self, guild_id):
         """Get or create guild state"""
@@ -297,9 +301,23 @@ class MusicBot:
                 return
             
             def after_playing(error):
+                # Suppression for manual URL playback: skip scheduling next if flagged
+                if ctx.guild.id in self.manual_resume_suppressed:
+                    print("[MUSIC] Suppressing auto-resume from playlist due to manual play_url")
+                    self.manual_resume_suppressed.remove(ctx.guild.id)
+                    return
+                
                 if error:
                     error_str = str(error).lower()
-                    if any(keyword in error_str for keyword in ["connection reset", "tls", "io error", "network"]):
+                    # Retry same track on IO errors to handle mid-stream disconnects
+                    if 'io error' in error_str or 'input/output error' in error_str:
+                        print(f"[MUSIC] IO error during playback, retrying track: {error}")
+                        async def retry_current():
+                            await asyncio.sleep(3)
+                            await self._play_current_song(ctx)
+                        self.bot.loop.create_task(retry_current())
+                        return
+                    if any(keyword in error_str for keyword in ["connection reset", "tls", "network"]):
                         print(f"[MUSIC] Network error during playback: {error}")
                     else:
                         print(f"[MUSIC] Player error: {error}")
@@ -517,6 +535,8 @@ class MusicBot:
 
     async def play_url(self, ctx, url):
         """Play a single URL, then resume the main playlist"""
+        # Flag to suppress automatic playlist resume logic until URL playback finishes
+        self.manual_resume_suppressed.add(ctx.guild.id)
         # Ensure voice connection
         voice_client = ctx.voice_client or ctx.guild.voice_client
         if not voice_client or not voice_client.is_connected():
