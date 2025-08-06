@@ -86,10 +86,6 @@ class MusicBot:
         self.bot = bot
         # Minimal state management
         self.guild_states = {}  # guild_id -> {'current_playlist': [], 'current_index': 0}
-        # Suppression flag for playlist resume after manual URL play
-        self.suppress_next = set()
-        # Guilds flagged to suppress auto-resume after manual play_url
-        self.manual_resume_suppressed = set()
 
     def _get_guild_state(self, guild_id):
         """Get or create guild state"""
@@ -109,17 +105,9 @@ class MusicBot:
 
     async def join_voice_channel(self, ctx, announce=True):
         """Join the invoking user's voice channel"""
-        # Cleanup stale/phantom voice clients to avoid false positives
-        existing_vc = ctx.voice_client or ctx.guild.voice_client
-        if existing_vc and not existing_vc.is_connected():
-            try:
-                print("[MUSIC] Cleaning up stale voice client")
-                await existing_vc.disconnect()
-            except Exception as cleanup_e:
-                print(f"[MUSIC] Cleanup stale voice client error: {cleanup_e}")
-            existing_vc = None
         # Check if already connected properly
-        if existing_vc and existing_vc.is_connected():
+        if ctx.voice_client and ctx.voice_client.is_connected():
+            # Simple connection check - if it's connected, trust it
             return True
         
         # Determine channel to join: prefer user's voice channel, otherwise saved channel
@@ -166,15 +154,11 @@ class MusicBot:
                 print(f"[MUSIC] Connection failed: {e}")
                 if announce:
                     await ctx.send(f"❌ Could not connect: {str(e)[:100]}")
-                # Throttle to prevent tight retry loops
-                await asyncio.sleep(1)
                 return False
         except Exception as e:
             print(f"[MUSIC] Connection error: {e}")
             if announce:
                 await ctx.send(f"❌ Could not join voice channel: {str(e)[:100]}")
-            # Throttle to prevent tight retry loops
-            await asyncio.sleep(1)
             return False
 
     async def leave_voice_channel(self, ctx):
@@ -236,8 +220,18 @@ class MusicBot:
     async def _play_current_song(self, ctx):
         """Play current song with improved error handling"""
         try:
-            # Assume voice client remains connected after initial join
+            # Simple voice client check
             voice_client = ctx.voice_client or ctx.guild.voice_client
+            
+            if not voice_client or not voice_client.is_connected():
+                print("[MUSIC] Voice client not connected, attempting to reconnect")
+                # Try reconnection once with a delay
+                await asyncio.sleep(1)
+                reconnected = await self.join_voice_channel(ctx, announce=False)
+                if not reconnected:
+                    print("[MUSIC] Could not reconnect, stopping playback")
+                    return
+                voice_client = ctx.voice_client or ctx.guild.voice_client
             
             state = self._get_guild_state(ctx.guild.id)
             playlist = state['current_playlist']
@@ -291,23 +285,9 @@ class MusicBot:
                 return
             
             def after_playing(error):
-                # Suppression for manual URL playback: skip scheduling next if flagged
-                if ctx.guild.id in self.manual_resume_suppressed:
-                    print("[MUSIC] Suppressing auto-resume from playlist due to manual play_url")
-                    self.manual_resume_suppressed.remove(ctx.guild.id)
-                    return
-                
                 if error:
                     error_str = str(error).lower()
-                    # Retry same track on IO errors to handle mid-stream disconnects
-                    if 'io error' in error_str or 'input/output error' in error_str:
-                        print(f"[MUSIC] IO error during playback, retrying track: {error}")
-                        async def retry_current():
-                            await asyncio.sleep(3)
-                            await self._play_current_song(ctx)
-                        self.bot.loop.create_task(retry_current())
-                        return
-                    if any(keyword in error_str for keyword in ["connection reset", "tls", "network"]):
+                    if any(keyword in error_str for keyword in ["connection reset", "tls", "io error", "network"]):
                         print(f"[MUSIC] Network error during playback: {error}")
                     else:
                         print(f"[MUSIC] Player error: {error}")
@@ -391,7 +371,7 @@ class MusicBot:
             current_time = time.time()
             if current_time - state.get('last_failure_time', 0) < 60:  # Within last minute
                 failure_count = state.get('connection_failures', 0)
-                if failure_count >= 3:
+                if failure_count >= 5:
                     print(f"[MUSIC] Circuit breaker activated: {failure_count} failures in last minute, stopping")
                     await ctx.send("🚫 Music stopped due to repeated connection failures. Use `!start` to try again.")
                     self._cleanup_guild_state(ctx.guild.id)
@@ -411,7 +391,7 @@ class MusicBot:
                     state['last_failure_time'] = current_time
                     
                     # If we've failed too many times, wait longer before trying again
-                    if state['connection_failures'] >= 3:
+                    if state['connection_failures'] >= 5:
                         print("[MUSIC] Multiple connection failures, pausing for recovery")
                         await ctx.send("⚠️ Connection issues detected. Pausing briefly for recovery...")
                         await asyncio.sleep(10)
@@ -434,7 +414,7 @@ class MusicBot:
             state['last_failure_time'] = time.time()
             
             # Try to continue anyway, but with limits
-            if state['connection_failures'] < 3:
+            if state['connection_failures'] < 5:
                 try:
                     state['current_index'] += 1
                     await asyncio.sleep(5)  # Longer delay before retry
@@ -525,8 +505,6 @@ class MusicBot:
 
     async def play_url(self, ctx, url):
         """Play a single URL, then resume the main playlist"""
-        # Flag to suppress automatic playlist resume logic until URL playback finishes
-        self.manual_resume_suppressed.add(ctx.guild.id)
         # Ensure voice connection
         voice_client = ctx.voice_client or ctx.guild.voice_client
         if not voice_client or not voice_client.is_connected():
