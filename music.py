@@ -5,9 +5,6 @@ import os
 import random
 import yt_dlp
 from playlist import MUSIC_PLAYLISTS
-import tempfile
-import shutil
-from pathlib import Path
 
 class YouTubeAudioSource(discord.PCMVolumeTransformer):
     """Simplified audio source for cloud deployment"""
@@ -20,95 +17,67 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
 
     @classmethod
     async def from_url(cls, url, *, loop=None, retry_count=0):
-        """Create audio source by predownloading to a temp file for stability on cloud hosts."""
+        """Create audio source with minimal options for cloud reliability"""
         loop = loop or asyncio.get_event_loop()
-
-        # Prepare a cache directory inside the project (persists for container lifetime)
-        cache_dir = Path("cache")
-        cache_dir.mkdir(exist_ok=True)
-
-        # yt-dlp options: prefer opus/webm, force IPv4, add cookies if present, set UA
-        base_ytdl_opts = {
-            'format': 'bestaudio[ext=webm][acodec=opus]/bestaudio/best',
+        
+        # Enhanced yt-dlp options for cloud deployment with network resilience
+        ytdl_options = {
+            'format': 'bestaudio',
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
+            'cookiefile': 'cookies.txt' if os.path.isfile('cookies.txt') else None,
             'socket_timeout': 30,
             'retries': 2,
-            'source_address': '0.0.0.0',  # force IPv4
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
-                'Accept-Language': 'en-US,en;q=0.9',
-            },
         }
-        if os.path.isfile('cookies.txt'):
-            base_ytdl_opts['cookiefile'] = 'cookies.txt'
+
+        ytdl = yt_dlp.YoutubeDL(ytdl_options)
 
         try:
-            # First, get info without downloading to learn the ID/extension
-            info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(base_ytdl_opts).extract_info(url, download=False))
-            if not info:
+            data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
+            
+            if not data:
                 raise ValueError("No data extracted")
-            if 'entries' in info:
-                info = info['entries'][0]
+                
+            if 'entries' in data:
+                data = data['entries'][0]
 
-            vid_id = info.get('id') or 'audio'
-            title = info.get('title') or 'audio'
+            if not data.get('url'):
+                raise ValueError("No playable URL found")
 
-            # Now download to a deterministic filename under cache/
-            dl_opts = dict(base_ytdl_opts)
-            dl_opts.update({
-                'outtmpl': str(cache_dir / f"{vid_id}.%(ext)s"),
-                'paths': {'home': str(cache_dir)},
-                'nopart': True,  # write directly to final file
-                'continuedl': True,
-            })
-
-            def _download():
-                with yt_dlp.YoutubeDL(dl_opts) as ydl:
-                    return ydl.extract_info(url, download=True)
-
-            info_dl = await loop.run_in_executor(None, _download)
-            # Build final path
-            # prepare_filename respects outtmpl and chosen format
-            with yt_dlp.YoutubeDL(dl_opts) as ydl_tmp:
-                filename = ydl_tmp.prepare_filename(info_dl)
-            file_path = Path(filename)
-            if not file_path.exists():
-                # Some extractors may set ext later; try webm by default
-                alt = cache_dir / f"{vid_id}.webm"
-                if alt.exists():
-                    file_path = alt
-                else:
-                    raise ValueError("Downloaded file not found")
-
-            # Create FFmpeg source from local file (no network flakiness)
+            # Enhanced FFmpeg options for cloud deployment with network resilience
+            # Added minimal reconnection options for network stability
+            # Enhanced FFmpeg options: HTTP reconnects and I/O error tolerance
             source = discord.FFmpegPCMAudio(
-                str(file_path),
-                before_options='-nostdin',
-                options='-vn -nostats -hide_banner -loglevel error'
+                data['url'],
+                before_options=(' -nostdin '
+                                '-re '
+                                '-reconnect 1 '
+                                '-reconnect_streamed 1 '
+                                '-reconnect_at_eof 1 '
+                                '-reconnect_delay_max 2 '
+                                '-reconnect_on_http_error 404,500,502,403,429 '
+                                '-rw_timeout 15000000'),
+                options=(' -vn '
+                         '-nostats '
+                         '-hide_banner '
+                         '-loglevel error '
+                         '-err_detect ignore_err')
             )
-
-            instance = cls(source, data={
-                'title': title,
-                'url': str(file_path),
-                'webpage_url': info.get('webpage_url') or url,
-            })
-            # Attach tempfile path for cleanup after playback
-            setattr(instance, 'tempfile', str(file_path))
-            return instance
-
+            
+            return cls(source, data=data)
+        
         except Exception as e:
             error_str = str(e).lower()
-            # Retry once for transient network errors before giving up
-            if retry_count == 0 and any(keyword in error_str for keyword in ["connection", "network", "timeout", "tls", "reset by peer", "input/output error"]):
-                print(f"[MUSIC] Network error while fetching audio, retrying once: {e}")
-                await asyncio.sleep(1.5)
+            # Retry once for network-related errors
+            if retry_count == 0 and any(keyword in error_str for keyword in ["connection", "network", "timeout", "tls"]):
+                print(f"[MUSIC] Network error, retrying: {e}")
+                await asyncio.sleep(1)
                 return await cls.from_url(url, loop=loop, retry_count=1)
-
+            
             print(f"Audio source error: {e}")
-            raise ValueError(f"Failed to create audio source: {str(e)[:160]}")
+            raise ValueError(f"Failed to create audio source: {str(e)[:100]}")
 
 class MusicBot:
     """Simplified music bot for cloud deployment"""
@@ -117,17 +86,6 @@ class MusicBot:
         self.bot = bot
         # Minimal state management
         self.guild_states = {}  # guild_id -> {'current_playlist': [], 'current_index': 0}
-        # Track scheduled next-song tasks per guild to cancel on overrides (!play URL)
-        self._scheduled_next_tasks = {}
-
-    def _cancel_scheduled_next(self, guild_id: int):
-        """Cancel any pending scheduled next-song task for a guild"""
-        task = self._scheduled_next_tasks.pop(guild_id, None)
-        if task and not task.done():
-            try:
-                task.cancel()
-            except Exception:
-                pass
 
     def _get_guild_state(self, guild_id):
         """Get or create guild state"""
@@ -167,82 +125,26 @@ class MusicBot:
                 await ctx.send("❌ Join a voice channel first!")
             return False
         
-        # Permission checks to avoid join/disconnect loops caused by missing perms
-        me = ctx.guild.me
-        perms = channel.permissions_for(me) if me else None
-        if not perms or not perms.connect:
-            if announce:
-                await ctx.send("❌ I don't have permission to connect to that voice channel.")
-            return False
-        if not perms.speak:
-            # Not fatal for joining, but warn user as some servers auto-kick silent bots
-            if announce:
-                await ctx.send("⚠️ I can't speak in that channel. I may get disconnected. Ask an admin to allow Speak.")
-        
-        # Avoid joining full channels which can cause immediate kicks
         try:
-            if hasattr(channel, 'user_limit') and channel.user_limit and channel.user_limit > 0:
-                # Count non-bot members plus us
-                non_bot_count = sum(1 for m in channel.members if not getattr(m, 'bot', False))
-                # Include existing bots
-                bot_count = sum(1 for m in channel.members if getattr(m, 'bot', False))
-                total_after_join = non_bot_count + bot_count + (0 if any(m.id == me.id for m in channel.members) else 1)
-                if total_after_join > channel.user_limit and not perms.move_members:
-                    if announce:
-                        await ctx.send("❌ The voice channel is full and I can't move members. Please free a slot.")
-                    return False
-        except Exception:
-            pass
-        
-        # Stage channel caveat: bots may be suppressed. Warn and try to unsuppress if possible.
-        try:
-            if getattr(channel, 'type', None) and str(channel.type) == 'stage_voice':
-                if announce:
-                    await ctx.send("⚠️ This is a Stage channel. I might be suppressed unless a moderator invites me to speak.")
-        except Exception:
-            pass
-        
-        try:
-            # Use move_to when already connected to avoid disconnect/reconnect churn
+            # Only disconnect if we need to connect to a different channel
             existing_vc = ctx.voice_client or ctx.guild.voice_client
-            if existing_vc:
-                if existing_vc.channel and existing_vc.channel.id == channel.id:
-                    return True
+            if existing_vc and existing_vc.channel != channel:
                 try:
-                    print(f"[MUSIC] Moving voice client from {getattr(existing_vc.channel, 'name', '?')} to {channel.name}")
-                    await existing_vc.move_to(channel)
-                    state['voice_channel_id'] = channel.id
-                    if announce:
-                        await ctx.send(f"✅ Moved to **{channel.name}**")
-                    return True
-                except Exception as move_e:
-                    print(f"[MUSIC] Move failed ({move_e}), reconnecting fresh")
-                    try:
-                        await existing_vc.disconnect(force=True)
-                        await asyncio.sleep(0.5)
-                    except Exception as cleanup_e:
-                        print(f"[MUSIC] Cleanup error (continuing): {cleanup_e}")
+                    print(f"[MUSIC] Switching from {existing_vc.channel.name} to {channel.name}")
+                    await existing_vc.disconnect()
+                    await asyncio.sleep(0.5)
+                except Exception as cleanup_e:
+                    print(f"[MUSIC] Cleanup error (continuing): {cleanup_e}")
             
             # Connect if not already connected
-            print(f"[MUSIC] Connecting to {channel.name}")
-            vc = await channel.connect(timeout=10.0, self_deaf=True)
-            # Store voice channel in state for reconnect logic
-            state['voice_channel_id'] = channel.id
-            print(f"[MUSIC] Successfully connected to {channel.name}")
-            if announce:
-                await ctx.send(f"✅ Connected to **{channel.name}**")
-            
-            # Start a short silence to keep the connection alive while first track loads
-            try:
-                if vc and not vc.is_playing():
-                    silence = discord.FFmpegPCMAudio(
-                        "anullsrc=r=48000:cl=stereo",
-                        before_options='-f lavfi -i',
-                        options='-t 8 -ac 2 -ar 48000 -loglevel error'
-                    )
-                    vc.play(silence)
-            except Exception as keepalive_e:
-                print(f"[MUSIC] Keepalive (silence) play failed: {keepalive_e}")
+            if not (ctx.voice_client and ctx.voice_client.is_connected()):
+                print(f"[MUSIC] Connecting to {channel.name}")
+                vc = await channel.connect()
+                # Store voice channel in state for reconnect logic
+                state['voice_channel_id'] = channel.id
+                print(f"[MUSIC] Successfully connected to {channel.name}")
+                if announce:
+                    await ctx.send(f"✅ Connected to **{channel.name}**")
             return True
         except discord.ClientException as e:
             if "already connected" in str(e).lower():
@@ -391,42 +293,18 @@ class MusicBot:
                         print(f"[MUSIC] Player error: {error}")
                 else:
                     print(f"[MUSIC] Song finished normally")
-
-                # Clean up any temp file created for this track
-                try:
-                    tmp = getattr(player, 'tempfile', None)
-                    if tmp and os.path.exists(tmp):
-                        os.remove(tmp)
-                except Exception as ce:
-                    print(f"[MUSIC] Tempfile cleanup error: {ce}")
                 
                 # Schedule next song only if state still exists (not after leave)
                 if ctx.guild.id in self.guild_states:
                     try:
-                        # Cancel any existing scheduled task to avoid duplicates
-                        self._cancel_scheduled_next(ctx.guild.id)
                         # Add a longer delay to prevent rapid transitions and connection stress
                         # Increase delay after network errors
                         delay = 3 if error and any(keyword in str(error).lower() for keyword in ["connection", "tls", "network"]) else 2
                         async def delayed_next():
-                            # If something is already playing (e.g., a requested URL), don't advance
-                            vc = ctx.voice_client or ctx.guild.voice_client
                             await asyncio.sleep(delay)
-                            try:
-                                vc = ctx.voice_client or ctx.guild.voice_client
-                                if vc and vc.is_playing():
-                                    return
-                                if ctx.guild.id not in self.guild_states:
-                                    return
-                                await self._advance_to_next_song(ctx)
-                            finally:
-                                # Clean mapping if this task is the current one
-                                import asyncio as _asyncio
-                                cur = _asyncio.current_task()
-                                if self._scheduled_next_tasks.get(ctx.guild.id) is cur:
-                                    self._scheduled_next_tasks.pop(ctx.guild.id, None)
-                        task = self.bot.loop.create_task(delayed_next())
-                        self._scheduled_next_tasks[ctx.guild.id] = task
+                            await self._advance_to_next_song(ctx)
+                        
+                        self.bot.loop.create_task(delayed_next())
                     except Exception as sched_err:
                         print(f"[MUSIC] Error scheduling next song: {sched_err}")
     
@@ -472,14 +350,6 @@ class MusicBot:
                     # Network errors are often temporary, don't count them as harshly
                     print(f"[MUSIC] Network error detected (not counting as connection failure): {e}")
                 
-                # Cleanup temp file if it exists (playback didn't start)
-                try:
-                    tmp = getattr(player, 'tempfile', None)
-                    if tmp and os.path.exists(tmp):
-                        os.remove(tmp)
-                except Exception as ce:
-                    print(f"[MUSIC] Tempfile cleanup error after start failure: {ce}")
-
                 # Try to advance to next song with a longer delay
                 await asyncio.sleep(3 if "network" in error_str or "tls" in error_str else 2)
                 await self._advance_to_next_song(ctx)
@@ -495,10 +365,6 @@ class MusicBot:
         import time
         
         try:
-            # If something else is already playing (e.g., a user-requested URL), don't interfere
-            voice_client_chk = ctx.voice_client or ctx.guild.voice_client
-            if voice_client_chk and voice_client_chk.is_playing():
-                return
             state = self._get_guild_state(ctx.guild.id)
             
             # Circuit breaker: if we've had too many failures recently, stop
@@ -649,7 +515,7 @@ class MusicBot:
                 channel = ctx.guild.get_channel(channel_id)
                 if channel:
                     try:
-                        voice_client = await channel.connect(timeout=10.0, self_deaf=True)
+                        voice_client = await channel.connect()
                     except Exception as e:
                         print(f"[MUSIC] play_url reconnect error: {e}")
             # Fallback to user-initiated join if still not connected
@@ -657,10 +523,6 @@ class MusicBot:
                 if not await self.join_voice_channel(ctx):
                     return
                 voice_client = ctx.voice_client or ctx.guild.voice_client
-
-        # Cancel any pending playlist-advance tasks to avoid races
-        self._cancel_scheduled_next(ctx.guild.id)
-
         # Save current playlist state to resume later
         prev_state = self.guild_states.get(ctx.guild.id)
         saved_state = None
@@ -671,11 +533,9 @@ class MusicBot:
             }
         # Remove state so playlist callbacks are suppressed
         self.guild_states.pop(ctx.guild.id, None)
-
         # Stop any current playback
         if voice_client.is_playing():
             voice_client.stop()
-
         try:
             player = await YouTubeAudioSource.from_url(url)
         except Exception as e:
@@ -684,17 +544,9 @@ class MusicBot:
                 self.guild_states[ctx.guild.id] = saved_state
             await ctx.send(f"❌ Failed to load URL: {e}")
             return
-
         def after(error):
             if error:
                 print(f"[MUSIC] URL playback error: {error}")
-            # Always cleanup downloaded temp file
-            try:
-                tmp = getattr(player, 'tempfile', None)
-                if tmp and os.path.exists(tmp):
-                    os.remove(tmp)
-            except Exception as ce:
-                print(f"[MUSIC] Tempfile cleanup error (URL): {ce}")
             # Restore previous playlist state
             if saved_state is not None:
                 restored_index = saved_state['current_index'] + 1
@@ -709,22 +561,10 @@ class MusicBot:
             # Advance to next song from restored state
             try:
                 print(f"[MUSIC] Resuming playlist after URL playback in guild {ctx.guild.id}")
-                # Small delay to allow voice client to settle, and ensure no duplicates
-                async def _resume():
-                    await asyncio.sleep(1)
-                    # Guard: if something else started playing, skip
-                    vc = ctx.voice_client or ctx.guild.voice_client
-                    if vc and vc.is_playing():
-                        return
-                    await self._advance_to_next_song(ctx)
-                self._cancel_scheduled_next(ctx.guild.id)
-                task = self.bot.loop.create_task(_resume())
-                self._scheduled_next_tasks[ctx.guild.id] = task
+                self.bot.loop.create_task(self._advance_to_next_song(ctx))
             except Exception as err:
                 print(f"[MUSIC] Error resuming playlist: {err}")
-
         voice_client.play(player, after=after)
-
         # Send now playing message to appropriate text channel
         msg = f"🎵 Now playing URL: **{player.title}**"
         # Prefer a text channel matching the voice channel name
