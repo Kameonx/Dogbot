@@ -257,8 +257,8 @@ class MusicBot:
             try:
                 if vc and not vc.is_playing():
                     silence = discord.FFmpegPCMAudio(
-                        "anullsrc=r=48000:cl=stereo",
-                        before_options='-f lavfi -i',
+                        "anullsrc=channel_layout=stereo:sample_rate=48000",
+                        before_options='-f lavfi',
                         options='-t 20 -ac 2 -ar 48000 -loglevel error'
                     )
                     vc.play(silence)
