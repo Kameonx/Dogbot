@@ -123,6 +123,7 @@ class MusicBot:
         self.enable_join_backoff = False  # disables watchdog/backoff by default
         self.join_cooldown_seconds = 0    # disables manual cooldown by default
         self.enable_keepalive = False     # disables FFmpeg silence keepalive by default
+        self.enable_simple_join = True    # use minimal, stable join path by default
 
     def _cancel_scheduled_next(self, guild_id: int):
         """Cancel any pending scheduled next-song task for a guild"""
@@ -157,6 +158,38 @@ class MusicBot:
         """Join the invoking user's voice channel"""
         import time
         state = self._get_guild_state(ctx.guild.id)
+
+        # Super-simple join path to avoid churn
+        if getattr(self, 'enable_simple_join', False):
+            user_voice = getattr(ctx.author, 'voice', None)
+            channel = user_voice.channel if user_voice and user_voice.channel else None
+            if not channel:
+                # fallback to last known channel
+                channel_id = state.get('voice_channel_id')
+                channel = ctx.guild.get_channel(channel_id) if channel_id else None
+            if not channel:
+                if announce:
+                    await ctx.send("❌ Join a voice channel first!")
+                return False
+            existing_vc = ctx.voice_client or ctx.guild.voice_client
+            try:
+                if existing_vc:
+                    if existing_vc.channel and existing_vc.channel.id == channel.id:
+                        return True
+                    # Prefer move_to without any disconnects
+                    await existing_vc.move_to(channel)
+                else:
+                    await channel.connect(timeout=10.0, self_deaf=True)
+                # remember channel
+                state['voice_channel_id'] = channel.id
+                if announce:
+                    await ctx.send(f"✅ Connected to **{channel.name}**")
+                return True
+            except Exception as e:
+                print(f"[MUSIC] Simple join failed: {e}")
+                if announce:
+                    await ctx.send(f"❌ Could not connect: {str(e)[:100]}")
+                return False
 
         # Backoff if we've seen repeated instant disconnects
         now = time.time()
