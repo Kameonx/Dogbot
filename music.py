@@ -119,6 +119,10 @@ class MusicBot:
         self.guild_states = {}  # guild_id -> {'current_playlist': [], 'current_index': 0}
         # Track scheduled next-song tasks per guild to cancel on overrides (!play URL)
         self._scheduled_next_tasks = {}
+        # Feature flags (conservative defaults)
+        self.enable_join_backoff = False  # disables watchdog/backoff by default
+        self.join_cooldown_seconds = 0    # disables manual cooldown by default
+        self.enable_keepalive = False     # disables FFmpeg silence keepalive by default
 
     def _cancel_scheduled_next(self, guild_id: int):
         """Cancel any pending scheduled next-song task for a guild"""
@@ -156,14 +160,15 @@ class MusicBot:
 
         # Backoff if we've seen repeated instant disconnects
         now = time.time()
-        if now < state.get('join_blocked_until', 0):
-            remaining = int(state['join_blocked_until'] - now)
-            if announce:
-                await ctx.send(f"⏳ Join temporarily blocked due to repeated disconnects. Try again in {remaining}s.")
-            return False
+        if self.enable_join_backoff:
+            if now < state.get('join_blocked_until', 0):
+                remaining = int(state['join_blocked_until'] - now)
+                if announce:
+                    await ctx.send(f"⏳ Join temporarily blocked due to repeated disconnects. Try again in {remaining}s.")
+                return False
 
         # Cooldown to avoid thrash from rapid manual retries
-        if now - state.get('last_join_attempt', 0) < 4:
+        if self.join_cooldown_seconds and (now - state.get('last_join_attempt', 0) < self.join_cooldown_seconds):
             if announce:
                 await ctx.send("⏳ Please wait a moment before trying to join again.")
             return False
@@ -253,45 +258,47 @@ class MusicBot:
             if announce:
                 await ctx.send(f"✅ Connected to **{channel.name}**")
             
-            # Start a short silence to keep the connection alive while first track loads
-            try:
-                if vc and not vc.is_playing():
-                    silence = discord.FFmpegPCMAudio(
-                        "anullsrc=channel_layout=stereo:sample_rate=48000",
-                        before_options='-f lavfi',
-                        options='-t 20 -ac 2 -ar 48000 -loglevel error'
-                    )
-                    vc.play(silence)
-            except Exception as keepalive_e:
-                print(f"[MUSIC] Keepalive (silence) play failed: {keepalive_e}")
-
-            # Watchdog: detect immediate disconnects and apply backoff to avoid loops
-            async def _post_connect_watchdog(guild_id: int, check_delay: float = 2.0):
-                await asyncio.sleep(check_delay)
+            # Optional: short silence to keep the connection alive while first track loads
+            if self.enable_keepalive:
                 try:
-                    vc2 = ctx.voice_client or ctx.guild.voice_client
-                    if not vc2 or not vc2.is_connected():
-                        # Consider this an instant disconnect
-                        s = self._get_guild_state(guild_id)
-                        s['recent_instant_disconnects'] = s.get('recent_instant_disconnects', 0) + 1
-                        count = s['recent_instant_disconnects']
-                        # Exponential-ish backoff: block joins for 10s, 30s, 60s
-                        block_secs = 10 if count == 1 else 30 if count == 2 else 60
-                        s['join_blocked_until'] = time.time() + block_secs
-                        print(f"[MUSIC] Detected immediate disconnect after join. Backing off for {block_secs}s (count={count})")
-                        if announce:
-                            await ctx.send(f"⚠️ I was disconnected right after joining. I will back off for {block_secs}s. Check channel permissions (Connect/Speak), capacity, or Stage suppression.")
-                    else:
-                        # Stable connection; reset counters
-                        s = self._get_guild_state(guild_id)
-                        s['recent_instant_disconnects'] = 0
-                        s['join_blocked_until'] = 0
-                except Exception as wd_e:
-                    print(f"[MUSIC] Join watchdog error: {wd_e}")
-            try:
-                self.bot.loop.create_task(_post_connect_watchdog(ctx.guild.id))
-            except Exception:
-                pass
+                    if vc and not vc.is_playing():
+                        silence = discord.FFmpegPCMAudio(
+                            "anullsrc=channel_layout=stereo:sample_rate=48000",
+                            before_options='-f lavfi',
+                            options='-t 20 -ac 2 -ar 48000 -loglevel error'
+                        )
+                        vc.play(silence)
+                except Exception as keepalive_e:
+                    print(f"[MUSIC] Keepalive (silence) play failed: {keepalive_e}")
+
+            # Optional watchdog: detect immediate disconnects and apply backoff
+            if self.enable_join_backoff:
+                async def _post_connect_watchdog(guild_id: int, check_delay: float = 2.0):
+                    await asyncio.sleep(check_delay)
+                    try:
+                        vc2 = ctx.voice_client or ctx.guild.voice_client
+                        if not vc2 or not vc2.is_connected():
+                            # Consider this an instant disconnect
+                            s = self._get_guild_state(guild_id)
+                            s['recent_instant_disconnects'] = s.get('recent_instant_disconnects', 0) + 1
+                            count = s['recent_instant_disconnects']
+                            # Exponential-ish backoff: block joins for 10s, 30s, 60s
+                            block_secs = 10 if count == 1 else 30 if count == 2 else 60
+                            s['join_blocked_until'] = time.time() + block_secs
+                            print(f"[MUSIC] Detected immediate disconnect after join. Backing off for {block_secs}s (count={count})")
+                            if announce:
+                                await ctx.send(f"⚠️ I was disconnected right after joining. I will back off for {block_secs}s. Check channel permissions (Connect/Speak), capacity, or Stage suppression.")
+                        else:
+                            # Stable connection; reset counters
+                            s = self._get_guild_state(guild_id)
+                            s['recent_instant_disconnects'] = 0
+                            s['join_blocked_until'] = 0
+                    except Exception as wd_e:
+                        print(f"[MUSIC] Join watchdog error: {wd_e}")
+                try:
+                    self.bot.loop.create_task(_post_connect_watchdog(ctx.guild.id))
+                except Exception:
+                    pass
             return True
         except discord.ClientException as e:
             if "already connected" in str(e).lower():
