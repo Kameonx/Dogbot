@@ -247,7 +247,6 @@ class MusicBot:
             # Connect if not already connected
             print(f"[MUSIC] Connecting to {channel.name}")
             vc = await channel.connect(timeout=10.0, self_deaf=True)
-            vc = await channel.connect(timeout=10.0, self_deaf=True)
             # Store voice channel in state for reconnect logic
             state['voice_channel_id'] = channel.id
             print(f"[MUSIC] Successfully connected to {channel.name}")
