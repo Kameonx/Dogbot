@@ -156,26 +156,82 @@ class MusicBot:
                 await ctx.send("❌ Join a voice channel first!")
             return False
         
+        # Permission checks to avoid join/disconnect loops caused by missing perms
+        me = ctx.guild.me
+        perms = channel.permissions_for(me) if me else None
+        if not perms or not perms.connect:
+            if announce:
+                await ctx.send("❌ I don't have permission to connect to that voice channel.")
+            return False
+        if not perms.speak:
+            # Not fatal for joining, but warn user as some servers auto-kick silent bots
+            if announce:
+                await ctx.send("⚠️ I can't speak in that channel. I may get disconnected. Ask an admin to allow Speak.")
+        
+        # Avoid joining full channels which can cause immediate kicks
         try:
-            # Only disconnect if we need to connect to a different channel
+            if hasattr(channel, 'user_limit') and channel.user_limit and channel.user_limit > 0:
+                # Count non-bot members plus us
+                non_bot_count = sum(1 for m in channel.members if not getattr(m, 'bot', False))
+                # Include existing bots
+                bot_count = sum(1 for m in channel.members if getattr(m, 'bot', False))
+                total_after_join = non_bot_count + bot_count + (0 if any(m.id == me.id for m in channel.members) else 1)
+                if total_after_join > channel.user_limit and not perms.move_members:
+                    if announce:
+                        await ctx.send("❌ The voice channel is full and I can't move members. Please free a slot.")
+                    return False
+        except Exception:
+            pass
+        
+        # Stage channel caveat: bots may be suppressed. Warn and try to unsuppress if possible.
+        try:
+            if getattr(channel, 'type', None) and str(channel.type) == 'stage_voice':
+                if announce:
+                    await ctx.send("⚠️ This is a Stage channel. I might be suppressed unless a moderator invites me to speak.")
+        except Exception:
+            pass
+        
+        try:
+            # Use move_to when already connected to avoid disconnect/reconnect churn
             existing_vc = ctx.voice_client or ctx.guild.voice_client
-            if existing_vc and existing_vc.channel != channel:
+            if existing_vc:
+                if existing_vc.channel and existing_vc.channel.id == channel.id:
+                    return True
                 try:
-                    print(f"[MUSIC] Switching from {existing_vc.channel.name} to {channel.name}")
-                    await existing_vc.disconnect()
-                    await asyncio.sleep(0.5)
-                except Exception as cleanup_e:
-                    print(f"[MUSIC] Cleanup error (continuing): {cleanup_e}")
+                    print(f"[MUSIC] Moving voice client from {getattr(existing_vc.channel, 'name', '?')} to {channel.name}")
+                    await existing_vc.move_to(channel)
+                    state['voice_channel_id'] = channel.id
+                    if announce:
+                        await ctx.send(f"✅ Moved to **{channel.name}**")
+                    return True
+                except Exception as move_e:
+                    print(f"[MUSIC] Move failed ({move_e}), reconnecting fresh")
+                    try:
+                        await existing_vc.disconnect(force=True)
+                        await asyncio.sleep(0.5)
+                    except Exception as cleanup_e:
+                        print(f"[MUSIC] Cleanup error (continuing): {cleanup_e}")
             
             # Connect if not already connected
-            if not (ctx.voice_client and ctx.voice_client.is_connected()):
-                print(f"[MUSIC] Connecting to {channel.name}")
-                vc = await channel.connect()
-                # Store voice channel in state for reconnect logic
-                state['voice_channel_id'] = channel.id
-                print(f"[MUSIC] Successfully connected to {channel.name}")
-                if announce:
-                    await ctx.send(f"✅ Connected to **{channel.name}**")
+            print(f"[MUSIC] Connecting to {channel.name}")
+            vc = await channel.connect(timeout=10.0, self_deaf=True)
+            # Store voice channel in state for reconnect logic
+            state['voice_channel_id'] = channel.id
+            print(f"[MUSIC] Successfully connected to {channel.name}")
+            if announce:
+                await ctx.send(f"✅ Connected to **{channel.name}**")
+            
+            # Start a short silence to keep the connection alive while first track loads
+            try:
+                if vc and not vc.is_playing():
+                    silence = discord.FFmpegPCMAudio(
+                        "anullsrc=r=48000:cl=stereo",
+                        before_options='-f lavfi -i',
+                        options='-t 8 -ac 2 -ar 48000 -loglevel error'
+                    )
+                    vc.play(silence)
+            except Exception as keepalive_e:
+                print(f"[MUSIC] Keepalive (silence) play failed: {keepalive_e}")
             return True
         except discord.ClientException as e:
             if "already connected" in str(e).lower():
@@ -562,7 +618,7 @@ class MusicBot:
                 channel = ctx.guild.get_channel(channel_id)
                 if channel:
                     try:
-                        voice_client = await channel.connect()
+                        voice_client = await channel.connect(timeout=10.0, self_deaf=True)
                     except Exception as e:
                         print(f"[MUSIC] play_url reconnect error: {e}")
             # Fallback to user-initiated join if still not connected
