@@ -117,6 +117,17 @@ class MusicBot:
         self.bot = bot
         # Minimal state management
         self.guild_states = {}  # guild_id -> {'current_playlist': [], 'current_index': 0}
+        # Track scheduled next-song tasks per guild to cancel on overrides (!play URL)
+        self._scheduled_next_tasks = {}
+
+    def _cancel_scheduled_next(self, guild_id: int):
+        """Cancel any pending scheduled next-song task for a guild"""
+        task = self._scheduled_next_tasks.pop(guild_id, None)
+        if task and not task.done():
+            try:
+                task.cancel()
+            except Exception:
+                pass
 
     def _get_guild_state(self, guild_id):
         """Get or create guild state"""
@@ -392,14 +403,30 @@ class MusicBot:
                 # Schedule next song only if state still exists (not after leave)
                 if ctx.guild.id in self.guild_states:
                     try:
+                        # Cancel any existing scheduled task to avoid duplicates
+                        self._cancel_scheduled_next(ctx.guild.id)
                         # Add a longer delay to prevent rapid transitions and connection stress
                         # Increase delay after network errors
                         delay = 3 if error and any(keyword in str(error).lower() for keyword in ["connection", "tls", "network"]) else 2
                         async def delayed_next():
+                            # If something is already playing (e.g., a requested URL), don't advance
+                            vc = ctx.voice_client or ctx.guild.voice_client
                             await asyncio.sleep(delay)
-                            await self._advance_to_next_song(ctx)
-                        
-                        self.bot.loop.create_task(delayed_next())
+                            try:
+                                vc = ctx.voice_client or ctx.guild.voice_client
+                                if vc and vc.is_playing():
+                                    return
+                                if ctx.guild.id not in self.guild_states:
+                                    return
+                                await self._advance_to_next_song(ctx)
+                            finally:
+                                # Clean mapping if this task is the current one
+                                import asyncio as _asyncio
+                                cur = _asyncio.current_task()
+                                if self._scheduled_next_tasks.get(ctx.guild.id) is cur:
+                                    self._scheduled_next_tasks.pop(ctx.guild.id, None)
+                        task = self.bot.loop.create_task(delayed_next())
+                        self._scheduled_next_tasks[ctx.guild.id] = task
                     except Exception as sched_err:
                         print(f"[MUSIC] Error scheduling next song: {sched_err}")
     
@@ -468,6 +495,10 @@ class MusicBot:
         import time
         
         try:
+            # If something else is already playing (e.g., a user-requested URL), don't interfere
+            voice_client_chk = ctx.voice_client or ctx.guild.voice_client
+            if voice_client_chk and voice_client_chk.is_playing():
+                return
             state = self._get_guild_state(ctx.guild.id)
             
             # Circuit breaker: if we've had too many failures recently, stop
@@ -626,6 +657,10 @@ class MusicBot:
                 if not await self.join_voice_channel(ctx):
                     return
                 voice_client = ctx.voice_client or ctx.guild.voice_client
+
+        # Cancel any pending playlist-advance tasks to avoid races
+        self._cancel_scheduled_next(ctx.guild.id)
+
         # Save current playlist state to resume later
         prev_state = self.guild_states.get(ctx.guild.id)
         saved_state = None
@@ -636,9 +671,11 @@ class MusicBot:
             }
         # Remove state so playlist callbacks are suppressed
         self.guild_states.pop(ctx.guild.id, None)
+
         # Stop any current playback
         if voice_client.is_playing():
             voice_client.stop()
+
         try:
             player = await YouTubeAudioSource.from_url(url)
         except Exception as e:
@@ -647,6 +684,7 @@ class MusicBot:
                 self.guild_states[ctx.guild.id] = saved_state
             await ctx.send(f"❌ Failed to load URL: {e}")
             return
+
         def after(error):
             if error:
                 print(f"[MUSIC] URL playback error: {error}")
@@ -671,10 +709,22 @@ class MusicBot:
             # Advance to next song from restored state
             try:
                 print(f"[MUSIC] Resuming playlist after URL playback in guild {ctx.guild.id}")
-                self.bot.loop.create_task(self._advance_to_next_song(ctx))
+                # Small delay to allow voice client to settle, and ensure no duplicates
+                async def _resume():
+                    await asyncio.sleep(1)
+                    # Guard: if something else started playing, skip
+                    vc = ctx.voice_client or ctx.guild.voice_client
+                    if vc and vc.is_playing():
+                        return
+                    await self._advance_to_next_song(ctx)
+                self._cancel_scheduled_next(ctx.guild.id)
+                task = self.bot.loop.create_task(_resume())
+                self._scheduled_next_tasks[ctx.guild.id] = task
             except Exception as err:
                 print(f"[MUSIC] Error resuming playlist: {err}")
+
         voice_client.play(player, after=after)
+
         # Send now playing message to appropriate text channel
         msg = f"🎵 Now playing URL: **{player.title}**"
         # Prefer a text channel matching the voice channel name
