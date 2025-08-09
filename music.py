@@ -119,11 +119,6 @@ class MusicBot:
         self.guild_states = {}  # guild_id -> {'current_playlist': [], 'current_index': 0}
         # Track scheduled next-song tasks per guild to cancel on overrides (!play URL)
         self._scheduled_next_tasks = {}
-        # Feature flags (conservative defaults)
-        self.enable_join_backoff = False  # disables watchdog/backoff by default
-        self.join_cooldown_seconds = 0    # disables manual cooldown by default
-        self.enable_keepalive = False     # disables FFmpeg silence keepalive by default
-        self.enable_simple_join = True    # use minimal, stable join path by default
 
     def _cancel_scheduled_next(self, guild_id: int):
         """Cancel any pending scheduled next-song task for a guild"""
@@ -141,11 +136,7 @@ class MusicBot:
                 'current_playlist': [],
                 'current_index': 0,
                 'connection_failures': 0,
-                'last_failure_time': 0,
-                # Join stability fields
-                'last_join_attempt': 0,
-                'recent_instant_disconnects': 0,
-                'join_blocked_until': 0
+                'last_failure_time': 0
             }
         return self.guild_states[guild_id]
 
@@ -156,56 +147,6 @@ class MusicBot:
 
     async def join_voice_channel(self, ctx, announce=True):
         """Join the invoking user's voice channel"""
-        import time
-        state = self._get_guild_state(ctx.guild.id)
-
-        # Super-simple join path to avoid churn
-        if getattr(self, 'enable_simple_join', False):
-            user_voice = getattr(ctx.author, 'voice', None)
-            channel = user_voice.channel if user_voice and user_voice.channel else None
-            if not channel:
-                # fallback to last known channel
-                channel_id = state.get('voice_channel_id')
-                channel = ctx.guild.get_channel(channel_id) if channel_id else None
-            if not channel:
-                if announce:
-                    await ctx.send("❌ Join a voice channel first!")
-                return False
-            existing_vc = ctx.voice_client or ctx.guild.voice_client
-            try:
-                if existing_vc:
-                    if existing_vc.channel and existing_vc.channel.id == channel.id:
-                        return True
-                    # Prefer move_to without any disconnects
-                    await existing_vc.move_to(channel)
-                else:
-                    await channel.connect(timeout=10.0, self_deaf=True)
-                # remember channel
-                state['voice_channel_id'] = channel.id
-                if announce:
-                    await ctx.send(f"✅ Connected to **{channel.name}**")
-                return True
-            except Exception as e:
-                print(f"[MUSIC] Simple join failed: {e}")
-                if announce:
-                    await ctx.send(f"❌ Could not connect: {str(e)[:100]}")
-                return False
-
-        # Backoff if we've seen repeated instant disconnects
-        now = time.time()
-        if self.enable_join_backoff:
-            if now < state.get('join_blocked_until', 0):
-                remaining = int(state['join_blocked_until'] - now)
-                if announce:
-                    await ctx.send(f"⏳ Join temporarily blocked due to repeated disconnects. Try again in {remaining}s.")
-                return False
-
-        # Cooldown to avoid thrash from rapid manual retries
-        if self.join_cooldown_seconds and (now - state.get('last_join_attempt', 0) < self.join_cooldown_seconds):
-            if announce:
-                await ctx.send("⏳ Please wait a moment before trying to join again.")
-            return False
-        state['last_join_attempt'] = now
         # Check if already connected properly
         if ctx.voice_client and ctx.voice_client.is_connected():
             # Simple connection check - if it's connected, trust it
@@ -291,47 +232,17 @@ class MusicBot:
             if announce:
                 await ctx.send(f"✅ Connected to **{channel.name}**")
             
-            # Optional: short silence to keep the connection alive while first track loads
-            if self.enable_keepalive:
-                try:
-                    if vc and not vc.is_playing():
-                        silence = discord.FFmpegPCMAudio(
-                            "anullsrc=channel_layout=stereo:sample_rate=48000",
-                            before_options='-f lavfi',
-                            options='-t 20 -ac 2 -ar 48000 -loglevel error'
-                        )
-                        vc.play(silence)
-                except Exception as keepalive_e:
-                    print(f"[MUSIC] Keepalive (silence) play failed: {keepalive_e}")
-
-            # Optional watchdog: detect immediate disconnects and apply backoff
-            if self.enable_join_backoff:
-                async def _post_connect_watchdog(guild_id: int, check_delay: float = 2.0):
-                    await asyncio.sleep(check_delay)
-                    try:
-                        vc2 = ctx.voice_client or ctx.guild.voice_client
-                        if not vc2 or not vc2.is_connected():
-                            # Consider this an instant disconnect
-                            s = self._get_guild_state(guild_id)
-                            s['recent_instant_disconnects'] = s.get('recent_instant_disconnects', 0) + 1
-                            count = s['recent_instant_disconnects']
-                            # Exponential-ish backoff: block joins for 10s, 30s, 60s
-                            block_secs = 10 if count == 1 else 30 if count == 2 else 60
-                            s['join_blocked_until'] = time.time() + block_secs
-                            print(f"[MUSIC] Detected immediate disconnect after join. Backing off for {block_secs}s (count={count})")
-                            if announce:
-                                await ctx.send(f"⚠️ I was disconnected right after joining. I will back off for {block_secs}s. Check channel permissions (Connect/Speak), capacity, or Stage suppression.")
-                        else:
-                            # Stable connection; reset counters
-                            s = self._get_guild_state(guild_id)
-                            s['recent_instant_disconnects'] = 0
-                            s['join_blocked_until'] = 0
-                    except Exception as wd_e:
-                        print(f"[MUSIC] Join watchdog error: {wd_e}")
-                try:
-                    self.bot.loop.create_task(_post_connect_watchdog(ctx.guild.id))
-                except Exception:
-                    pass
+            # Start a short silence to keep the connection alive while first track loads
+            try:
+                if vc and not vc.is_playing():
+                    silence = discord.FFmpegPCMAudio(
+                        "anullsrc=r=48000:cl=stereo",
+                        before_options='-f lavfi -i',
+                        options='-t 8 -ac 2 -ar 48000 -loglevel error'
+                    )
+                    vc.play(silence)
+            except Exception as keepalive_e:
+                print(f"[MUSIC] Keepalive (silence) play failed: {keepalive_e}")
             return True
         except discord.ClientException as e:
             if "already connected" in str(e).lower():
@@ -367,11 +278,9 @@ class MusicBot:
         """Improved music playback with better voice connection handling"""
         try:
             # Ensure connected using join logic (supports previous channels)
+            if not await self.join_voice_channel(ctx, announce=False):
+                return
             voice_client = ctx.voice_client or ctx.guild.voice_client
-            if not voice_client or not voice_client.is_connected():
-                if not await self.join_voice_channel(ctx, announce=False):
-                    return
-                voice_client = ctx.voice_client or ctx.guild.voice_client
             # Confirm connection
             if not voice_client or not voice_client.is_connected():
                 await ctx.send("❌ Voice connection failed! Please ensure I can connect to a voice channel.")
