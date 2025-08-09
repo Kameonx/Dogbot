@@ -5,6 +5,9 @@ import os
 import random
 import yt_dlp
 from playlist import MUSIC_PLAYLISTS
+import tempfile
+import shutil
+from pathlib import Path
 
 class YouTubeAudioSource(discord.PCMVolumeTransformer):
     """Simplified audio source for cloud deployment"""
@@ -17,67 +20,95 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
 
     @classmethod
     async def from_url(cls, url, *, loop=None, retry_count=0):
-        """Create audio source with minimal options for cloud reliability"""
+        """Create audio source by predownloading to a temp file for stability on cloud hosts."""
         loop = loop or asyncio.get_event_loop()
-        
-        # Enhanced yt-dlp options for cloud deployment with network resilience
-        ytdl_options = {
-            'format': 'bestaudio',
+
+        # Prepare a cache directory inside the project (persists for container lifetime)
+        cache_dir = Path("cache")
+        cache_dir.mkdir(exist_ok=True)
+
+        # yt-dlp options: prefer opus/webm, force IPv4, add cookies if present, set UA
+        base_ytdl_opts = {
+            'format': 'bestaudio[ext=webm][acodec=opus]/bestaudio/best',
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
-            'cookiefile': 'cookies.txt' if os.path.isfile('cookies.txt') else None,
             'socket_timeout': 30,
             'retries': 2,
+            'source_address': '0.0.0.0',  # force IPv4
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9',
+            },
         }
-
-        ytdl = yt_dlp.YoutubeDL(ytdl_options)
+        if os.path.isfile('cookies.txt'):
+            base_ytdl_opts['cookiefile'] = 'cookies.txt'
 
         try:
-            data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
-            
-            if not data:
+            # First, get info without downloading to learn the ID/extension
+            info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(base_ytdl_opts).extract_info(url, download=False))
+            if not info:
                 raise ValueError("No data extracted")
-                
-            if 'entries' in data:
-                data = data['entries'][0]
+            if 'entries' in info:
+                info = info['entries'][0]
 
-            if not data.get('url'):
-                raise ValueError("No playable URL found")
+            vid_id = info.get('id') or 'audio'
+            title = info.get('title') or 'audio'
 
-            # Enhanced FFmpeg options for cloud deployment with network resilience
-            # Added minimal reconnection options for network stability
-            # Enhanced FFmpeg options: HTTP reconnects and I/O error tolerance
+            # Now download to a deterministic filename under cache/
+            dl_opts = dict(base_ytdl_opts)
+            dl_opts.update({
+                'outtmpl': str(cache_dir / f"{vid_id}.%(ext)s"),
+                'paths': {'home': str(cache_dir)},
+                'nopart': True,  # write directly to final file
+                'continuedl': True,
+            })
+
+            def _download():
+                with yt_dlp.YoutubeDL(dl_opts) as ydl:
+                    return ydl.extract_info(url, download=True)
+
+            info_dl = await loop.run_in_executor(None, _download)
+            # Build final path
+            # prepare_filename respects outtmpl and chosen format
+            with yt_dlp.YoutubeDL(dl_opts) as ydl_tmp:
+                filename = ydl_tmp.prepare_filename(info_dl)
+            file_path = Path(filename)
+            if not file_path.exists():
+                # Some extractors may set ext later; try webm by default
+                alt = cache_dir / f"{vid_id}.webm"
+                if alt.exists():
+                    file_path = alt
+                else:
+                    raise ValueError("Downloaded file not found")
+
+            # Create FFmpeg source from local file (no network flakiness)
             source = discord.FFmpegPCMAudio(
-                data['url'],
-                before_options=(' -nostdin '
-                                '-re '
-                                '-reconnect 1 '
-                                '-reconnect_streamed 1 '
-                                '-reconnect_at_eof 1 '
-                                '-reconnect_delay_max 2 '
-                                '-reconnect_on_http_error 404,500,502,403,429 '
-                                '-rw_timeout 15000000'),
-                options=(' -vn '
-                         '-nostats '
-                         '-hide_banner '
-                         '-loglevel error '
-                         '-err_detect ignore_err')
+                str(file_path),
+                before_options='-nostdin',
+                options='-vn -nostats -hide_banner -loglevel error'
             )
-            
-            return cls(source, data=data)
-        
+
+            instance = cls(source, data={
+                'title': title,
+                'url': str(file_path),
+                'webpage_url': info.get('webpage_url') or url,
+            })
+            # Attach tempfile path for cleanup after playback
+            setattr(instance, 'tempfile', str(file_path))
+            return instance
+
         except Exception as e:
             error_str = str(e).lower()
-            # Retry once for network-related errors
-            if retry_count == 0 and any(keyword in error_str for keyword in ["connection", "network", "timeout", "tls"]):
-                print(f"[MUSIC] Network error, retrying: {e}")
-                await asyncio.sleep(1)
+            # Retry once for transient network errors before giving up
+            if retry_count == 0 and any(keyword in error_str for keyword in ["connection", "network", "timeout", "tls", "reset by peer", "input/output error"]):
+                print(f"[MUSIC] Network error while fetching audio, retrying once: {e}")
+                await asyncio.sleep(1.5)
                 return await cls.from_url(url, loop=loop, retry_count=1)
-            
+
             print(f"Audio source error: {e}")
-            raise ValueError(f"Failed to create audio source: {str(e)[:100]}")
+            raise ValueError(f"Failed to create audio source: {str(e)[:160]}")
 
 class MusicBot:
     """Simplified music bot for cloud deployment"""
@@ -293,6 +324,14 @@ class MusicBot:
                         print(f"[MUSIC] Player error: {error}")
                 else:
                     print(f"[MUSIC] Song finished normally")
+
+                # Clean up any temp file created for this track
+                try:
+                    tmp = getattr(player, 'tempfile', None)
+                    if tmp and os.path.exists(tmp):
+                        os.remove(tmp)
+                except Exception as ce:
+                    print(f"[MUSIC] Tempfile cleanup error: {ce}")
                 
                 # Schedule next song only if state still exists (not after leave)
                 if ctx.guild.id in self.guild_states:
@@ -350,6 +389,14 @@ class MusicBot:
                     # Network errors are often temporary, don't count them as harshly
                     print(f"[MUSIC] Network error detected (not counting as connection failure): {e}")
                 
+                # Cleanup temp file if it exists (playback didn't start)
+                try:
+                    tmp = getattr(player, 'tempfile', None)
+                    if tmp and os.path.exists(tmp):
+                        os.remove(tmp)
+                except Exception as ce:
+                    print(f"[MUSIC] Tempfile cleanup error after start failure: {ce}")
+
                 # Try to advance to next song with a longer delay
                 await asyncio.sleep(3 if "network" in error_str or "tls" in error_str else 2)
                 await self._advance_to_next_song(ctx)
@@ -547,6 +594,13 @@ class MusicBot:
         def after(error):
             if error:
                 print(f"[MUSIC] URL playback error: {error}")
+            # Always cleanup downloaded temp file
+            try:
+                tmp = getattr(player, 'tempfile', None)
+                if tmp and os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception as ce:
+                print(f"[MUSIC] Tempfile cleanup error (URL): {ce}")
             # Restore previous playlist state
             if saved_state is not None:
                 restored_index = saved_state['current_index'] + 1
