@@ -327,9 +327,11 @@ class MusicBot:
         """Improved music playback with better voice connection handling"""
         try:
             # Ensure connected using join logic (supports previous channels)
-            if not await self.join_voice_channel(ctx, announce=False):
-                return
             voice_client = ctx.voice_client or ctx.guild.voice_client
+            if not voice_client or not voice_client.is_connected():
+                if not await self.join_voice_channel(ctx, announce=False):
+                    return
+                voice_client = ctx.voice_client or ctx.guild.voice_client
             # Confirm connection
             if not voice_client or not voice_client.is_connected():
                 await ctx.send("❌ Voice connection failed! Please ensure I can connect to a voice channel.")
