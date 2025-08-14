@@ -60,7 +60,6 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
                                 '-reconnect_at_eof 1 '
                                 '-reconnect_delay_max 2 '
                                 '-reconnect_on_http_error 404,500,502,403,429 '
-                                '-http_persistent 1 '
                                 '-rw_timeout 60000000'),
                 options=(' -vn '
                          '-nostats '
