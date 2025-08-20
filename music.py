@@ -126,6 +126,10 @@ class MusicBot:
         state = self._get_guild_state(guild.id)
         lock = self._get_connect_lock(guild.id)
 
+        # Track consecutive fake connections
+        if 'fake_connect_count' not in state:
+            state['fake_connect_count'] = 0
+
         # Determine target channel: user voice > saved voice
         user_voice = getattr(ctx.author, 'voice', None)
         preferred_channel = user_voice.channel if user_voice and user_voice.channel else None
@@ -146,6 +150,25 @@ class MusicBot:
                             print(f"[MUSIC] Moving from {vc.channel.name} to {preferred_channel.name}")
                             await vc.move_to(preferred_channel)
                             state['voice_channel_id'] = preferred_channel.id
+                        # Check if Discord thinks we're connected but playback always fails
+                        # If so, increment fake_connect_count
+                        if not vc.is_playing() and not vc.is_paused():
+                            state['fake_connect_count'] += 1
+                            print(f"[MUSIC] Fake connect count: {state['fake_connect_count']}")
+                            if state['fake_connect_count'] >= 5:
+                                print("[MUSIC] HARD CIRCUIT BREAKER: Too many fake connections, forcing disconnect and auto-retry.")
+                                try:
+                                    await vc.disconnect(force=True)
+                                except Exception:
+                                    pass
+                                self._cleanup_guild_state(guild.id)
+                                state['fake_connect_count'] = 0
+                                # Immediately retry music playback
+                                await asyncio.sleep(1)
+                                await self.play_music(ctx)
+                                return False
+                        else:
+                            state['fake_connect_count'] = 0
                         return True
 
                     # Connect fresh
@@ -153,6 +176,7 @@ class MusicBot:
                     vc = await preferred_channel.connect()
                     state['voice_channel_id'] = preferred_channel.id
                     await asyncio.sleep(0.3 + 0.2 * attempt)  # small stabilization delay, increases with attempts
+                    state['fake_connect_count'] = 0
                     if announce:
                         await ctx.send(f"✅ Connected to **{preferred_channel.name}**")
                     print(f"[MUSIC] Successfully connected to {preferred_channel.name}")
@@ -161,7 +185,24 @@ class MusicBot:
                     msg = str(e).lower()
                     if 'already connected' in msg:
                         print("[MUSIC] Already connected, continuing...")
-                        return True
+                        # Increment fake connect count
+                        state['fake_connect_count'] += 1
+                        print(f"[MUSIC] Fake connect count: {state['fake_connect_count']}")
+                        if state['fake_connect_count'] >= 5:
+                            print("[MUSIC] HARD CIRCUIT BREAKER: Too many fake connections, forcing disconnect and auto-retry.")
+                            try:
+                                if guild.voice_client:
+                                    await guild.voice_client.disconnect(force=True)
+                            except Exception:
+                                pass
+                            self._cleanup_guild_state(guild.id)
+                            state['fake_connect_count'] = 0
+                            # Immediately retry music playback
+                            await asyncio.sleep(1)
+                            await self.play_music(ctx)
+                            return False
+                        await asyncio.sleep(1.5 * attempt)
+                        continue
                     print(f"[MUSIC] Connection failed: {e}")
                     if attempt == max_retries and announce:
                         await ctx.send(f"❌ Could not connect after {max_retries} attempts: {str(e)[:100]}")
@@ -170,6 +211,7 @@ class MusicBot:
                     if attempt == max_retries and announce:
                         await ctx.send(f"❌ Could not join voice channel after {max_retries} attempts: {str(e)[:100]}")
                 await asyncio.sleep(1.5 * attempt)  # exponential backoff
+            state['fake_connect_count'] = 0
             return False
 
     async def leave_voice_channel(self, ctx):
