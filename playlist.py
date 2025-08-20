@@ -94,7 +94,7 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/bd-MRcTbx7k?si=AvvPPqRO3ECaoJY3", # Cannons – Golden (Harry Styles Cover) 
     "https://youtu.be/1VGfW2n01nM?si=08Bk2WydIGVGyiM9", # Daddy - Devin Townsend · Ché Aimee Dorval
     "https://youtu.be/AGM8BMqBcTo?si=AnnJ2NFWJo80V3bx", # Gorillaz - Plastic Beach - Plastic Beach
-    "https://youtu.be/H5v3kku4y6Q?si=w2vLtWtCJdA7Fx7n", # Harry Styles - As It Was (Official Video)
+    "https://youtu.be/fAHuz8Lr4Os?si=R669nRmVB99Tv6EL", # PUSHINN
     "https://youtu.be/bzZjG9B9_Ug?si=ylFYFUc3SYOdY2qS", # Cannons - Purple Sun (Living Room Sessions)
     "https://youtu.be/CMWLX0KXwF4?si=N2emMk8cv9z-f5_q", # Tove Lo - No One Dies From Love (Official Music Video)
     "https://youtu.be/RM9O1HO4FLE?si=HXDuJwu0-1Q7aKd7", # Krosia - Azur
@@ -420,4 +420,5 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/i3aL0up-v28?si=SMa_qjg4qbOSdlNB", # Lana Del Rey Blue Jeans ft. Azealia Banks (Smims&Belle Remix)
     "https://youtu.be/aeBaSrJmTMk?si=9QAJDED8HdWQTojt", # AVAION, Sofiya Nzau - Wacuka (Official Visualizer)
 ]
+
 
