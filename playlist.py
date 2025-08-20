@@ -15,7 +15,7 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/UbQgXeY_zi4?si=Pvk238gFCPG8utZb", # Caravan Palace - Lone Digger (Official MV)
     "https://youtu.be/VW9wlPtDc50?si=PXgXkKuZ-ecnrgjg", # Stamp On The Ground (New Music Video)
     "https://youtu.be/-N4jf6rtyuw?si=GLxupjaocIeJN5dT", # Gnarls Barkley - Crazy (Official Video) [4K Remaster]
-    "https://youtu.be/VHoT4N43jK8?si=Q65te5kbioM-gx8w", # Stromae - Alors on danse (Official Video)
+    "https://youtu.be/Rwf8eS3isWk?si=gBKKNbMD5Y5wuJE7", # Stromae - Alors On Danse (Dubdogz Remix) (Bass Boosted)
     "https://youtu.be/Hu5QIP_95rk?si=zWZlX3PN6iiANPBD", # KAZKA - Plakala (R3HAB Remix)
     "https://youtu.be/w15oWDh02K4?si=1xNlGur4XjkhyWhJ", # GIGI D'AGOSTINO - L'AMOUR TOUJOURS ( OFFICIAL VIDEO )
     "https://youtu.be/63xvjICp1DI?si=1Zxn885PJIjK4p25", # Stylust Beats - Pink Floyd Comfortably Numb (Dubstep Remix)
@@ -420,4 +420,5 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/i3aL0up-v28?si=SMa_qjg4qbOSdlNB", # Lana Del Rey Blue Jeans ft. Azealia Banks (Smims&Belle Remix)
     "https://youtu.be/aeBaSrJmTMk?si=9QAJDED8HdWQTojt", # AVAION, Sofiya Nzau - Wacuka (Official Visualizer)
 ]
+
 
