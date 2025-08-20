@@ -381,7 +381,7 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/JAne46Ob0wI?si=pA5ehYyCVPlV2rIq", # DRAMA - Don't Hold Back
     "https://youtu.be/3U74JBrwgW4?si=VA_bSBHdZ-UiDTsp", # DRAMA - Walk Away
     "https://youtu.be/Vzvt757rp2g?si=sy1BvPqJa2EF0c_v", # DRAMA - Forever And A Day
-    "https://youtu.be/p-Z3YrHJ1sU?si=RqRQo75VKatDOnkC", # Edward Maya & Vika Jigulina - Stereo Love (Official Music Video)
+    "https://youtu.be/9JNsIqdu8Mw?si=j3bFip8MJJ4ddb_I", # Yoyo Bop
     "https://youtu.be/3CV0KcWM7Ns?si=sOHPrYl5YcgLIxaT", # Solardo ft. Eli Brown - XTC (Felix Ryder Radio Edit)
     "https://youtu.be/ALUOS0aLAQ8?si=RB0JzunANxl7pI8L", # 9TS BABY X I LUV U BABY
     "https://youtu.be/qScsEIqeulI?si=MN8GjJXY6Luz7TIX", # Disco Fever
@@ -420,5 +420,3 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/i3aL0up-v28?si=SMa_qjg4qbOSdlNB", # Lana Del Rey Blue Jeans ft. Azealia Banks (Smims&Belle Remix)
     "https://youtu.be/aeBaSrJmTMk?si=9QAJDED8HdWQTojt", # AVAION, Sofiya Nzau - Wacuka (Official Visualizer)
 ]
-
-
