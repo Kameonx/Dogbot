@@ -49,8 +49,8 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/WTxYp9ECnPY?si=S1f5PdSlNLlXR-vm", # Charlie Puth - Betty Boop Remix
     "https://youtu.be/52Gg9CqhbP8?si=gUWo7nuCbHqKpiD5", # Stuck In the Sound - Let's Go [Official Video]
     "https://youtu.be/OI3shBXlqsw?si=h3elcnF6GM7-1WUw", # Major Lazer - 'Get Free' feat. Amber (of Dirty Projectors) OFFICIAL LYRIC VIDEO + HQ AUDIO
-    "https://youtu.be/nGlIDlOqurA?si=YFN3DrKFBvxLsrlk", # Ellie Goulding - Lights (Bassnectar Remix) [FULL OFFICIAL]
-    "https://youtu.be/3Q9rewnLFYw?si=MOsKJ-E_5FDcANc-", # Flux Pavilion - I Can't Stop
+    "https://youtu.be/0QtCSaMYSzs?si=jxeNKtb2uI_ZxSaT", # Cajmere ft Dajae ~ Brighter days (Underground Goodies Mix)
+    "https://youtu.be/fAiyAyJyh8o?si=G5m67RMMIabk-ulM", # When The Silence Breaks
     "https://youtu.be/Tt3F2x0RuZI?si=_WvqVKJGq8xMVOIY", # Runaway (U & I)
     "https://youtu.be/0g2OB-y8bW4?si=NSjNWeBVMEzeGiRv", # KORDHELL x KUTE - DEAD ON ARRIVAL
     "https://youtu.be/yahUpxNPK98?si=Hb5b2Lyopzb0Sdga", # KORDHELL - LAND OF FIRE
@@ -420,3 +420,4 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/i3aL0up-v28?si=SMa_qjg4qbOSdlNB", # Lana Del Rey Blue Jeans ft. Azealia Banks (Smims&Belle Remix)
     "https://youtu.be/aeBaSrJmTMk?si=9QAJDED8HdWQTojt", # AVAION, Sofiya Nzau - Wacuka (Official Visualizer)
 ]
+
