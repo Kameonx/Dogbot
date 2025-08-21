@@ -1,629 +1,1679 @@
 import discord
 from discord.ext import commands
-import asyncio
+import logging
+from dotenv import load_dotenv
 import os
+import asyncio
+from aiohttp import web
+import httpx
+import json
+import aiosqlite
+from datetime import datetime
 import random
+from typing import Optional
+import re
 import yt_dlp
-from playlist import MUSIC_PLAYLISTS
+import subprocess
+from music import MusicBot, YouTubeAudioSource  # restore music functionality imports
+import base64
+import io
+import traceback
+import time
 
-class YouTubeAudioSource(discord.PCMVolumeTransformer):
-    """Simplified audio source for cloud deployment"""
-    
-    def __init__(self, source, *, data, volume=0.5):
-        super().__init__(source, volume)
-        self.data = data
-        self.title = data.get('title', 'Unknown Title')
-        self.url = data.get('url')
-
-    @classmethod
-    async def from_url(cls, url, *, loop=None, retry_count=0):
-        """Create audio source with minimal options for cloud reliability"""
-        loop = loop or asyncio.get_event_loop()
-        
-        # Enhanced yt-dlp options for cloud deployment with network resilience
-        ytdl_options = {
-            'format': 'bestaudio',
-            'noplaylist': True,
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-            'cookiefile': 'cookies.txt' if os.path.isfile('cookies.txt') else None,
-            'socket_timeout': 30,
-            'retries': 3,
-            # Prefer https and set a sane user agent to avoid some 403s
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
-            },
-        }
-
-        ytdl = yt_dlp.YoutubeDL(ytdl_options)
-
+# Ensure opus is loaded for voice support
+if not discord.opus.is_loaded():
+    # Try to load opus
+    try:
+        discord.opus.load_opus('opus')
+    except:
         try:
-            data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
-            
-            if not data:
-                raise ValueError("No data extracted")
-                
-            if 'entries' in data:
-                data = data['entries'][0]
-
-            if not data.get('url'):
-                raise ValueError("No playable URL found")
-
-            # Enhanced FFmpeg options for cloud deployment with network resilience
-            # Avoid -re (can cause throttling) and enable http reconnect/persistent connections
-            source = discord.FFmpegPCMAudio(
-                data['url'],
-                before_options=(' -nostdin '
-                                '-reconnect 1 '
-                                '-reconnect_streamed 1 '
-                                '-reconnect_at_eof 1 '
-                                '-reconnect_delay_max 2 '
-                                '-reconnect_on_http_error 404,500,502,403,429 '
-                                '-rw_timeout 60000000'),
-                options=(' -vn '
-                         '-nostats '
-                         '-hide_banner '
-                         '-loglevel error '
-                         '-err_detect ignore_err')
-            )
-            
-            return cls(source, data=data)
-        
-        except Exception as e:
-            error_str = str(e).lower()
-            # Retry once for network-related errors
-            if retry_count == 0 and any(keyword in error_str for keyword in ["connection", "network", "timeout", "tls"]):
-                print(f"[MUSIC] Network error, retrying: {e}")
-                await asyncio.sleep(1)
-                return await cls.from_url(url, loop=loop, retry_count=1)
-            
-            print(f"Audio source error: {e}")
-            raise ValueError(f"Failed to create audio source: {str(e)[:100]}")
-
-class MusicBot:
-    """Simplified music bot for cloud deployment"""
-    
-    def __init__(self, bot):
-        self.bot = bot
-        # Minimal state management
-        self.guild_states = {}  # guild_id -> {'current_playlist': [], 'current_index': 0}
-        # Per-guild connection locks to prevent concurrent connects/loops
-        self._connect_locks = {}
-
-    def _get_connect_lock(self, guild_id):
-        lock = self._connect_locks.get(guild_id)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._connect_locks[guild_id] = lock
-        return lock
-
-    def _get_guild_state(self, guild_id):
-        """Get or create guild state"""
-        if guild_id not in self.guild_states:
-            self.guild_states[guild_id] = {
-                'current_playlist': [],
-                'current_index': 0,
-                'connection_failures': 0,
-                'last_failure_time': 0
-            }
-        return self.guild_states[guild_id]
-
-    def _cleanup_guild_state(self, guild_id):
-        """Clean up guild state"""
-        if guild_id in self.guild_states:
-            del self.guild_states[guild_id]
-
-    async def join_voice_channel(self, ctx, announce=True):
-        """Join the invoking user's voice channel (debounced and locked)."""
-        return await self._ensure_voice(ctx, announce=announce)
-
-    async def _ensure_voice(self, ctx, *, announce=False, max_retries=5):
-        """Ensure we have a stable voice connection for the guild.
-        Returns True on success, False otherwise.
-        """
-        guild = ctx.guild
-        state = self._get_guild_state(guild.id)
-        lock = self._get_connect_lock(guild.id)
-
-        # Track consecutive fake connections
-        if 'fake_connect_count' not in state:
-            state['fake_connect_count'] = 0
-
-        # Determine target channel: user voice > saved voice
-        user_voice = getattr(ctx.author, 'voice', None)
-        preferred_channel = user_voice.channel if user_voice and user_voice.channel else None
-        if not preferred_channel and state.get('voice_channel_id'):
-            preferred_channel = guild.get_channel(state['voice_channel_id'])
-        if preferred_channel is None:
-            if announce:
-                await ctx.send("❌ Join a voice channel first!")
-            return False
-
-        async with lock:
-            for attempt in range(1, max_retries + 1):
-                try:
-                    vc = guild.voice_client
-                    if vc and vc.is_connected():
-                        # Already connected; if to a different channel, move
-                        if vc.channel != preferred_channel:
-                            print(f"[MUSIC] Moving from {vc.channel.name} to {preferred_channel.name}")
-                            await vc.move_to(preferred_channel)
-                            state['voice_channel_id'] = preferred_channel.id
-                        # Check for fake connections (connected but never playing)
-                        if not vc.is_playing() and not vc.is_paused():
-                            state['fake_connect_count'] += 1
-                            print(f"[MUSIC] Fake connect count: {state['fake_connect_count']}")
-                            if state['fake_connect_count'] >= 5:
-                                print("[MUSIC] HARD CIRCUIT BREAKER: Too many fake connections, forcing disconnect and internal reconnect.")
-                                try:
-                                    await vc.disconnect(force=True)
-                                except Exception:
-                                    pass
-                                state['fake_connect_count'] = 0
-                                await asyncio.sleep(1)
-                                # Continue loop to try fresh connect
-                                continue
-                        else:
-                            state['fake_connect_count'] = 0
-                        return True
-
-                    # Connect fresh
-                    print(f"[MUSIC] Connecting to {preferred_channel.name} (attempt {attempt})")
-                    vc = await preferred_channel.connect()
-                    state['voice_channel_id'] = preferred_channel.id
-                    await asyncio.sleep(0.3 + 0.2 * attempt)  # small stabilization delay, increases with attempts
-                    state['fake_connect_count'] = 0
-                    # Silent success
-                    print(f"[MUSIC] Successfully connected to {preferred_channel.name}")
-                    return True
-                except discord.ClientException as e:
-                    msg = str(e).lower()
-                    if 'already connected' in msg:
-                        print("[MUSIC] Already connected, continuing...")
-                        state['fake_connect_count'] += 1
-                        print(f"[MUSIC] Fake connect count: {state['fake_connect_count']}")
-                        if state['fake_connect_count'] >= 5:
-                            print("[MUSIC] HARD CIRCUIT BREAKER: Too many fake connections, forcing disconnect and internal reconnect.")
-                            try:
-                                if guild.voice_client:
-                                    await guild.voice_client.disconnect(force=True)
-                            except Exception:
-                                pass
-                            state['fake_connect_count'] = 0
-                            await asyncio.sleep(1)
-                            continue
-                        await asyncio.sleep(1.5 * attempt)
-                        continue
-                    # Other client exceptions
-                    print(f"[MUSIC] Connection failed: {e}")
-                except Exception as e:
-                    print(f"[MUSIC] Connection error: {e}")
-                await asyncio.sleep(1.5 * attempt)  # exponential backoff
-            state['fake_connect_count'] = 0
-            return False
-
-    async def leave_voice_channel(self, ctx):
-        """Leave voice channel and cleanup"""
-        try:
-            if ctx.voice_client:
-                # Stop any current playback
-                if getattr(ctx.voice_client, 'is_playing', lambda: False)():
-                    ctx.voice_client.stop()
-                await ctx.voice_client.disconnect()
-                self._cleanup_guild_state(ctx.guild.id)
-                await ctx.send("👋 Left the voice channel!")
-            else:
-                await ctx.send("❌ I'm not connected to a voice channel!")
-        except Exception as e:
-            await ctx.send(f"❌ Error leaving voice channel: {str(e)[:100]}")
-
-    async def play_music(self, ctx, playlist_name="main"):
-        """Improved music playback with better voice connection handling"""
-        try:
-            # Ensure connected using join logic (supports previous channels)
-            if not await self.join_voice_channel(ctx, announce=False):
-                return
-            voice_client = ctx.voice_client or ctx.guild.voice_client
-            # Confirm connection (silent)
-            if not voice_client or not voice_client.is_connected():
-                # Defer to playback which will re-ensure/retry silently
-                print("[MUSIC] Voice client not confirmed after join; proceeding to playback with auto-retry")
-
-            print(f"[MUSIC] Voice client confirmed: {voice_client} (connected: {voice_client.is_connected()})")
-
-            # Check playlist availability
-            if not MUSIC_PLAYLISTS:
-                print("[MUSIC] No songs in playlist; nothing to play")
-                return
-
-            # Use the MUSIC_PLAYLISTS list directly
-            playlist = MUSIC_PLAYLISTS.copy()
-            
-            # Set up guild state
-            state = self._get_guild_state(ctx.guild.id)
-            state['current_playlist'] = playlist
-            state['current_index'] = 0
-            
-            # Shuffle playlist
-            random.shuffle(state['current_playlist'])
-            
-            # No user notification on start
-            
-            # Start playing
-            await self._play_current_song(ctx)
-            
-        except Exception as e:
-            # Silent on error starting playlist
-            print(f"[MUSIC] Error in play_music: {e}")
-            import traceback
-            traceback.print_exc()
-
-    async def _play_current_song(self, ctx, ffmpeg_retries=2):
-        """Play current song with improved error handling"""
-        try:
-            # Ensure voice connection
-            if not await self._ensure_voice(ctx, announce=False):
-                print("[MUSIC] Could not ensure voice connection, will retry next song after short delay")
-                await asyncio.sleep(3)
-                await self._advance_to_next_song(ctx)
-                return
-            voice_client = ctx.guild.voice_client
-            
-            state = self._get_guild_state(ctx.guild.id)
-            playlist = state['current_playlist']
-            index = state['current_index']
-            
-            # Check if playlist finished
-            if index >= len(playlist):
-                # If playlist is empty, stop playback
-                if not playlist:
-                    self._cleanup_guild_state(ctx.guild.id)
-                    return
-                # Otherwise reshuffle and restart
-                state['current_index'] = 0
-                random.shuffle(state['current_playlist'])
-                await ctx.send("🔁 Playlist finished, reshuffling and restarting!")
-                await self._play_current_song(ctx)
-                return
-    
-            url = playlist[index]
-            # Skip empty or invalid URLs
-            if not url or not url.strip().startswith(('http://', 'https://')):
-                print(f"[MUSIC] Invalid URL at index {index}: '{url}', skipping.")
-                await self._advance_to_next_song(ctx)
-                return
-            print(f"[MUSIC] Attempting to play song {index + 1}: {url}")
-            
-            # Stop current playback if playing
-            if voice_client.is_playing():
-                voice_client.stop()
-                await asyncio.sleep(0.5)  # Brief pause to ensure clean stop
-            
-            # Create and play audio source
-            player = None
-            ffmpeg_error = None
-            for ffmpeg_attempt in range(ffmpeg_retries + 1):
-                try:
-                    player = await YouTubeAudioSource.from_url(url)
-                    print(f"[MUSIC] Audio source created: {player.title}")
-                    ffmpeg_error = None
-                    break
-                except Exception as e:
-                    ffmpeg_error = e
-                    err_msg = str(e)
-                    print(f"[MUSIC] Failed to create audio source (attempt {ffmpeg_attempt+1}): {e}")
-                    # Check if it's a network-related error that might resolve with retry
-                    if ffmpeg_attempt < ffmpeg_retries and any(keyword in err_msg.lower() for keyword in ["connection", "network", "timeout", "tls", "io error", "reset by peer"]):
-                        print(f"[MUSIC] Network/FFmpeg error, retrying after delay...")
-                        await asyncio.sleep(2.5 * (ffmpeg_attempt + 1))
-                        continue
-                    # If last attempt, move failed song to end of playlist for retry
-                    if any(keyword in err_msg.lower() for keyword in ["connection", "network", "timeout", "tls", "io error", "reset by peer"]):
-                        print(f"[MUSIC] Network error detected, will retry this song later")
-                        state = self._get_guild_state(ctx.guild.id)
-                        current_url = state['current_playlist'][state['current_index']]
-                        state['current_playlist'].append(current_url)
-                    # Silent failure; advance to next song
-                    await self._advance_to_next_song(ctx)
-                    return
-            
-            def after_playing(error):
-                if error:
-                    error_str = str(error).lower()
-                    if any(keyword in error_str for keyword in ["connection reset", "tls", "io error", "network"]):
-                        print(f"[MUSIC] Network error during playback: {error}")
-                    else:
-                        print(f"[MUSIC] Player error: {error}")
-                else:
-                    print(f"[MUSIC] Song finished normally")
-                
-                # Schedule next song only if state still exists (not after leave)
-                if ctx.guild.id in self.guild_states:
-                    try:
-                        # Add a longer delay to prevent rapid transitions and connection stress
-                        delay = 3 if error and any(keyword in str(error).lower() for keyword in ["connection", "tls", "network"]) else 2
-                        async def delayed_next():
-                            await asyncio.sleep(delay)
-                            await self._advance_to_next_song(ctx)
-                        # Thread-safe scheduling from FFmpeg thread
-                        self.bot.loop.call_soon_threadsafe(lambda: asyncio.create_task(delayed_next()))
-                    except Exception as sched_err:
-                        print(f"[MUSIC] Error scheduling next song: {sched_err}")
-    
-            # Only proceed if player was successfully created
-            if player:
-                try:
-                    # Simple connection check before playing
-                    if not voice_client or not voice_client.is_connected():
-                        print("[MUSIC] Voice client disconnected during playback attempt")
-                        # Try to reconnect with backoff (silent)
-                        if not await self._ensure_voice(ctx, announce=False, max_retries=5):
-                            return
-                        voice_client = ctx.guild.voice_client
-                    try:
-                        voice_client.play(player, after=after_playing)
-                    except Exception as play_err:
-                        # If play fails due to stale connection, force reconnect once and retry
-                        if 'not connected' in str(play_err).lower():
-                            print("[MUSIC] Play failed due to stale connection; forcing reconnect and retry")
-                            try:
-                                if ctx.guild.voice_client:
-                                    await ctx.guild.voice_client.disconnect(force=True)
-                            except Exception:
-                                pass
-                            if await self._ensure_voice(ctx, announce=False, max_retries=3):
-                                voice_client = ctx.guild.voice_client
-                                voice_client.play(player, after=after_playing)
-                            else:
-                                raise play_err
-                        else:
-                            raise play_err
-                    # Send now playing message to appropriate text channel
-                    voice_chan = ctx.voice_client.channel if ctx.voice_client else None
-                    target_chan = None
-                    if voice_chan:
-                        for text_chan in ctx.guild.text_channels:
-                            if text_chan.name == voice_chan.name:
-                                target_chan = text_chan
-                                break
-                    if not target_chan:
-                        target_chan = ctx.channel
-                    video_link = player.data.get('webpage_url') or player.url
-                    message_content = f"🎵 Now playing: [{player.title}]({video_link}) ({index + 1}/{len(playlist)})"
-                    await target_chan.send(message_content)
-                    print(f"[MUSIC] Successfully started playback: {player.title}")
-                except Exception as e:
-                    print(f"[MUSIC] Failed to start playback: {e}")
-                    error_str = str(e).lower()
-                    if any(keyword in error_str for keyword in ["not connected", "no channel", "connection"]):
-                        import time
-                        state = self._get_guild_state(ctx.guild.id)
-                        state['connection_failures'] = state.get('connection_failures', 0) + 1
-                        state['last_failure_time'] = time.time()
-                        print(f"[MUSIC] Connection failure #{state['connection_failures']} detected")
-                    elif any(keyword in error_str for keyword in ["tls", "network", "io error", "reset by peer"]):
-                        print(f"[MUSIC] Network error detected (not counting as connection failure): {e}")
-                    await asyncio.sleep(3 if "network" in error_str or "tls" in error_str else 2)
-                    await self._advance_to_next_song(ctx)
-            
-        except Exception as e:
-            print(f"[MUSIC] Error in _play_current_song: {e}")
-            # Silent error on play
-            # Try next song on error
-            await self._advance_to_next_song(ctx)
-
-    async def _advance_to_next_song(self, ctx):
-        """Advance to next song with circuit breaker to prevent infinite loops"""
-        import time
-        
-        try:
-            state = self._get_guild_state(ctx.guild.id)
-
-            # Circuit breaker: if we've had too many failures recently, back off silently
-            current_time = time.time()
-            if current_time - state.get('last_failure_time', 0) < 60:  # Within last minute
-                failure_count = state.get('connection_failures', 0)
-                if failure_count >= 5:
-                    print(f"[MUSIC] Circuit breaker: {failure_count} failures in last minute; backing off")
-                    await asyncio.sleep(15)
-                    state['connection_failures'] = 0
-            else:
-                # Reset failure count if it's been more than a minute
-                state['connection_failures'] = 0
-
-            # Check if still connected to voice
-            voice_client = ctx.guild.voice_client
-            if not voice_client or not voice_client.is_connected():
-                print("[MUSIC] Voice client disconnected, attempting to reconnect before next song")
-                reconnected = await self._ensure_voice(ctx, announce=False)
-                if not reconnected:
-                    print("[MUSIC] Could not reconnect, incrementing failure count")
-                    state['connection_failures'] = state.get('connection_failures', 0) + 1
-                    state['last_failure_time'] = current_time
-
-                    # If we've failed too many times, wait longer before trying again
-                    if state['connection_failures'] >= 5:
-                        print("[MUSIC] Multiple connection failures, pausing for recovery (silent)")
-                        await asyncio.sleep(10)
-                        # Reset failure count after pause
-                        state['connection_failures'] = 0
-                    else:
-                        # Wait longer before next attempt
-                        await asyncio.sleep(3)
-                        return
-
-            # Reset failure count on successful connection
-            state['connection_failures'] = 0
-            state['current_index'] += 1
-            await self._play_current_song(ctx)
-
-        except Exception as e:
-            print(f"[MUSIC] Error advancing to next song: {e}")
-            state = self._get_guild_state(ctx.guild.id)
-            state['connection_failures'] = state.get('connection_failures', 0) + 1
-            state['last_failure_time'] = time.time()
-
-            # Try to continue anyway, but with limits
-            if state['connection_failures'] < 5:
-                try:
-                    state['current_index'] += 1
-                    await asyncio.sleep(5)  # Longer delay before retry
-                    await self._play_current_song(ctx)
-                except Exception as retry_e:
-                    print(f"[MUSIC] Retry also failed: {retry_e}")
-                    state['connection_failures'] += 1
-            else:
-                print(f"[MUSIC] Too many failures; backing off and continuing silently")
-                await asyncio.sleep(15)
-                state['connection_failures'] = 0
-
-    async def skip_song(self, ctx):
-        """Skip current song"""
-        try:
-            if not ctx.voice_client or not ctx.voice_client.is_playing():
-                await ctx.send("❌ Nothing is playing!")
-                return
-            
-            ctx.voice_client.stop()  # This will trigger the after callback
-            await ctx.send("⏭️ Skipped song!")
-            
-        except Exception as e:
-            await ctx.send(f"❌ Error skipping song: {str(e)[:100]}")
-
-    async def pause_music(self, ctx):
-        """Pause music"""
-        try:
-            if ctx.voice_client and ctx.voice_client.is_playing():
-                ctx.voice_client.pause()
-                await ctx.send("⏸️ Music paused!")
-            else:
-                await ctx.send("❌ Nothing is playing!")
-        except Exception as e:
-            await ctx.send(f"❌ Error pausing: {str(e)[:100]}")
-
-    async def resume_music(self, ctx):
-        """Resume music"""
-        try:
-            if ctx.voice_client and ctx.voice_client.is_paused():
-                ctx.voice_client.resume()
-                await ctx.send("▶️ Music resumed!")
-            else:
-                await ctx.send("❌ Music is not paused!")
-        except Exception as e:
-            await ctx.send(f"❌ Error resuming: {str(e)[:100]}")
-
-    async def set_volume(self, ctx, volume):
-        """Set volume"""
-        try:
-            if not ctx.voice_client or not ctx.voice_client.source:
-                await ctx.send("❌ Nothing is playing!")
-                return
-            
-            if not isinstance(ctx.voice_client.source, discord.PCMVolumeTransformer):
-                await ctx.send("❌ Volume control not available for this audio source!")
-                return
-            
-            volume = max(0, min(100, volume)) / 100
-            ctx.voice_client.source.volume = volume
-            await ctx.send(f"🔊 Volume set to {int(volume * 100)}%")
-            
-        except Exception as e:
-            await ctx.send(f"❌ Error setting volume: {str(e)[:100]}")
-
-    async def now_playing(self, ctx):
-        """Show current song info"""
-        try:
-            if not ctx.voice_client or not ctx.voice_client.source:
-                await ctx.send("❌ Nothing is playing!")
-                return
-            
-            source = ctx.voice_client.source
-            title = source.title if hasattr(source, 'title') else "Unknown"
-            
-            state = self._get_guild_state(ctx.guild.id)
-            current_index = state['current_index']
-            playlist_length = len(state['current_playlist'])
-            
-            status = "▶️ Playing" if ctx.voice_client.is_playing() else "⏸️ Paused"
-
-            # Include clickable link and track progress
-            video_link = getattr(source, 'data', {}).get('webpage_url') or getattr(source, 'url', None)
-            message_content = f"{status}: [{title}]({video_link}) ({current_index + 1}/{playlist_length})"
-            await ctx.send(message_content)
-        except Exception as e:
-            await ctx.send(f"❌ Error getting song info: {str(e)[:100]}")
-
-    async def play_url(self, ctx, url):
-        """Play a single URL, then resume the main playlist"""
-        # Ensure voice connection using stabilized path
-        if not await self._ensure_voice(ctx, announce=True):
-            return
-        voice_client = ctx.guild.voice_client
-        # Save current playlist state to resume later
-        prev_state = self.guild_states.get(ctx.guild.id)
-        saved_state = None
-        if prev_state:
-            saved_state = {
-                'current_playlist': list(prev_state['current_playlist']),
-                'current_index': prev_state['current_index']
-            }
-        # Remove state so playlist callbacks are suppressed
-        self.guild_states.pop(ctx.guild.id, None)
-        # Stop any current playback
-        if voice_client and voice_client.is_playing():
-            voice_client.stop()
-        try:
-            player = await YouTubeAudioSource.from_url(url)
-        except Exception as e:
-            # Restore previous playlist state on failure
-            if saved_state is not None:
-                self.guild_states[ctx.guild.id] = saved_state
-            await ctx.send(f"❌ Failed to load URL: {e}")
-            return
-        def after(error):
-            if error:
-                print(f"[MUSIC] URL playback error: {error}")
-            # Restore previous playlist state
-            if saved_state is not None:
-                restored_index = saved_state['current_index'] + 1
-                playlist = saved_state['current_playlist']
-                if restored_index >= len(playlist):
-                    restored_index = 0
-                    random.shuffle(playlist)
-                self.guild_states[ctx.guild.id] = {
-                    'current_playlist': playlist,
-                    'current_index': restored_index
-                }
-            # Advance to next song from restored state
+            discord.opus.load_opus('libopus.so.0')
+        except:
             try:
-                print(f"[MUSIC] Resuming playlist after URL playback in guild {ctx.guild.id}")
-                self.bot.loop.call_soon_threadsafe(lambda: asyncio.create_task(self._advance_to_next_song(ctx)))
-            except Exception as err:
-                print(f"[MUSIC] Error resuming playlist: {err}")
-        voice_client.play(player, after=after)
-        # Send now playing message to appropriate text channel
-        msg = f"🎵 Now playing URL: **{player.title}**"
-        # Prefer a text channel matching the voice channel name
-        voice_chan = ctx.voice_client.channel if ctx.voice_client else None
-        target_chan = None
-        if voice_chan:
-            for text_chan in ctx.guild.text_channels:
-                if text_chan.name == voice_chan.name:
-                    target_chan = text_chan
-                    break
-        # Fallback to command channel
-        if not target_chan:
-            target_chan = ctx.channel
-        await target_chan.send(msg)
+                discord.opus.load_opus('libopus-0.dll')
+            except:
+                print("⚠️  Warning: Could not load opus library. Voice features may not work properly.")
 
-    async def voice_health_check(self):
-        """Temporarily disabled to prevent connection conflicts"""
-        await self.bot.wait_until_ready()
-        print("[MUSIC] Voice health check disabled to prevent conflicts with auto-rejoin")
-        # Disabled to prevent conflicts with the new connection validation system
+print(f"Opus loaded: {discord.opus.is_loaded()}")
+
+load_dotenv()
+token = os.getenv('DISCORD_TOKEN')
+venice_api_key = os.getenv('VENICE_API_KEY')
+youtube_api_key = os.getenv('YOUTUBE_API_KEY')
+
+if token is None:
+    raise ValueError("DISCORD_TOKEN environment variable not set")
+if venice_api_key is None:
+    print("Warning: VENICE_API_KEY not set. AI features will be disabled.")
+if youtube_api_key is None:
+    print("Warning: YOUTUBE_API_KEY not set. YouTube API features will be disabled.")
+
+handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+intents.voice_states = True  # Needed for voice state tracking
+
+bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
+
+dogs_role_name = "Dogs"
+cats_role_name = "Cats"
+lizards_role_name = "Lizards"
+pvp_role_name = "PVP"
+
+# Initialize global variables for music functionality
+music_bot = None
+
+# YouTube Data API v3 Configuration
+YOUTUBE_API_BASE_URL = "https://www.googleapis.com/youtube/v3"
+
+# Venice AI Configuration
+VENICE_API_URL = "https://api.venice.ai/api/v1/chat/completions"
+VENICE_MODEL = "venice-uncensored"
+IMAGE_API_URL = "https://api.venice.ai/api/v1/image/generate"
+
+class YouTubeAPI:
+    """YouTube Data API v3 integration for reliable cloud deployment"""
+    
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or youtube_api_key
+        self.session = None
+    
+    async def search_videos(self, query: str, max_results: int = 10):
+        """Search for YouTube videos using the API"""
+        if not self.api_key:
+            raise ValueError("YouTube API key not configured")
+        
+        params = {
+            'part': 'snippet',
+            'q': query,
+            'type': 'video',
+            'maxResults': max_results,
+            'key': self.api_key,
+            'videoCategoryId': '10',  # Music category
+            'videoEmbeddable': 'true',  # Only embeddable videos
+            'videoSyndicated': 'true',  # Only syndicated videos
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{YOUTUBE_API_BASE_URL}/search", params=params)
+            response.raise_for_status()
+            return response.json()
+    
+    async def get_video_details(self, video_id: str):
+        """Get detailed information about a YouTube video"""
+        if not self.api_key:
+            raise ValueError("YouTube API key not configured")
+        
+        params = {
+            'part': 'snippet,contentDetails,status',
+            'id': video_id,
+            'key': self.api_key
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{YOUTUBE_API_BASE_URL}/videos", params=params)
+            response.raise_for_status()
+            data = response.json()
+            
+            if not data.get('items'):
+                return None
+                
+            return data['items'][0]
+    
+    def extract_video_id(self, url: str) -> Optional[str]:
+        """Extract video ID from various YouTube URL formats"""
+        
+        patterns = [
+            r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)',
+            r'youtube\.com\/watch\?.*v=([^&\n?#]+)',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        
+        return None
+    
+    def get_youtube_url(self, video_id: str) -> str:
+        """Generate a clean YouTube URL from video ID"""
+        return f"https://www.youtube.com/watch?v={video_id}"
+
+# Initialize YouTube API
+youtube_api = YouTubeAPI() if youtube_api_key else None
+
+# Database setup
+async def init_database():
+    """Initialize the chat history database"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS chat_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                user_name TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                message TEXT NOT NULL,
+                response TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Create undo stack table for universal undo/redo
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS undo_stack (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                action_type TEXT NOT NULL,  -- 'chat'
+                action_id INTEGER NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Migration: Add user_id and action_type columns to existing undo_stack if they don't exist
+        try:
+            await db.execute("ALTER TABLE undo_stack ADD COLUMN user_id TEXT")
+        except:
+            pass  # Column already exists
+        
+        try:
+            await db.execute("ALTER TABLE undo_stack ADD COLUMN action_type TEXT DEFAULT 'chat'")
+        except:
+            pass  # Column already exists
+            
+        await db.commit()
+
+async def save_chat_history(user_id: str, user_name: str, channel_id: str, message: str, response: str) -> int:
+    """Save chat interaction to database, returns the action ID"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        cursor = await db.execute(
+            "INSERT INTO chat_history (user_id, user_name, channel_id, message, response) VALUES (?, ?, ?, ?, ?)",
+            (user_id, user_name, channel_id, message, response)
+        )
+        await db.commit()
+        return cursor.lastrowid or 0
+
+async def save_chat_message(user_id: str, message: str, response: str) -> int:
+    """Simple wrapper for save_chat_history with default values"""
+    return await save_chat_history(user_id, "User", "0", message, response)
+
+async def clear_user_chat_history(user_id: str) -> bool:
+    """Clear all chat history for a specific user"""
+    try:
+        async with aiosqlite.connect("chat_history.db") as db:
+            await db.execute("DELETE FROM chat_history WHERE user_id = ?", (user_id,))
+            await db.commit()
+            return True
+    except Exception:
+        return False
+
+async def get_chat_history(user_id: str, limit: int = 5):
+    """Get recent chat history for a user (for context)"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        cursor = await db.execute(
+            "SELECT message, response FROM chat_history WHERE user_id = ? ORDER BY timestamp ASC LIMIT ?",
+            (user_id, limit)
+        )
+        rows = await cursor.fetchall()
+        return [(str(row[0]), str(row[1])) for row in rows]
+
+async def undo_last_action(channel_id: str, user_id: str) -> tuple[bool, str]:
+    """Undo the last chat action by the user in the channel. Returns (success, message)"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        # Try chat action
+        cursor = await db.execute(
+            "SELECT id, user_name, message FROM chat_history WHERE channel_id = ? AND user_id = ? ORDER BY timestamp DESC LIMIT 1",
+            (channel_id, user_id)
+        )
+        chat_row = await cursor.fetchone()
+        
+        if not chat_row:
+            return False, "No actions to undo!"
+        
+        action_id, user_name, message = chat_row
+        
+        # Delete chat action
+        await db.execute(
+            "DELETE FROM chat_history WHERE id = ?",
+            (action_id,)
+        )
+        
+        # Add to undo stack
+        await db.execute(
+            "INSERT INTO undo_stack (channel_id, user_id, action_type, action_id) VALUES (?, ?, ?, ?)",
+            (channel_id, user_id, 'chat', action_id)
+        )
+        
+        await db.commit()
+        return True, f"Undone chat message by {user_name}: {message[:100]}..."
+
+async def redo_last_undo(channel_id: str, user_id: str) -> tuple[bool, str]:
+    """Redo the last undone action by the user. Returns (success, message)"""
+    async with aiosqlite.connect("chat_history.db") as db:
+        return False, "Chat actions cannot be redone once undone!"
+
+async def get_ai_response_with_history(user_id: str, prompt: str, max_tokens: int = 500, use_history: bool = True) -> str:
+    """Get response from Venice AI with chat history context"""
+    if not venice_api_key:
+        return "AI features are disabled. Please set VENICE_API_KEY environment variable."
+    
+    messages = []
+    
+    # Add system message for emoji usage
+    messages.append({"role": "system", "content": "You are Dogbot, a helpful AI assistant with a friendly dog personality! 🐕 Use emojis frequently and Discord formatting to make your responses engaging and fun! Use **bold** for emphasis, *italics* for subtle emphasis, `code blocks` for technical terms, and > quotes for highlighting important information. Keep responses conversational and helpful! 😊✨"})
+    
+    # Add chat history for context if enabled
+    if use_history:
+        history = await get_chat_history(user_id, limit=3)  # Last 3 exchanges
+        for user_msg, ai_response in history:
+            messages.append({"role": "user", "content": user_msg})
+            messages.append({"role": "assistant", "content": ai_response})
+    
+    # Add current message
+    messages.append({"role": "user", "content": prompt})
+    
+    headers = {
+        "Authorization": f"Bearer {venice_api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": VENICE_MODEL,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": 0.7
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(VENICE_API_URL, headers=headers, json=data)
+            response.raise_for_status()
+            
+            result = response.json()
+            return result["choices"][0]["message"]["content"].strip()
+    except httpx.TimeoutException:
+        return "⏰ AI response timed out. Please try again."
+    except httpx.HTTPStatusError as e:
+        return f"❌ AI service error: {e.response.status_code}"
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+# Keep the old function for compatibility
+async def get_ai_response(user_id: str, prompt: str, max_tokens: int = 500) -> str:
+    """Get response from Venice AI, without chat history context"""
+    if not venice_api_key:
+        return "AI features are disabled. Please set VENICE_API_KEY environment variable."
+    
+    headers = {
+        "Authorization": f"Bearer {venice_api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": VENICE_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are Dogbot, a helpful AI assistant with a friendly dog personality! 🐕 Use emojis frequently and Discord formatting to make your responses engaging and fun! Use **bold** for emphasis, *italics* for subtle emphasis, `code blocks` for technical terms, and > quotes for highlighting important information. Keep responses conversational and helpful! 😊✨"},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": max_tokens,
+        "temperature": 0.7
+    }
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(VENICE_API_URL, headers=headers, json=data)
+            response.raise_for_status()
+            
+            result = response.json()
+            return result["choices"][0]["message"]["content"].strip()
+    except httpx.TimeoutException:
+        return "⏰ AI response timed out. Please try again."
+    except httpx.HTTPStatusError as e:
+        return f"❌ AI service error: {e.response.status_code}"
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+@bot.event
+async def on_ready():
+    global music_bot
+    if bot.user is not None:
+        print(f"We are ready to go in, {bot.user.name}")
+    else:
+        print("We are ready to go in, but bot.user is None")
+    
+    # Cloud environment diagnostics for Render.com
+    print("="*50)
+    print("[RENDER.COM] Environment Diagnostics:")
+    
+    # Check if we're running on Render.com
+    render_service = os.getenv('RENDER_SERVICE_NAME')
+    if render_service:
+        print(f"[RENDER.COM] Service Name: {render_service}")
+    else:
+        print("[RENDER.COM] Not detected (running locally?)")
+    
+    # Check FFmpeg availability
+    try:
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            # Extract version info
+            version_lines = result.stdout.split('\n')
+            version_line = version_lines[0] if version_lines else "Unknown version"
+            
+            print(f"[RENDER.COM] FFmpeg: {version_line}")
+        else:
+            print("[RENDER.COM] FFmpeg: Available but returned error")
+    except FileNotFoundError:
+               print("[RENDER.COM] FFmpeg: NOT FOUND")
+    except Exception as e:
+        print(f"[RENDER.COM] FFmpeg: Error checking - {e}")
+    
+    # Check Discord voice support
+    try:
+        if discord.opus.is_loaded():
+            print("[RENDER.COM] Discord Opus: Loaded")
+        else:
+            print("[RENDER.COM] Discord Opus: Available but not loaded")
+    except Exception as e:
+        print(f"[RENDER.COM] Discord Opus: Error - {e}")
+    
+    print("="*50)
+    
+    # Initialize database
+    await init_database()
+    print("Chat history database initialized")
+    
+    # Initialize music bot
+    music_bot = MusicBot(bot)
+    print("Music bot initialized")
+
+@bot.event
+async def on_disconnect():
+    """Called when the bot disconnects from Discord"""
+    print("[DISCONNECT] ⚠️ Bot disconnected from Discord!")
+    print(f"[DISCONNECT] Time: {datetime.now()}")
+    
+@bot.event
+async def on_resumed():
+    """Called when the bot resumes connection after a disconnect"""
+    print("[RESUMED] ✅ Bot resumed connection to Discord!")
+    print(f"[RESUMED] Time: {datetime.now()}")
+
+@bot.event
+async def on_error(event, *args, **kwargs):
+    """Global error handler to catch unhandled exceptions"""
+    import traceback
+    print(f"[BOT_ERROR] ❌ Unhandled error in event {event}:")
+    print(f"[BOT_ERROR] Time: {datetime.now()}")
+    traceback.print_exc()
+    
+    # Try to continue running rather than crash
+    print("[BOT_ERROR] Attempting to continue operation...")
+
+@bot.event
+async def on_member_join(member):
+    # Get the system channel (default channel) or the first text channel
+    channel = member.guild.system_channel
+
+    if channel is None:
+        # If no system channel, find the first text channel
+        for ch in member.guild.text_channels:
+            if ch.permissions_for(member.guild.me).send_messages:
+                channel = ch
+                break
+    
+    if channel:
+        await channel.send(f"🐶 Woof woof! Welcome to the server, {member.mention}! ")
+
+@bot.event
+async def on_message(message):
+    if message.author == bot.user:
+        return
+    
+    # Just process commands, don't handle them manually here
+    await bot.process_commands(message)
+
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    """Handle voice state updates - simplified to avoid reconnection loops"""
+    # Only act on bot's own voice state
+    if bot.user is None or member.id != bot.user.id:
+        return
+    
+    # Just log disconnections without auto-rejoin to prevent loops
+    if before.channel and after.channel is None:
+        print(f"[MUSIC] Bot disconnected from voice channel {before.channel.name}")
+    elif after.channel and before.channel is None:
+        print(f"[MUSIC] Bot connected to voice channel {after.channel.name}")
+
+# Helper function to check for admin/moderator permissions
+def has_admin_or_moderator_role(ctx):
+    """Check if user has Admin or Moderator role"""
+    user_roles = [role.name.lower() for role in ctx.author.roles]
+    return any(role in ['admin', 'moderator', 'administrator'] for role in user_roles)
+
+@bot.command()
+async def help(ctx):
+    """Show all available commands"""
+    embed = discord.Embed(
+        title="🐕 Dogbot Commands",
+        description="Here are all the commands you can use:",
+        color=discord.Color.blue()
+    )
+    
+    # Basic Commands (moved to top)
+    embed.add_field(
+        name="🔧 **Basic Commands**",
+        value=(
+            "`!hello` - Say hello to Dogbot\n"
+            "`!help` - Show this help message\n"
+            "`!modhelp` - Show moderator commands"
+        ),
+        inline=False
+    )
+    
+    # Music Commands
+    embed.add_field(
+        name="🎵 **Music Commands**",
+        value=(
+            "`!join` - Join your voice channel and start music\n"
+            "`!play [youtube_url]` - Play main playlist or a single YouTube URL\n"
+            "`!start` - Start playing music (will join channel if needed)\n"
+            "`!leave` - Leave voice channel\n"
+            "`!stop` - Stop playing music\n"
+            "`!next` / `!skip` - Skip to next song\n"
+            "`!pause` - Pause current song\n"
+            "`!resume` - Resume paused song\n"
+            "`!playlist` / `!queue` - Show current playlist\n"
+            "`!nowplaying` / `!np` - Show current song\n"
+            "`!volume [0-100]` - Check or set volume\n"
+            "`!download <youtube_url>` - Download YouTube video as MP3 (pytube)"
+        ),
+        inline=False
+    )
+    
+    # Role Commands
+    embed.add_field(
+        name="🎭 **Role Commands**",
+        value=(
+            "`!dogsrole` - Add Dogs role 🐕\n"
+            "`!catsrole` - Add Cats role 🐱\n"
+            "`!lizardsrole` - Add Lizards role 🦎\n"
+            "`!pvprole` - Add PVP role ⚔️\n"
+            "`!remove<role>` - Remove any role (e.g., `!removedogsrole`)"
+        ),
+        inline=False
+    )
+    
+    # AI & Chat Commands
+    embed.add_field(
+        name="🤖 **AI & Chat Commands**",
+        value=(
+            "`!chat <message>` - Chat with AI (with memory)\n"
+            "`!ask <question>` - Ask AI a question (no memory)\n"
+            "`!generate <prompt>` - Generate an AI image using HiDream model"
+        ),
+        inline=False
+    )
+    
+    embed.set_footer(text="🐕 Woof! Use these commands to interact with me!")
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def chat(ctx, *, message):
+    """Chat with AI with conversation memory"""
+    if not message:
+        await ctx.send("❌ Please provide a message to chat about!")
+        return
+    
+    try:
+        # Show typing indicator
+        async with ctx.typing():
+            user_id = str(ctx.author.id)
+            response = await get_ai_response_with_history(user_id, message, use_history=True)
+            
+            # Save this exchange to chat history
+            await save_chat_message(user_id, message, response)
+        
+        # Split long responses if needed
+        if len(response) > 2000:
+            chunks = [response[i:i+2000] for i in range(0, len(response), 2000)]
+            for chunk in chunks:
+                await ctx.send(chunk)
+        else:
+            await ctx.send(response)
+            
+    except Exception as e:
+        await ctx.send(f"❌ Error processing chat: {str(e)}")
+
+@bot.command()
+async def ask(ctx, *, question):
+    """Ask AI a question without conversation memory"""
+    if not question:
+        await ctx.send("❌ Please provide a question to ask!")
+        return
+    
+    try:
+        # Show typing indicator
+        async with ctx.typing():
+            user_id = str(ctx.author.id)
+            response = await get_ai_response(user_id, question)
+        
+        # Split long responses if needed
+        if len(response) > 2000:
+            chunks = [response[i:i+2000] for i in range(0, len(response), 2000)]
+            for chunk in chunks:
+                await ctx.send(chunk)
+        else:
+            await ctx.send(response)
+            
+    except Exception as e:
+        await ctx.send(f"❌ Error processing question: {str(e)}")
+
+@bot.command()
+async def clear_history(ctx):
+    """Clear your chat history with the AI"""
+    try:
+        user_id = str(ctx.author.id)
+        success = await clear_user_chat_history(user_id)
+        
+        if success:
+            await ctx.send("🗑️ Your chat history has been cleared!")
+        else:
+            await ctx.send("❌ Failed to clear chat history.")
+            
+    except Exception as e:
+        await ctx.send(f"❌ Error clearing history: {str(e)}")
+
+@bot.command()
+async def history(ctx):
+    """View your recent chat history"""
+    try:
+        user_id = str(ctx.author.id)
+        history = await get_chat_history(user_id, limit=5)
+        
+        if not history:
+            await ctx.send("📭 Your chat history is empty!")
+            return
+        
+        embed = discord.Embed(
+            title="💬 Your Recent Chat History",
+            color=discord.Color.green()
+        )
+        
+        for i, (user_msg, ai_response) in enumerate(history, 1):
+            # Truncate long messages for display
+            display_user_msg = user_msg[:100] + "..." if len(user_msg) > 100 else user_msg
+            display_ai_response = ai_response[:200] + "..." if len(ai_response) > 200 else ai_response
+            
+            embed.add_field(
+                name=f"💬 Exchange {i}",
+                value=f"**You:** {display_user_msg}\n**Dogbot:** {display_ai_response}",
+                inline=False
+            )
+        
+        embed.set_footer(text="Use !clear_history to clear this history")
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        await ctx.send(f"❌ Error retrieving history: {str(e)}")
+
+@bot.command()
+async def hello(ctx):
+    await ctx.send(f'🐕 Woof woof! Hello {ctx.author.name}!')
+
+
+
+# Music Bot Commands
+@bot.command()
+async def join(ctx):
+    """Join voice channel and auto-start music"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
         return
 
-    def get_available_playlists(self):
-        """Get list of available playlists"""
-        return ["main"]  # Simplified for cloud deployment
+    success = await music_bot.join_voice_channel(ctx)
+    if not success:
+        return
+    # Auto-start music after join
+    await music_bot.play_music(ctx)
+
+@bot.command()
+async def leave(ctx):
+    """Leave voice channel"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.leave_voice_channel(ctx)
+
+@bot.command()
+async def start(ctx):
+    """Start playing music"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.play_music(ctx)
+
+@bot.command()
+async def stop(ctx):
+    """Stop playing music"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    if ctx.voice_client and ctx.voice_client.is_playing():
+        ctx.voice_client.stop()
+        music_bot._cleanup_guild_state(ctx.guild.id)
+        await ctx.send("🛑 Music stopped!")
+    else:
+        await ctx.send("❌ Nothing is playing!")
+
+@bot.command()
+async def next(ctx):
+    """Skip to next song"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.skip_song(ctx)
+
+@bot.command()
+async def skip(ctx):
+    """Skip to next song (alias for !next)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.skip_song(ctx)
+
+@bot.command()
+async def previous(ctx):
+    """Go to previous song"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await ctx.send("❌ Previous song not available in simplified mode!")
+
+@bot.command()
+async def play(ctx, *, url: str):
+    """Play a single YouTube URL, then resume the main playlist."""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.play_url(ctx, url)
+
+@bot.command()
+async def playlist(ctx):
+    """Show current playlist"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    from playlist import MUSIC_PLAYLISTS
+    embed = discord.Embed(
+        title="🎵 Music Playlist",
+        description=f"Total songs: {len(MUSIC_PLAYLISTS)}",
+        color=discord.Color.blue()
+    )
+    embed.add_field(
+        name="View Full Playlist",
+        value="[🔗 Click here to view on GitHub](https://github.com/Kameonx/Dogbot/blob/main/playlist.py)",
+        inline=False
+    )
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def queue(ctx):
+    """Show current playlist (alias for !playlist)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    from playlist import MUSIC_PLAYLISTS
+    embed = discord.Embed(
+        title="🎵 Music Queue",
+        description=f"Total songs: {len(MUSIC_PLAYLISTS)}",
+        color=discord.Color.blue()
+    )
+    embed.add_field(
+        name="View Full Playlist",
+        value="[🔗 Click here to view on GitHub](https://github.com/Kameonx/Dogbot/blob/main/playlist.py)",
+        inline=False
+    )
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def add(ctx, *, url):
+    """Add song to playlist"""
+    await ctx.send("❌ Adding songs is disabled in simplified mode for stability!")
+
+@bot.command()
+async def remove(ctx, *, url):
+    """Remove song from playlist"""
+    await ctx.send("❌ Removing songs is disabled in simplified mode for stability!")
+
+@bot.command()
+async def nowplaying(ctx):
+    """Show current song info"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.now_playing(ctx)
+
+@bot.command()
+async def np(ctx):
+    """Show current song info (alias for !nowplaying)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.now_playing(ctx)
+    
+@bot.command()
+async def status(ctx):
+    """Debug voice channel status"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    embed = discord.Embed(
+        title="🔧 Voice Channel Status",
+        color=discord.Color.orange()
+    )
+    
+    guild_id = ctx.guild.id
+    
+    # Check bot's voice state
+    bot_voice_state = ctx.guild.me.voice
+    discord_voice_channel = bot_voice_state.channel.name if bot_voice_state and bot_voice_state.channel else "None"
+    
+    # Check if we have a voice client
+    has_voice_client = ctx.voice_client is not None
+    voice_client_connected = ctx.voice_client.is_connected() if ctx.voice_client else False
+    
+    # Check if music is playing
+    is_playing = ctx.voice_client.is_playing() if ctx.voice_client else False
+    is_paused = ctx.voice_client.is_paused() if ctx.voice_client else False
+    
+    # Check guild state
+    guild_state = music_bot._get_guild_state(guild_id)
+    current_index = guild_state.get('current_index', 0)
+    playlist_length = len(guild_state.get('current_playlist', []))
+    
+    embed.add_field(name="Bot Voice Channel", value=discord_voice_channel or "None", inline=True)
+    embed.add_field(name="Connected", value="✅ Yes" if voice_client_connected else "❌ No", inline=True)
+    embed.add_field(name="Playing", value="▶️ Yes" if is_playing else "⏸️ Paused" if is_paused else "⏹️ No", inline=True)
+    embed.add_field(name="Playlist Progress", value=f"{current_index + 1}/{playlist_length}" if playlist_length > 0 else "No playlist", inline=True)
+    
+    await ctx.send(embed=embed)
+
+
+
+
+
+
+
+
+
+
+
+# Role Management Commands
+@bot.command()
+async def dogsrole(ctx):
+    """Add the Dogs role to yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{dogs_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in ctx.author.roles:
+        await ctx.send(f"🐕 You already have the {dogs_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🐕 Successfully added the {dogs_role_name} role! Woof woof!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error adding role: {e}")
+
+@bot.command()
+async def catsrole(ctx):
+    """Add the Cats role to yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{cats_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in ctx.author.roles:
+        await ctx.send(f"🐱 You already have the {cats_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🐱 Successfully added the {cats_role_name} role! Meow!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error adding role: {e}")
+
+@bot.command()
+async def lizardsrole(ctx):
+    """Add the Lizards role to yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{lizards_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in ctx.author.roles:
+        await ctx.send(f"🦎 You already have the {lizards_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🦎 Successfully added the {lizards_role_name} role! Hiss!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error adding role: {e}")
+
+@bot.command()
+async def pvprole(ctx):
+    """Add the PVP role to yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{pvp_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in ctx.author.roles:
+        await ctx.send(f"⚔️ You already have the {pvp_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"⚔️ Successfully added the {pvp_role_name} role! Ready for battle!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error adding role: {e}")
+
+@bot.command()
+async def removedogsrole(ctx):
+    """Remove the Dogs role from yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{dogs_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role not in ctx.author.roles:
+        await ctx.send(f"❌ You don't have the {dogs_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.remove_roles(role)
+        await ctx.send(f"🐕 Successfully removed the {dogs_role_name} role!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def removecatsrole(ctx):
+    """Remove the Cats role from yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{cats_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role not in ctx.author.roles:
+        await ctx.send(f"❌ You don't have the {cats_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.remove_roles(role)
+        await ctx.send(f"🐱 Successfully removed the {cats_role_name} role!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def removelizardsrole(ctx):
+    """Remove the Lizards role from yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{lizards_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role not in ctx.author.roles:
+        await ctx.send(f"❌ You don't have the {lizards_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.remove_roles(role)
+        await ctx.send(f"🦎 Successfully removed the {lizards_role_name} role!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def removepvprole(ctx, member: Optional[discord.Member] = None):
+    """Remove the PVP role from yourself or another user (moderator only)"""
+    # If no target, remove from self
+    if member is None:
+        role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+        if role is None:
+            await ctx.send(f"❌ The '{pvp_role_name}' role doesn't exist on this server!")
+            return
+        
+        if role not in ctx.author.roles:
+            await ctx.send(f"❌ You don't have the {pvp_role_name} role!")
+            return
+        
+        try:
+            await ctx.author.remove_roles(role)
+            await ctx.send(f"⚔️ Successfully removed your {pvp_role_name} role!")
+        except discord.Forbidden:
+            await ctx.send("❌ I don't have permission to remove roles!")
+        except Exception as e:
+            await ctx.send(f"❌ Error removing role: {e}")
+    else:
+        # Moderator removal
+        if not has_admin_or_moderator_role(ctx):
+            await ctx.send("❌ You need Admin or Moderator role to use this command!")
+            return
+        role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+        if role is None:
+            await ctx.send(f"❌ The '{pvp_role_name}' role doesn't exist on this server!")
+            return
+        
+        if role not in member.roles:
+            await ctx.send(f"❌ {member.mention} doesn't have the {pvp_role_name} role!")
+            return
+        
+        try:
+            await member.remove_roles(role)
+            await ctx.send(f"⚔️ Successfully removed the {pvp_role_name} role from {member.mention}!")
+        except discord.Forbidden:
+            await ctx.send("❌ I don't have permission to remove roles!")
+        except Exception as e:
+            await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def modhelp(ctx):
+    """Show moderator and utility commands"""
+    embed = discord.Embed(
+        title="🛠️ Moderator & Utility Commands",
+        description="Advanced commands for moderators and debugging:",
+        color=discord.Color.orange()
+    )
+    
+    # Role Assignment Commands
+    embed.add_field(
+        name="🎭 **Role Commands (Available to All Users)**",
+        value=(
+            "**Add Roles:**\n"
+            "`!dogsrole` - Add Dogs role 🐕\n"
+            "`!catsrole` - Add Cats role 🐱\n"
+            "`!lizardsrole` - Add Lizards role 🦎\n"
+            "`!pvprole` - Add PVP role ⚔️\n"
+            "**Remove Roles:**\n"
+            "`!removedogsrole` - Remove Dogs role\n"
+            "`!removecatsrole` - Remove Cats role\n"
+            "`!removelizardsrole` - Remove Lizards role\n"
+            "`!removepvprole` - Remove PVP role"
+        ),
+        inline=False
+    )
+    
+    # Moderator Role Assignment Commands
+    embed.add_field(
+        name="👑 **Moderator Role Assignment**",
+        value=(
+            "`!assigndogsrole @username` - Assign Dogs role to user\n"
+            "`!removedogsrolefrom @username` - Remove Dogs role from user\n"
+            "`!assigncatsrole @username` - Assign Cats role to user\n"
+            "`!removecatsrolefrom @username` - Remove Cats role from user\n"
+            "`!assignlizardsrole @username` - Assign Lizards role to user\n"
+            "`!removelizardsrolefrom @username` - Remove Lizards role from user\n"
+            "`!assignpvprole @username` - Assign PVP role to user\n"
+            "`!removepvprolefrom @username` - Remove PVP role from user"
+        ),
+        inline=False
+    )
+    
+    # Test & Debug Commands
+    embed.add_field(
+        name="🔧 **Test & Debug**",
+        value=(
+            "`!status` - Check voice channel status\n"
+            "`!audiotest` - Test audio system components\n"
+            "`!voicediag` - Detailed voice connection diagnostics\n"
+            "`!download <youtube_url>` - Download YouTube as MP3 (pytube) ⚠️"
+        ),
+        inline=False
+    )
+    
+    # Chat Management
+    embed.add_field(
+        name="💬 **Chat Management**",
+        value=(
+            "`!clear_history` - Clear your chat history\n"
+            "`!history` - View your recent chat history"
+        ),
+        inline=False
+    )
+    
+    embed.set_footer(text="🔧 These commands help with troubleshooting and management!")
+    await ctx.send(embed=embed)
+
+# YouTube Download Command using pytube
+@bot.command()
+async def download(ctx, *, url):
+    # Remove surrounding angle brackets in case of Discord formatting
+    url = url.strip('<>')
+    """Download YouTube video as MP3 using yt_dlp"""
+    if not url:
+        await ctx.send("❌ Please provide a YouTube URL!")
+        return
+    
+    # Check if it's a valid YouTube URL
+    if not any(domain in url.lower() for domain in ['youtube.com', 'youtu.be']):
+        await ctx.send("❌ Please provide a valid YouTube URL!")
+        return
+    
+    # Create downloads directory if it doesn't exist
+    download_dir = "downloads"
+    if not os.path.exists(download_dir):
+        os.makedirs(download_dir)
+    
+    # Show initial message
+    processing_msg = await ctx.send("🎵 Processing download request... This may take a moment.")
+    # Use executor to offload blocking download tasks
+    loop = asyncio.get_event_loop()
+
+    try:
+        # Use yt_dlp to download and convert to MP3
+        # Set up yt_dlp options, including cookies if available
+        ytdl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': f'{download_dir}/%(title)s.%(ext)s',
+            'quiet': True,
+            'no_warnings': True,
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+        }
+        # Use cookies.txt if present to bypass YouTube bot checks
+        if os.path.isfile('cookies.txt'):
+            ytdl_opts['cookiefile'] = 'cookies.txt'
+        
+        try:
+            ytdl = yt_dlp.YoutubeDL(ytdl_opts)
+            try:
+                info = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=True))
+            except Exception as e:
+                err = str(e)
+                if 'Sign in to confirm' in err:
+                    # Retry using browser cookies from browser
+                    retry_opts = ytdl_opts.copy()
+                    retry_opts.pop('cookiefile', None)
+                    retry_opts['cookiesfrombrowser'] = ('chrome',)
+                    info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(retry_opts).extract_info(url, download=True))
+                else:
+                    raise
+            if not info:
+                raise Exception('No info retrieved')
+        except Exception as e:
+            err_msg = str(e)
+            if 'Sign in to confirm' in err_msg:
+                await processing_msg.edit(content="❌ Download failed: YouTube requires login for this video. Please update your cookies.txt or provide browser cookies.")
+                return
+            await processing_msg.edit(content=f"❌ Download failed: {err_msg[:100]}...")
+            return
+        # Prepare filename and ensure validity
+        filename = ytdl.prepare_filename(info)
+        base = os.path.splitext(filename)[0]
+        mp3_filename = f'{base}.mp3'
+        title = info.get('title', 'audio')
+        # Check file exists
+        if not os.path.exists(mp3_filename):
+            await processing_msg.edit(content="❌ Download failed! File not found after processing.")
+            return
+        # Send file
+        await processing_msg.delete()
+        file_size_mb = os.path.getsize(mp3_filename) / (1024 * 1024)
+        discord_file = discord.File(mp3_filename, filename=os.path.basename(mp3_filename))
+        embed = discord.Embed(
+            title="🎵 YouTube Download",
+            description=f"**{title}**",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="File Size", value=f"{file_size_mb:.1f}MB", inline=True)
+        embed.add_field(name="Format", value="MP3", inline=True)
+        await ctx.send(embed=embed, file=discord_file)
+        # Cleanup
+        os.remove(mp3_filename)
+     
+    except Exception as e:
+        await processing_msg.edit(content=f"❌ Download failed: {str(e)}")
+        print(f"Download error: {e}")
+     
+    # Clean up old downloads
+    try:
+        now = time.time()
+        for fname in os.listdir(download_dir):
+            path = os.path.join(download_dir, fname)
+            if os.path.isfile(path) and now - os.path.getmtime(path) > 3600:
+                os.remove(path)
+    except:
+        pass
+
+@bot.command()
+async def voicediag(ctx):
+    """Diagnostic command for voice connection issues"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    # Check user voice state
+    user_voice = ctx.author.voice
+    if not user_voice:
+        await ctx.send("❌ **User Status:** Not in any voice channel")
+        return
+    
+    user_channel = user_voice.channel
+    
+    # Check bot voice state
+    bot_voice = ctx.voice_client
+    guild_voice = ctx.guild.voice_client
+    
+    # Check permissions
+    permissions = user_channel.permissions_for(ctx.guild.me)
+    
+    embed = discord.Embed(title="🔧 Voice Connection Diagnostics", color=0x00ff00)
+    
+    # User info
+    embed.add_field(
+        name="👤 User Status",
+        value=f"Channel: **{user_channel.name}** (ID: {user_channel.id})\nUser Count: {len(user_channel.members)}",
+        inline=False
+    )
+    
+    # Bot voice status
+    bot_status = []
+    if bot_voice:
+        bot_status.append(f"Connected: {bot_voice.is_connected()}")
+        bot_status.append(f"Channel: {bot_voice.channel.name if bot_voice.channel else 'None'}")
+        bot_status.append(f"Playing: {bot_voice.is_playing()}")
+        bot_status.append(f"Paused: {bot_voice.is_paused()}")
+    else:
+        bot_status.append("No voice client found")
+    
+    embed.add_field(
+        name="🤖 Bot Voice Status (ctx.voice_client)",
+        value="\n".join(bot_status),
+        inline=True
+    )
+    
+    # Guild voice status
+    guild_status = []
+    if guild_voice:
+        guild_status.append(f"Connected: {guild_voice.is_connected()}")
+        guild_status.append(f"Channel: {guild_voice.channel.name if guild_voice.channel else 'None'}")
+        guild_status.append(f"Same client: {bot_voice is guild_voice}")
+    else:
+        guild_status.append("No guild voice client found")
+    
+    embed.add_field(
+        name="🏰 Guild Voice Status",
+        value="\n".join(guild_status),
+        inline=True
+    )
+    
+    # Permissions
+    perm_status = []
+    perm_status.append(f"Connect: {'✅' if permissions.connect else '❌'}")
+    perm_status.append(f"Speak: {'✅' if permissions.speak else '❌'}")
+    perm_status.append(f"Use Voice Activity: {'✅' if permissions.use_voice_activation else '❌'}")
+    
+    embed.add_field(
+        name="🔐 Bot Permissions",
+        value="\n".join(perm_status),
+        inline=True
+    )
+    
+    # Opus status
+    embed.add_field(
+        name="🎵 Audio System",
+        value=f"Opus loaded: {'✅' if discord.opus.is_loaded() else '❌'}",
+        inline=True
+    )
+    
+    await ctx.send(embed=embed)
+
+@bot.command()
+async def audiotest(ctx):
+    """Test if audio system is working (doesn't require voice connection)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    try:
+        # Test basic system components
+        embed = discord.Embed(title="🔧 Audio System Test", color=0x00ff00)
+        
+        # Test Opus
+        opus_status = "✅ Loaded" if discord.opus.is_loaded() else "❌ Not loaded"
+        embed.add_field(name="Opus Library", value=opus_status, inline=True)
+        
+        # Test yt-dlp availability
+        try:
+            import yt_dlp
+            ytdl_status = "✅ Available"
+        except ImportError:
+            ytdl_status = "❌ Not available"
+        embed.add_field(name="yt-dlp", value=ytdl_status, inline=True)
+        
+        # Test pytube availability
+        try:
+            import pytube
+            pytube_status = "✅ Available"
+        except ImportError:
+            pytube_status = "❌ Not available"
+        embed.add_field(name="pytube", value=pytube_status, inline=True)
+        
+        # Test FFmpeg (try to create a basic instance)
+        try:
+            # This tests if FFmpeg is available without actually connecting
+            test_source = discord.FFmpegPCMAudio("test", before_options="-f lavfi -i anullsrc=duration=0.1", options="-vn")
+            ffmpeg_status = "✅ Available"
+        except Exception as e:
+            ffmpeg_status = f"❌ Error: {str(e)[:50]}"
+        embed.add_field(name="FFmpeg", value=ffmpeg_status, inline=True)
+        
+        # Test basic playlist access
+        try:
+            from playlist import MUSIC_PLAYLISTS
+            playlist_status = f"✅ {len(MUSIC_PLAYLISTS)} songs loaded"
+        except Exception as e:
+            playlist_status = f"❌ Error: {str(e)[:50]}"
+        embed.add_field(name="Playlist", value=playlist_status, inline=True)
+        
+        # Check bot's voice-related permissions (if user is in voice)
+        if ctx.author.voice and ctx.author.voice.channel:
+            channel = ctx.author.voice.channel
+            permissions = channel.permissions_for(ctx.guild.me)
+            perm_status = []
+            perm_status.append(f"Connect: {'✅' if permissions.connect else '❌'}")
+            perm_status.append(f"Speak: {'✅' if permissions.speak else '❌'}")
+            embed.add_field(name="Voice Permissions", value="\n".join(perm_status), inline=True)
+        
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        await ctx.send(f"❌ Audio test failed: {str(e)[:100]}")
+
+@bot.command()
+async def pause(ctx):
+    """Pause current song"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.pause_music(ctx)
+
+@bot.command()
+async def resume(ctx):
+    """Resume paused song"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    await music_bot.resume_music(ctx)
+
+@bot.command()
+async def volume(ctx, volume: Optional[int] = None):
+    """Check or set volume (0-100)"""
+    if not music_bot:
+        await ctx.send("❌ Music bot is not initialized!")
+        return
+    
+    if volume is None:
+        # Check current volume
+        if not ctx.voice_client or not ctx.voice_client.source:
+            await ctx.send("❌ Nothing is playing!")
+            return
+        
+        if isinstance(ctx.voice_client.source, discord.PCMVolumeTransformer):
+            current_volume = int(ctx.voice_client.source.volume * 100)
+            await ctx.send(f"🔊 Current volume: {current_volume}%")
+        else:
+            await ctx.send("❌ Volume control not available for this audio source!")
+    else:
+        # Set volume
+        await music_bot.set_volume(ctx, volume)
+
+# Moderator Role Assignment Commands (for admins/moderators to assign roles to others)
+@bot.command()
+async def assigndogsrole(ctx, member: Optional[discord.Member] = None):
+    """Assign Dogs role to a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to! Usage: `!assigndogsrole @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{dogs_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in member.roles:
+        await ctx.send(f"🐕 {member.mention} already has the {dogs_role_name} role!")
+        return
+    
+    try:
+        await member.add_roles(role)
+        await ctx.send(f"🐕 Successfully assigned the {dogs_role_name} role to {member.mention}! Woof woof!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error assigning role: {e}")
+
+@bot.command()
+async def removedogsrolefrom(ctx, member: Optional[discord.Member] = None):
+    """Remove Dogs role from a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from! Usage: `!removedogsrolefrom @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{dogs_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role not in member.roles:
+        await ctx.send(f"❌ {member.mention} doesn't have the {dogs_role_name} role!")
+        return
+    
+    try:
+        await member.remove_roles(role)
+        await ctx.send(f"🐕 Successfully removed the {dogs_role_name} role from {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def assigncatsrole(ctx, member: Optional[discord.Member] = None):
+    """Assign Cats role to a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to! Usage: `!assigncatsrole @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{cats_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in member.roles:
+        await ctx.send(f"🐱 {member.mention} already has the {cats_role_name} role!")
+        return
+    
+    try:
+        await member.add_roles(role)
+        await ctx.send(f"🐱 Successfully assigned the {cats_role_name} role to {member.mention}! Meow!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error assigning role: {e}")
+
+@bot.command()
+async def removecatsrolefrom(ctx, member: Optional[discord.Member] = None):
+    """Remove Cats role from a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from! Usage: `!removecatsrolefrom @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{cats_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role not in member.roles:
+        await ctx.send(f"❌ {member.mention} doesn't have the {cats_role_name} role!")
+        return
+    
+    try:
+        await member.remove_roles(role)
+        await ctx.send(f"🐱 Successfully removed the {cats_role_name} role from {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def assignlizardsrole(ctx, member: Optional[discord.Member] = None):
+    """Assign Lizards role to a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to! Usage: `!assignlizardsrole @username`")
+        return
+    
+    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{lizards_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in member.roles:
+        await ctx.send(f"🦎 {member.mention} already has the {lizards_role_name} role!")
+        return
+    
+    try:
+        await member.add_roles(role)
+        await ctx.send(f"🦎 Successfully assigned the {lizards_role_name} role to {member.mention}! Hiss!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error assigning role: {e}")
+
+@bot.command()
+async def removelizardsrolefrom(ctx, member: Optional[discord.Member] = None):
+    """Remove Lizards role from a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from! Usage: `!removelizardsrolefrom @username`")
+        return
+    role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{lizards_role_name}' role doesn't exist on this server!")
+        return
+    if role not in member.roles:
+        await ctx.send(f"❌ {member.mention} doesn't have the {lizards_role_name} role!")
+        return
+    try:
+        await member.remove_roles(role)
+        await ctx.send(f"🦎 Successfully removed the {lizards_role_name} role from {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def assignpvprole(ctx, member: Optional[discord.Member] = None):
+    """Assign PVP role to a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to! Usage: `!assignpvprole @username`")
+        return
+    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{pvp_role_name}' role doesn't exist on this server!")
+        return
+    if role in member.roles:
+        await ctx.send(f"⚔️ {member.mention} already has the {pvp_role_name} role!")
+        return
+    try:
+        await member.add_roles(role)
+        await ctx.send(f"⚔️ Successfully assigned the {pvp_role_name} role to {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error assigning role: {e}")
+
+@bot.command()
+async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
+    """Remove PVP role from a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from! Usage: `!removepvprolefrom @username`")
+        return
+    role = discord.utils.get(ctx.guild.roles, name=pvp_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{pvp_role_name}' role doesn't exist on this server!")
+        return
+    if role not in member.roles:
+        await ctx.send(f"❌ {member.mention} doesn't have the {pvp_role_name} role!")
+        return
+    try:
+        await member.remove_roles(role)
+        await ctx.send(f"⚔️ Successfully removed the {pvp_role_name} role from {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command(name='generate')
+async def generate(ctx, *, prompt: Optional[str] = None):
+    """Generate an AI image using HiDream model"""
+    if not prompt:
+        await ctx.send("❌ Please provide a prompt for image generation!")
+        return
+    if not venice_api_key:
+        await ctx.send("❌ AI image generation is disabled. Please set VENICE_API_KEY.")
+        return
+    payload = {
+        "prompt": prompt,
+        "model": "hidream",
+        "format": "webp",
+        "width": 1024,
+        "height": 1024,
+        "steps": 20,
+        "safe_mode": True,
+        "hide_watermark": True,
+        "embed_exif_metadata": False,
+        "return_binary": True,  # request base64 image data
+        "seed": 0
+    }
+    headers = {"Authorization": f"Bearer {venice_api_key}", "Content-Type": "application/json"}
+    try:
+        async with ctx.typing():
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(IMAGE_API_URL, json=payload, headers=headers)
+                resp.raise_for_status()
+                # Determine if response is JSON or image data
+                content_type = resp.headers.get("Content-Type", "")
+                if content_type.startswith("image"):
+                    img_bytes = resp.content
+                    buffer = io.BytesIO(img_bytes)
+                    buffer.seek(0)
+                    file = discord.File(buffer, filename="image.png")
+                    embed = discord.Embed(
+                        title="🖼️ AI Image Generation", description=f"Prompt: {prompt}", color=discord.Color.purple()
+                    )
+                    embed.set_image(url="attachment://image.png")
+                    await ctx.send(embed=embed, file=file)
+                    return
+                # Otherwise parse JSON for image URLs or base64
+                data = resp.json()
+                items = data.get("data", [])
+                
+                if not items:
+                    await ctx.send("❌ No image returned from AI.")
+                    return
+                # Handle base64 encoded image
+                b64_data = items[0].get("b64_json") or items[0].get("image") or items[0].get("base64")
+                if b64_data:
+                    img_bytes = base64.b64decode(b64_data)
+                    buffer = io.BytesIO(img_bytes)
+                    buffer.seek(0)
+                    file = discord.File(buffer, filename="image.png")
+                    embed = discord.Embed(
+                        title="🖼️ AI Image Generation", description=f"Prompt: {prompt}", color=discord.Color.purple()
+                    )
+                    embed.set_image(url="attachment://image.png")
+                    await ctx.send(embed=embed, file=file)
+                    return
+                # Fallback to URL if binary not provided
+                img_url = items[0].get("url") or items[0].get("image_url")
+                if img_url:
+                    embed = discord.Embed(
+                        title="🖼️ AI Image Generation", description=f"Prompt: {prompt}", color=discord.Color.purple()
+                    )
+                    embed.set_image(url=img_url)
+                    await ctx.send(embed=embed)
+                    return
+                await ctx.send("❌ Failed to retrieve image data.")
+    except httpx.HTTPStatusError as e:
+        await ctx.send(f"❌ Image generation failed: {e.response.status_code}")
+    except Exception as e:
+        await ctx.send(f"❌ Error generating image: {e}")
+
+# Web server setup for Render.com port binding
+async def health_check(request):
+    """Health check endpoint for Render.com"""
+    return web.Response(text="Bot is running!")
+
+async def init_web_server():
+    """Initialize web server for Render.com"""
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    port = int(os.getenv('PORT', 10000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"[RENDER] Web server started on port {port}")
+    return runner
+
+async def main():
+    """Start web server and Discord bot"""
+    web_runner = await init_web_server()
+    print("[RENDER] Web server initialized")
+    print("[DISCORD] Starting Discord bot...")
+    assert token is not None, "DISCORD_TOKEN must be set"
+    await bot.start(token)
+
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("[SHUTDOWN] Bot stopped by user")
+    except Exception as e:
+        print(f"[SHUTDOWN] Bot stopped due to error: {e}")
