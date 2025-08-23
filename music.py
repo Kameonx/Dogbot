@@ -21,8 +21,10 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         
         # Enhanced yt-dlp options for cloud deployment with network resilience
+        # Prefer bestaudio with a fallback on retry and force IPv4 to avoid TLS flakiness
+        format_selector = 'bestaudio/best' if retry_count < 2 else 'best'
         ytdl_options = {
-            'format': 'bestaudio',
+            'format': format_selector,
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
@@ -30,6 +32,7 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'cookiefile': 'cookies.txt' if os.path.isfile('cookies.txt') else None,
             'socket_timeout': 30,
             'retries': 3,
+            'force_ipv4': True,
             # Prefer https and set a sane user agent to avoid some 403s
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
@@ -73,10 +76,15 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
         except Exception as e:
             error_str = str(e).lower()
             # Retry once for network-related errors
-            if retry_count == 0 and any(keyword in error_str for keyword in ["connection", "network", "timeout", "tls"]):
+            if retry_count < 1 and any(keyword in error_str for keyword in ["connection", "network", "timeout", "tls"]):
                 print(f"[MUSIC] Network error, retrying: {e}")
                 await asyncio.sleep(1)
-                return await cls.from_url(url, loop=loop, retry_count=1)
+                return await cls.from_url(url, loop=loop, retry_count=retry_count + 1)
+            # Fallback if requested format isn't available
+            if retry_count < 2 and any(keyword in error_str for keyword in ["requested format is not available", "format is not available", "no video formats", "no such format"]):
+                print(f"[MUSIC] Format unavailable, falling back to more permissive format: {e}")
+                await asyncio.sleep(0.5)
+                return await cls.from_url(url, loop=loop, retry_count=retry_count + 1)
             
             print(f"Audio source error: {e}")
             raise ValueError(f"Failed to create audio source: {str(e)[:100]}")
@@ -151,7 +159,8 @@ class MusicBot:
                             await vc.move_to(preferred_channel)
                             state['voice_channel_id'] = preferred_channel.id
                         # Check for fake connections (connected but never playing)
-                        if not vc.is_playing() and not vc.is_paused():
+                        # Only count once playback had started recently
+                        if not vc.is_playing() and not vc.is_paused() and state.get('play_started_recently'):
                             state['fake_connect_count'] += 1
                             print(f"[MUSIC] Fake connect count: {state['fake_connect_count']}")
                             if state['fake_connect_count'] >= 5:
@@ -181,9 +190,10 @@ class MusicBot:
                     msg = str(e).lower()
                     if 'already connected' in msg:
                         print("[MUSIC] Already connected, continuing...")
-                        state['fake_connect_count'] += 1
-                        print(f"[MUSIC] Fake connect count: {state['fake_connect_count']}")
-                        if state['fake_connect_count'] >= 5:
+                        if state.get('play_started_recently'):
+                            state['fake_connect_count'] = state.get('fake_connect_count', 0) + 1
+                            print(f"[MUSIC] Fake connect count: {state['fake_connect_count']}")
+                        if state.get('fake_connect_count', 0) >= 5:
                             print("[MUSIC] HARD CIRCUIT BREAKER: Too many fake connections, forcing disconnect and internal reconnect.")
                             try:
                                 if guild.voice_client:
@@ -283,7 +293,7 @@ class MusicBot:
                 # Otherwise reshuffle and restart
                 state['current_index'] = 0
                 random.shuffle(state['current_playlist'])
-                await ctx.send("🔁 Playlist finished, reshuffling and restarting!")
+                # Silent reshuffle and restart
                 await self._play_current_song(ctx)
                 return
     
@@ -345,6 +355,12 @@ class MusicBot:
                         delay = 3 if error and any(keyword in str(error).lower() for keyword in ["connection", "tls", "network"]) else 2
                         async def delayed_next():
                             await asyncio.sleep(delay)
+                            # Mark that playback ended to avoid false fake counts
+                            try:
+                                st = self._get_guild_state(ctx.guild.id)
+                                st['play_started_recently'] = False
+                            except Exception:
+                                pass
                             await self._advance_to_next_song(ctx)
                         # Thread-safe scheduling from FFmpeg thread
                         self.bot.loop.call_soon_threadsafe(lambda: asyncio.create_task(delayed_next()))
@@ -379,19 +395,8 @@ class MusicBot:
                                 raise play_err
                         else:
                             raise play_err
-                    # Send now playing message to appropriate text channel
-                    voice_chan = ctx.voice_client.channel if ctx.voice_client else None
-                    target_chan = None
-                    if voice_chan:
-                        for text_chan in ctx.guild.text_channels:
-                            if text_chan.name == voice_chan.name:
-                                target_chan = text_chan
-                                break
-                    if not target_chan:
-                        target_chan = ctx.channel
-                    video_link = player.data.get('webpage_url') or player.url
-                    message_content = f"🎵 Now playing: [{player.title}]({video_link}) ({index + 1}/{len(playlist)})"
-                    await target_chan.send(message_content)
+                    # Mark that playback started to inform connection health
+                    state['play_started_recently'] = True
                     print(f"[MUSIC] Successfully started playback: {player.title}")
                 except Exception as e:
                     print(f"[MUSIC] Failed to start playback: {e}")
