@@ -500,7 +500,7 @@ async def help(ctx):
             "`!catsrole` - Add Cats role 🐱\n"
             "`!lizardsrole` - Add Lizards role 🦎\n"
             "`!pvprole` - Add PVP role ⚔️\n"
-            "`!remove<role>` - Remove any role (e.g., `!removedogsrole`)"
+            "`!remove<role> [@user]` - Remove a role from yourself (or from @user if you're a mod)"
         ),
         inline=False
     )
@@ -896,60 +896,84 @@ async def pvprole(ctx):
         await ctx.send(f"❌ Error adding role: {e}")
 
 @bot.command()
-async def removedogsrole(ctx):
-    """Remove the Dogs role from yourself"""
+async def removedogsrole(ctx, member: Optional[discord.Member] = None):
+    """Remove the Dogs role from yourself, or from @user if you're a moderator"""
     role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
     if role is None:
         await ctx.send(f"❌ The '{dogs_role_name}' role doesn't exist on this server!")
         return
     
-    if role not in ctx.author.roles:
-        await ctx.send(f"❌ You don't have the {dogs_role_name} role!")
+    target = member or ctx.author
+    if member is not None and not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to remove roles from others!")
+        return
+    
+    if role not in target.roles:
+        await ctx.send(f"❌ {target.mention if member else 'You'} don't have the {dogs_role_name} role!")
         return
     
     try:
-        await ctx.author.remove_roles(role)
-        await ctx.send(f"🐕 Successfully removed the {dogs_role_name} role!")
+        await target.remove_roles(role)
+        if member:
+            await ctx.send(f"🐕 Successfully removed the {dogs_role_name} role from {target.mention}!")
+        else:
+            await ctx.send(f"🐕 Successfully removed your {dogs_role_name} role!")
     except discord.Forbidden:
         await ctx.send("❌ I don't have permission to remove roles!")
     except Exception as e:
         await ctx.send(f"❌ Error removing role: {e}")
 
 @bot.command()
-async def removecatsrole(ctx):
-    """Remove the Cats role from yourself"""
+async def removecatsrole(ctx, member: Optional[discord.Member] = None):
+    """Remove the Cats role from yourself, or from @user if you're a moderator"""
     role = discord.utils.get(ctx.guild.roles, name=cats_role_name)
     if role is None:
         await ctx.send(f"❌ The '{cats_role_name}' role doesn't exist on this server!")
         return
     
-    if role not in ctx.author.roles:
-        await ctx.send(f"❌ You don't have the {cats_role_name} role!")
+    target = member or ctx.author
+    if member is not None and not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to remove roles from others!")
+        return
+    
+    if role not in target.roles:
+        await ctx.send(f"❌ {target.mention if member else 'You'} don't have the {cats_role_name} role!")
         return
     
     try:
-        await ctx.author.remove_roles(role)
-        await ctx.send(f"🐱 Successfully removed the {cats_role_name} role!")
+        await target.remove_roles(role)
+        if member:
+            await ctx.send(f"🐱 Successfully removed the {cats_role_name} role from {target.mention}!")
+        else:
+            await ctx.send(f"🐱 Successfully removed your {cats_role_name} role!")
     except discord.Forbidden:
         await ctx.send("❌ I don't have permission to remove roles!")
     except Exception as e:
         await ctx.send(f"❌ Error removing role: {e}")
 
 @bot.command()
-async def removelizardsrole(ctx):
-    """Remove the Lizards role from yourself"""
+async def removelizardsrole(ctx, member: Optional[discord.Member] = None):
+    """Remove the Lizards role from yourself, or from @user if you're a moderator"""
     role = discord.utils.get(ctx.guild.roles, name=lizards_role_name)
     if role is None:
         await ctx.send(f"❌ The '{lizards_role_name}' role doesn't exist on this server!")
         return
     
-    if role not in ctx.author.roles:
-        await ctx.send(f"❌ You don't have the {lizards_role_name} role!")
+    target = member or ctx.author
+    if member is not None and not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to remove roles from others!")
+        return
+    
+    if role not in target.roles:
+        await ctx.send(f"❌ {target.mention if member else 'You'} don't have the {lizards_role_name} role!")
         return
     
     try:
-        await ctx.author.remove_roles(role)
-        await ctx.send(f"🦎 Successfully removed the {lizards_role_name} role!")
+        await target.remove_roles(role)
+        if member:
+            await ctx.send(f"🦎 Successfully removed the {lizards_role_name} role from {target.mention}!")
+        else:
+            await ctx.send(f"🦎 Successfully removed your {lizards_role_name} role!")
     except discord.Forbidden:
         await ctx.send("❌ I don't have permission to remove roles!")
     except Exception as e:
