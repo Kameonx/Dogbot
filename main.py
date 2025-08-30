@@ -12,7 +12,6 @@ from datetime import datetime
 import random
 from typing import Optional
 import re
-import yt_dlp
 import subprocess
 from music import MusicBot, YouTubeAudioSource  # restore music functionality imports
 import base64
@@ -488,8 +487,7 @@ async def help(ctx):
             "`!resume` - Resume paused song\n"
             "`!playlist` / `!queue` - Show current playlist\n"
             "`!nowplaying` / `!np` - Show current song\n"
-            "`!volume [0-100]` - Check or set volume\n"
-            "`!download <youtube_url>` - Download YouTube video as MP3 (pytube)"
+            "`!volume [0-100]` - Check or set volume"
         ),
         inline=False
     )
@@ -1049,8 +1047,7 @@ async def modhelp(ctx):
         value=(
             "`!status` - Check voice channel status\n"
             "`!audiotest` - Test audio system components\n"
-            "`!voicediag` - Detailed voice connection diagnostics\n"
-            "`!download <youtube_url>` - Download YouTube as MP3 (pytube) ⚠️"
+            "`!voicediag` - Detailed voice connection diagnostics"
         ),
         inline=False
     )
@@ -1068,109 +1065,7 @@ async def modhelp(ctx):
     embed.set_footer(text="🔧 These commands help with troubleshooting and management!")
     await ctx.send(embed=embed)
 
-# YouTube Download Command using pytube
-@bot.command()
-async def download(ctx, *, url):
-    # Remove surrounding angle brackets in case of Discord formatting
-    url = url.strip('<>')
-    """Download YouTube video as MP3 using yt_dlp"""
-    if not url:
-        await ctx.send("❌ Please provide a YouTube URL!")
-        return
-    
-    # Check if it's a valid YouTube URL
-    if not any(domain in url.lower() for domain in ['youtube.com', 'youtu.be']):
-        await ctx.send("❌ Please provide a valid YouTube URL!")
-        return
-    
-    # Create downloads directory if it doesn't exist
-    download_dir = "downloads"
-    if not os.path.exists(download_dir):
-        os.makedirs(download_dir)
-    
-    # Show initial message
-    processing_msg = await ctx.send("🎵 Processing download request... This may take a moment.")
-    # Use executor to offload blocking download tasks
-    loop = asyncio.get_event_loop()
-
-    try:
-        # Use yt_dlp to download and convert to MP3
-        # Set up yt_dlp options, including cookies if available
-        ytdl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': f'{download_dir}/%(title)s.%(ext)s',
-            'quiet': True,
-            'no_warnings': True,
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-        }
-        # Use cookies.txt if present to bypass YouTube bot checks
-        if os.path.isfile('cookies.txt'):
-            ytdl_opts['cookiefile'] = 'cookies.txt'
-        
-        try:
-            ytdl = yt_dlp.YoutubeDL(ytdl_opts)
-            try:
-                info = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=True))
-            except Exception as e:
-                err = str(e)
-                if 'Sign in to confirm' in err:
-                    # Retry using browser cookies from browser
-                    retry_opts = ytdl_opts.copy()
-                    retry_opts.pop('cookiefile', None)
-                    retry_opts['cookiesfrombrowser'] = ('chrome',)
-                    info = await loop.run_in_executor(None, lambda: yt_dlp.YoutubeDL(retry_opts).extract_info(url, download=True))
-                else:
-                    raise
-            if not info:
-                raise Exception('No info retrieved')
-        except Exception as e:
-            err_msg = str(e)
-            if 'Sign in to confirm' in err_msg:
-                await processing_msg.edit(content="❌ Download failed: YouTube requires login for this video. Please update your cookies.txt or provide browser cookies.")
-                return
-            await processing_msg.edit(content=f"❌ Download failed: {err_msg[:100]}...")
-            return
-        # Prepare filename and ensure validity
-        filename = ytdl.prepare_filename(info)
-        base = os.path.splitext(filename)[0]
-        mp3_filename = f'{base}.mp3'
-        title = info.get('title', 'audio')
-        # Check file exists
-        if not os.path.exists(mp3_filename):
-            await processing_msg.edit(content="❌ Download failed! File not found after processing.")
-            return
-        # Send file
-        await processing_msg.delete()
-        file_size_mb = os.path.getsize(mp3_filename) / (1024 * 1024)
-        discord_file = discord.File(mp3_filename, filename=os.path.basename(mp3_filename))
-        embed = discord.Embed(
-            title="🎵 YouTube Download",
-            description=f"**{title}**",
-            color=discord.Color.green()
-        )
-        embed.add_field(name="File Size", value=f"{file_size_mb:.1f}MB", inline=True)
-        embed.add_field(name="Format", value="MP3", inline=True)
-        await ctx.send(embed=embed, file=discord_file)
-        # Cleanup
-        os.remove(mp3_filename)
-     
-    except Exception as e:
-        await processing_msg.edit(content=f"❌ Download failed: {str(e)}")
-        print(f"Download error: {e}")
-     
-    # Clean up old downloads
-    try:
-        now = time.time()
-        for fname in os.listdir(download_dir):
-            path = os.path.join(download_dir, fname)
-            if os.path.isfile(path) and now - os.path.getmtime(path) > 3600:
-                os.remove(path)
-    except:
-        pass
+## Download command removed: the bot now streams audio only.
 
 @bot.command()
 async def voicediag(ctx):
@@ -1278,13 +1173,7 @@ async def audiotest(ctx):
             ytdl_status = "❌ Not available"
         embed.add_field(name="yt-dlp", value=ytdl_status, inline=True)
         
-        # Test pytube availability
-        try:
-            import pytube
-            pytube_status = "✅ Available"
-        except ImportError:
-            pytube_status = "❌ Not available"
-        embed.add_field(name="pytube", value=pytube_status, inline=True)
+    # pytube no longer used
         
         # Test FFmpeg (try to create a basic instance)
         try:
