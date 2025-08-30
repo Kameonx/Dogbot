@@ -9,7 +9,7 @@ from playlist import MUSIC_PLAYLISTS
 class YouTubeAudioSource(discord.PCMVolumeTransformer):
     """Simplified audio source for cloud deployment"""
     
-    def __init__(self, source, *, data, volume=0.5):
+    def __init__(self, source, *, data, volume=0.35):
         super().__init__(source, volume)
         self.data = data
         self.title = data.get('title', 'Unknown Title')
@@ -19,9 +19,8 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
     async def from_url(cls, url, *, loop=None, retry_count=0):
         """Create audio source with minimal options for cloud reliability"""
         loop = loop or asyncio.get_event_loop()
-        
-        # Enhanced yt-dlp options for cloud deployment with network resilience
-        # Prefer bestaudio with a fallback on retry and force IPv4 to avoid TLS flakiness
+
+        # yt-dlp extraction options
         format_selector = 'bestaudio/best' if retry_count < 2 else 'best'
         ytdl_options = {
             'format': format_selector,
@@ -33,7 +32,6 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
             'socket_timeout': 30,
             'retries': 3,
             'force_ipv4': True,
-            # Prefer https and set a sane user agent to avoid some 403s
             'http_headers': {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
             },
@@ -43,49 +41,50 @@ class YouTubeAudioSource(discord.PCMVolumeTransformer):
 
         try:
             data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
-            
             if not data:
                 raise ValueError("No data extracted")
-                
             if 'entries' in data:
                 data = data['entries'][0]
-
             if not data.get('url'):
                 raise ValueError("No playable URL found")
 
-            # Enhanced FFmpeg options for cloud deployment with network resilience
-            # Avoid -re (can cause throttling) and enable http reconnect/persistent connections
+            # FFmpeg options tuned to reduce initial distortion and improve stability
+            before_opts = (
+                ' -nostdin'
+                ' -reconnect 1'
+                ' -reconnect_streamed 1'
+                ' -reconnect_at_eof 1'
+                ' -reconnect_delay_max 5'
+                ' -reconnect_on_http_error 403,404,429,500,502,503,504'
+                ' -rw_timeout 60000000'
+                ' -probesize 256k'
+                ' -analyzeduration 0'
+            )
+            audio_opts = (
+                ' -vn -sn -dn'
+                ' -nostats -hide_banner -loglevel warning'
+                ' -ac 2 -ar 48000'
+                ' -af aresample=async=1:min_hard_comp=0.100:first_pts=0'
+            )
             source = discord.FFmpegPCMAudio(
                 data['url'],
-                before_options=(' -nostdin '
-                                '-reconnect 1 '
-                                '-reconnect_streamed 1 '
-                                '-reconnect_at_eof 1 '
-                                '-reconnect_delay_max 2 '
-                                '-reconnect_on_http_error 404,500,502,403,429 '
-                                '-rw_timeout 60000000'),
-                options=(' -vn '
-                         '-nostats '
-                         '-hide_banner '
-                         '-loglevel error '
-                         '-err_detect ignore_err')
+                before_options=before_opts,
+                options=audio_opts,
             )
-            
             return cls(source, data=data)
-        
+
         except Exception as e:
             error_str = str(e).lower()
             # Retry once for network-related errors
-            if retry_count < 1 and any(keyword in error_str for keyword in ["connection", "network", "timeout", "tls"]):
+            if retry_count < 1 and any(k in error_str for k in ("connection", "network", "timeout", "tls")):
                 print(f"[MUSIC] Network error, retrying: {e}")
                 await asyncio.sleep(1)
                 return await cls.from_url(url, loop=loop, retry_count=retry_count + 1)
             # Fallback if requested format isn't available
-            if retry_count < 2 and any(keyword in error_str for keyword in ["requested format is not available", "format is not available", "no video formats", "no such format"]):
+            if retry_count < 2 and any(k in error_str for k in ("requested format is not available", "format is not available", "no video formats", "no such format")):
                 print(f"[MUSIC] Format unavailable, falling back to more permissive format: {e}")
                 await asyncio.sleep(0.5)
                 return await cls.from_url(url, loop=loop, retry_count=retry_count + 1)
-            
             print(f"Audio source error: {e}")
             raise ValueError(f"Failed to create audio source: {str(e)[:100]}")
 
@@ -398,6 +397,29 @@ class MusicBot:
                     # Mark that playback started to inform connection health
                     state['play_started_recently'] = True
                     print(f"[MUSIC] Successfully started playback: {player.title}")
+
+                    # Announce now playing in a relevant text channel
+                    try:
+                        voice_chan = ctx.voice_client.channel if ctx.voice_client else None
+                        target_chan = None
+                        if voice_chan:
+                            for text_chan in ctx.guild.text_channels:
+                                if text_chan.name == voice_chan.name and text_chan.permissions_for(ctx.guild.me).send_messages:
+                                    target_chan = text_chan
+                                    break
+                        if not target_chan:
+                            target_chan = ctx.channel
+                        # Compose link and position info
+                        link = getattr(player, 'data', {}).get('webpage_url') or getattr(player, 'url', None) or ''
+                        idx = state.get('current_index', 0)
+                        total = len(state.get('current_playlist', [])) or 0
+                        pos = f" ({idx + 1}/{total})" if total else ""
+                        msg = f"🎵 Now playing: **{player.title}**{pos}"
+                        if link:
+                            msg = f"🎵 Now playing: **[{player.title}]({link})**{pos}"
+                        await target_chan.send(msg)
+                    except Exception as announce_err:
+                        print(f"[MUSIC] Failed to announce now playing: {announce_err}")
                 except Exception as e:
                     print(f"[MUSIC] Failed to start playback: {e}")
                     error_str = str(e).lower()
