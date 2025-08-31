@@ -59,6 +59,7 @@ dogs_role_name = "Dogs"
 cats_role_name = "Cats"
 lizards_role_name = "Lizards"
 pvp_role_name = "PVP"
+elves_role_name = "Elves"
 
 # Initialize global variables for music functionality
 music_bot = None
@@ -499,6 +500,7 @@ async def help(ctx):
             "`!dogsrole` - Add Dogs role 🐕\n"
             "`!catsrole` - Add Cats role 🐱\n"
             "`!lizardsrole` - Add Lizards role 🦎\n"
+            "`!elvesrole` - Add Elves role 🧝\n"
             "`!pvprole` - Add PVP role ⚔️\n"
             "`!remove<role> [@user]` - Remove a role from yourself (or from @user if you're a mod)"
         ),
@@ -896,6 +898,26 @@ async def pvprole(ctx):
         await ctx.send(f"❌ Error adding role: {e}")
 
 @bot.command()
+async def elvesrole(ctx):
+    """Add the Elves role to yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=elves_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{elves_role_name}' role doesn't exist on this server!")
+        return
+    
+    if role in ctx.author.roles:
+        await ctx.send(f"🧝 You already have the {elves_role_name} role!")
+        return
+    
+    try:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🧝 Successfully added the {elves_role_name} role!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error adding role: {e}")
+
+@bot.command()
 async def removedogsrole(ctx, member: Optional[discord.Member] = None):
     """Remove the Dogs role from yourself, or from @user if you're a moderator"""
     role = discord.utils.get(ctx.guild.roles, name=dogs_role_name)
@@ -974,6 +996,34 @@ async def removelizardsrole(ctx, member: Optional[discord.Member] = None):
             await ctx.send(f"🦎 Successfully removed the {lizards_role_name} role from {target.mention}!")
         else:
             await ctx.send(f"🦎 Successfully removed your {lizards_role_name} role!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def removeelvesrole(ctx, member: Optional[discord.Member] = None):
+    """Remove the Elves role from yourself, or from @user if you're a moderator"""
+    role = discord.utils.get(ctx.guild.roles, name=elves_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{elves_role_name}' role doesn't exist on this server!")
+        return
+    
+    target = member or ctx.author
+    if member is not None and not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to remove roles from others!")
+        return
+    
+    if role not in target.roles:
+        await ctx.send(f"❌ {target.mention if member else 'You'} don't have the {elves_role_name} role!")
+        return
+    
+    try:
+        await target.remove_roles(role)
+        if member:
+            await ctx.send(f"🧝 Successfully removed the {elves_role_name} role from {target.mention}!")
+        else:
+            await ctx.send(f"🧝 Successfully removed your {elves_role_name} role!")
     except discord.Forbidden:
         await ctx.send("❌ I don't have permission to remove roles!")
     except Exception as e:
@@ -1059,6 +1109,8 @@ async def modhelp(ctx):
             "`!removecatsrolefrom @username` - Remove Cats role from user\n"
             "`!assignlizardsrole @username` - Assign Lizards role to user\n"
             "`!removelizardsrolefrom @username` - Remove Lizards role from user\n"
+            "`!assighelvesrole @username` - Assign Elves role to user\n"
+            "`!removeelvesrolefrom @username` - Remove Elves role from user\n"
             "`!assignpvprole @username` - Assign PVP role to user\n"
             "`!removepvprolefrom @username` - Remove PVP role from user"
         ),
@@ -1476,6 +1528,54 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
     try:
         await member.remove_roles(role)
         await ctx.send(f"⚔️ Successfully removed the {pvp_role_name} role from {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+@bot.command()
+async def assighelvesrole(ctx, member: Optional[discord.Member] = None):
+    """Assign Elves role to a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to! Usage: `!assighelvesrole @username`")
+        return
+    role = discord.utils.get(ctx.guild.roles, name=elves_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{elves_role_name}' role doesn't exist on this server!")
+        return
+    if role in member.roles:
+        await ctx.send(f"🧝 {member.mention} already has the {elves_role_name} role!")
+        return
+    try:
+        await member.add_roles(role)
+        await ctx.send(f"🧝 Successfully assigned the {elves_role_name} role to {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error assigning role: {e}")
+
+@bot.command()
+async def removeelvesrolefrom(ctx, member: Optional[discord.Member] = None):
+    """Remove Elves role from a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from! Usage: `!removeelvesrolefrom @username`")
+        return
+    role = discord.utils.get(ctx.guild.roles, name=elves_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{elves_role_name}' role doesn't exist on this server!")
+        return
+    if role not in member.roles:
+        await ctx.send(f"❌ {member.mention} doesn't have the {elves_role_name} role!")
+        return
+    try:
+        await member.remove_roles(role)
+        await ctx.send(f"🧝 Successfully removed the {elves_role_name} role from {member.mention}!")
     except discord.Forbidden:
         await ctx.send("❌ I don't have permission to remove roles!")
     except Exception as e:
