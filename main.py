@@ -436,6 +436,35 @@ async def on_message(message):
 
 
 @bot.event
+async def on_command_error(ctx, error):
+    """Surface command errors so they don't look like silent failures."""
+    # Ignore unknown commands to reduce noise
+    if isinstance(error, commands.CommandNotFound):
+        return
+    if isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send(f"❌ Missing argument: {error.param.name}")
+        return
+    try:
+        await ctx.send(f"❌ Error: {error}")
+    except Exception:
+        pass
+    # Always log traceback for debugging
+    print("[COMMAND_ERROR]", type(error).__name__, "-", error)
+
+
+@bot.before_invoke
+async def log_command_invocation(ctx):
+    try:
+        user = f"{ctx.author} ({ctx.author.id})"
+        cmd = ctx.command.qualified_name if ctx.command else 'unknown'
+        chan = f"#{ctx.channel}"
+        guild = f"{ctx.guild.name} ({ctx.guild.id})" if ctx.guild else 'DM'
+        print(f"[COMMAND] {user} invoked !{cmd} in {chan} @ {guild}")
+    except Exception as e:
+        print(f"[COMMAND] Invocation log error: {e}")
+
+
+@bot.event
 async def on_voice_state_update(member, before, after):
     """Handle voice state updates - simplified to avoid reconnection loops"""
     # Only act on bot's own voice state
@@ -1109,7 +1138,7 @@ async def modhelp(ctx):
             "`!removecatsrolefrom @username` - Remove Cats role from user\n"
             "`!assignlizardsrole @username` - Assign Lizards role to user\n"
             "`!removelizardsrolefrom @username` - Remove Lizards role from user\n"
-            "`!assighelvesrole @username` - Assign Elves role to user\n"
+            "`!assignelvesrole @username` - Assign Elves role to user\n"
             "`!removeelvesrolefrom @username` - Remove Elves role from user\n"
             "`!assignpvprole @username` - Assign PVP role to user\n"
             "`!removepvprolefrom @username` - Remove PVP role from user"
@@ -1533,14 +1562,14 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
     except Exception as e:
         await ctx.send(f"❌ Error removing role: {e}")
 
-@bot.command()
-async def assighelvesrole(ctx, member: Optional[discord.Member] = None):
+@bot.command(aliases=["assighelvesrole"])  # keep old misspelling as alias
+async def assignelvesrole(ctx, member: Optional[discord.Member] = None):
     """Assign Elves role to a user (moderator only)"""
     if not has_admin_or_moderator_role(ctx):
         await ctx.send("❌ You need Admin or Moderator role to use this command!")
         return
     if member is None:
-        await ctx.send("❌ Please mention a user to assign the role to! Usage: `!assighelvesrole @username`")
+        await ctx.send("❌ Please mention a user to assign the role to! Usage: `!assignelvesrole @username`")
         return
     role = discord.utils.get(ctx.guild.roles, name=elves_role_name)
     if role is None:
