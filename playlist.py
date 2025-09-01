@@ -250,7 +250,7 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/ATjNmGDuJ3Y?si=1WYjCTUmsUlAkkr4", # Atmosphere - GodLovesUgly (Zeds Dead & Subtronics Remix)
     "https://youtu.be/3YXVdyA9Fxw?si=dtOIEiQoGPhctYQy", # Ganja White Night x Boogie T - Burnin | Official Music Video | Animation | 2024
     "https://youtu.be/Gjb0zDYnh5A?si=maelkCJOznYu--8F", # Flux Pavilion - Every Cable Goes Somewhere
-    "https://youtu.be/fq8ZkL3-8Kg?si=bcXKOU2FR5MFoBAd", # Labrinth - Still Don’t Know My Name (Official Video) | euphoria (Original HBO Score)
+    "https://youtu.be/2cnloO84LA0?si=ZEyfo0rg2TmzjQLr", # DIA DELÍCIA - NAKAMA (Official Music Video)
     "https://youtu.be/w-sQRS-Lc9k?si=HV7MvLeuLTATZkhy", # KORDHELL -  IN MY MIND
     "https://youtu.be/OvaL-ElQ8Lc?si=-skMhKSDyfpWXf1K", # KUTE - AVOID ME (Official Visualizer)
     "https://youtu.be/4_JJANRocU8?si=82G80PkrFrOfXr_W", # Chichen itza w/ creepmxne
@@ -269,7 +269,7 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/aC4tDHAEj8E?si=2ILKq8-e2Hmxkl-O", # kali uchis - just a stranger ft. steve lacy (slowed down)༄
     "https://youtu.be/PraLxY8SAss?si=QEifZscVNICBZbDY", # Willow - Female Energy, Part 2 [Slowed + Reverb]
     "https://youtu.be/5wZKG9RREZ0?si=TdbRvfax9aEJ2joV", # Cazztek - Poison
-    "https://youtu.be/5Ejp7yFZxPM?si=ZWzXqu3ltPIauXkZ", # FIFTY FIFTY - Cupid (Twin Version) (Lyrics)
+    "https://youtu.be/lkb7AN4ps50?si=tLmy4G7pOk9ASjo7", # Zany & B-Front & DV8 - LEFT - RIGHT | Defqon.1 Records
     "https://youtu.be/g4hMeNahFjI?si=Zham4PboM-c9p_Ka", # Kage - Cereb | Bass House | NCS - Copyright Free Music
     "https://youtu.be/B5CzUdixwf4?si=Y2nr0z7TXAuwbqD6", # Clear My Mind
     "https://youtu.be/L6rpG53OOe8?si=V7zMeb5c2tTzR1d5", # 2 Brothers on the 4th Floor - Dreams (Will Come Alive) (PARKAH & DURZO HyperTechno Remix)
@@ -414,11 +414,9 @@ MUSIC_PLAYLISTS = [
     "https://youtu.be/QCxSB6JS_0A?si=STzvkJHNTFXTfTrI", # AlunaGeorge - Best Be Believing (Ta-Ku Remix)
     "https://youtu.be/hvLVYQfJap4?si=S2vjA6W5IP1s9rgt", # Ferry Corsten featuring Jenny Wahlström "Many Ways" (Official Video)
     "https://youtu.be/4cQwjQHe-Ow?si=xbGMhXWpnpYhqTm9", # Cash Cash - Take Me Home ft. Bebe Rexha (Fareoh Remix)
-    "https://youtu.be/vmhqY7Pe6T8?si=3mhuw_oKIkpDFrKC", # Bastille - Pompeii (Kat Krazy Radio Mix)
+    "https://youtu.be/aKOB-vT45HM?si=AV7l50I6tn5bwW_a", # Aloboi - Give Me More (Just Rawer) {Gonio Visual}
     "https://youtu.be/J8ibQ9f3_lc?si=MUJ643qynjRzxsJH", # GTA & What So Not ft. Tunji Ige “Feel It”
     "https://youtu.be/i5xCKYMfpEc?si=qETROny3bOePeF7b", # ZEDS DEAD - SWEET MEMORIES
     "https://youtu.be/i3aL0up-v28?si=SMa_qjg4qbOSdlNB", # Lana Del Rey Blue Jeans ft. Azealia Banks (Smims&Belle Remix)
     "https://youtu.be/aeBaSrJmTMk?si=9QAJDED8HdWQTojt", # AVAION, Sofiya Nzau - Wacuka (Official Visualizer)
 ]
-
-
