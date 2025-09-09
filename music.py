@@ -155,8 +155,20 @@ class MusicBot:
                         # Already connected; if to a different channel, move
                         if vc.channel != preferred_channel:
                             print(f"[MUSIC] Moving from {vc.channel.name} to {preferred_channel.name}")
-                            await vc.move_to(preferred_channel)
-                            state['voice_channel_id'] = preferred_channel.id
+                            try:
+                                await vc.move_to(preferred_channel)
+                                # give Discord a moment to stabilize the voice state
+                                await asyncio.sleep(0.8)
+                                # re-check that we're still connected and in the expected channel
+                                if not vc.is_connected() or vc.channel != preferred_channel:
+                                    print(f"[MUSIC] Move did not stabilize, continuing attempts")
+                                    # allow outer loop to retry the connection
+                                    continue
+                                state['voice_channel_id'] = preferred_channel.id
+                            except Exception as move_exc:
+                                print(f"[MUSIC] Error moving voice client: {move_exc}")
+                                # let the outer loop handle retry/backoff
+                                continue
                         # Check for fake connections (connected but never playing)
                         # Only count once playback had started recently
                         if not vc.is_playing() and not vc.is_paused() and state.get('play_started_recently'):
@@ -177,10 +189,37 @@ class MusicBot:
                         return True
 
                     # Connect fresh
+                    # prevent super-rapid retries by enforcing a small gap between connect attempts
+                    last_try = state.get('last_connect_time', 0)
+                    now = asyncio.get_event_loop().time()
+                    if now - last_try < 0.5:
+                        await asyncio.sleep(0.5)
+                    state['last_connect_time'] = now
+
                     print(f"[MUSIC] Connecting to {preferred_channel.name} (attempt {attempt})")
-                    vc = await preferred_channel.connect()
+                    try:
+                        vc = await preferred_channel.connect()
+                    except Exception as conn_exc:
+                        print(f"[MUSIC] Connect raised exception: {conn_exc}")
+                        await asyncio.sleep(0.6 * attempt)
+                        continue
+
+                    # Give Discord a short moment to finalize the voice state
+                    await asyncio.sleep(0.9 + 0.25 * attempt)
+
+                    # Verify the connection stabilized
+                    if not vc or not vc.is_connected() or (vc.channel != preferred_channel):
+                        print(f"[MUSIC] Connection did not stabilize on attempt {attempt}, retrying")
+                        # Try to disconnect any partial connection to avoid zombie state
+                        try:
+                            if vc and getattr(vc, 'is_connected', lambda: False)():
+                                await vc.disconnect(force=True)
+                        except Exception:
+                            pass
+                        await asyncio.sleep(0.6 * attempt)
+                        continue
+
                     state['voice_channel_id'] = preferred_channel.id
-                    await asyncio.sleep(0.3 + 0.2 * attempt)  # small stabilization delay, increases with attempts
                     state['fake_connect_count'] = 0
                     # Silent success
                     print(f"[MUSIC] Successfully connected to {preferred_channel.name}")
