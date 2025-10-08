@@ -55,6 +55,12 @@ intents.voice_states = True  # Needed for voice state tracking
 
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
+# If True, always use a conservative safe emoji set for polls (regional indicators / keycaps)
+FORCE_SAFE_EMOJI = True
+# If True, when the user requests clock mapping, force the bot to overwrite
+# AI-provided emojis and use authoritative clock glyphs for both display and reactions
+FORCE_AUTHORITATIVE_CLOCKS = True
+
 dogs_role_name = "Dogs"
 cats_role_name = "Cats"
 lizards_role_name = "Lizards"
@@ -355,7 +361,14 @@ async def on_ready():
     
     # Check FFmpeg availability
     try:
-        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+        # Prefer an explicit ffmpeg executable if available (FFMPEG_PATH or C:\\ffmpeg)
+        try:
+            from music import find_ffmpeg_executable
+            ffmpeg_exec = find_ffmpeg_executable() or 'ffmpeg'
+        except Exception:
+            ffmpeg_exec = 'ffmpeg'
+
+        result = subprocess.run([ffmpeg_exec, '-version'], capture_output=True, text=True, timeout=5)
         if result.returncode == 0:
             # Extract version info
             version_lines = result.stdout.split('\n')
@@ -434,7 +447,6 @@ async def on_message(message):
     # Just process commands, don't handle them manually here
     await bot.process_commands(message)
 
-
 @bot.event
 async def on_command_error(ctx, error):
     """Surface command errors so they don't look like silent failures."""
@@ -451,7 +463,6 @@ async def on_command_error(ctx, error):
     # Always log traceback for debugging
     print("[COMMAND_ERROR]", type(error).__name__, "-", error)
 
-
 @bot.before_invoke
 async def log_command_invocation(ctx):
     try:
@@ -462,7 +473,6 @@ async def log_command_invocation(ctx):
         print(f"[COMMAND] {user} invoked !{cmd} in {chan} @ {guild}")
     except Exception as e:
         print(f"[COMMAND] Invocation log error: {e}")
-
 
 @bot.event
 async def on_voice_state_update(member, before, after):
@@ -480,103 +490,257 @@ async def on_voice_state_update(member, before, after):
 # Helper function to check for admin/moderator permissions
 def has_admin_or_moderator_role(ctx):
     """Check if user has Admin or Moderator role"""
-    user_roles = [role.name.lower() for role in ctx.author.roles]
-    return any(role in ['admin', 'moderator', 'administrator'] for role in user_roles)
-
-@bot.command()
-async def help(ctx):
-    """Show all available commands"""
-    embed = discord.Embed(
-        title="🐕 Dogbot Commands",
-        description="Here are all the commands you can use:",
-        color=discord.Color.blue()
-    )
-    
-    # Basic Commands (moved to top)
-    embed.add_field(
-        name="🔧 **Basic Commands**",
-        value=(
-            "`!hello` - Say hello to Dogbot\n"
-            "`!help` - Show this help message\n"
-            "`!modhelp` - Show moderator commands"
-        ),
-        inline=False
-    )
-    
-    # Music Commands
-    embed.add_field(
-        name="🎵 **Music Commands**",
-        value=(
-            "`!join` - Join your voice channel and start music\n"
-            "`!play [youtube_url]` - Play main playlist or a single YouTube URL\n"
-            "`!start` - Start playing music (will join channel if needed)\n"
-            "`!leave` - Leave voice channel\n"
-            "`!stop` - Stop playing music\n"
-            "`!next` / `!skip` - Skip to next song\n"
-            "`!pause` - Pause current song\n"
-            "`!resume` - Resume paused song\n"
-            "`!playlist` / `!queue` - Show current playlist\n"
-            "`!nowplaying` / `!np` - Show current song\n"
-            "`!volume [0-100]` - Check or set volume"
-        ),
-        inline=False
-    )
-    
-    # Role Commands
-    embed.add_field(
-        name="🎭 **Role Commands**",
-        value=(
-            "`!dogsrole` - Add Dogs role 🐕\n"
-            "`!catsrole` - Add Cats role 🐱\n"
-            "`!lizardsrole` - Add Lizards role 🦎\n"
-            "`!elvesrole` - Add Elves role 🧝\n"
-            "`!pvprole` - Add PVP role ⚔️\n"
-            "`!remove<role> [@user]` - Remove a role from yourself (or from @user if you're a mod)"
-        ),
-        inline=False
-    )
-    
-    # AI & Chat Commands
-    embed.add_field(
-        name="🤖 **AI & Chat Commands**",
-        value=(
-            "`!chat <message>` - Chat with AI (with memory)\n"
-            "`!ask <question>` - Ask AI a question (no memory)\n"
-            "`!generate <prompt>` - Generate an AI image using HiDream model"
-        ),
-        inline=False
-    )
-    
-    embed.set_footer(text="🐕 Woof! Use these commands to interact with me!")
-    await ctx.send(embed=embed)
-
-@bot.command()
-async def chat(ctx, *, message):
-    """Chat with AI with conversation memory"""
-    if not message:
-        await ctx.send("❌ Please provide a message to chat about!")
-        return
-    
     try:
-        # Show typing indicator
+        perms = getattr(ctx.author, 'guild_permissions', None)
+        if perms and (perms.administrator or perms.manage_guild or perms.manage_roles):
+            return True
+        for role in getattr(ctx.author, 'roles', []):
+            name = getattr(role, 'name', '').lower()
+            if 'admin' in name or 'moderator' in name or name == 'mod':
+                return True
+        return False
+    except Exception:
+        return False
+
+@bot.command()
+async def chat(ctx, *, message: str):
+    """Chat with the AI and optionally create polls with emoji reactions.
+
+    This command wraps the AI call, splits long responses, and then
+    (best-effort) parses any poll options from the AI's response and adds
+    matching reactions. Poll parsing is heuristic and best-effort.
+    """
+    if not message:
+        await ctx.send("❌ Please provide a message to chat with the AI.")
+        return
+
+    try:
         async with ctx.typing():
             user_id = str(ctx.author.id)
-            response = await get_ai_response_with_history(user_id, message, use_history=True)
-            
-            # Save this exchange to chat history
-            await save_chat_message(user_id, message, response)
-        
-        # Split long responses if needed
+            # Use history-aware response when available
+            response = await get_ai_response_with_history(user_id, message)
+
+        sent_messages = []
+        # Split long responses into 2000-char chunks and send them sequentially
         if len(response) > 2000:
             chunks = [response[i:i+2000] for i in range(0, len(response), 2000)]
             for chunk in chunks:
-                await ctx.send(chunk)
+                m = await ctx.send(chunk)
+                sent_messages.append((m, chunk))
+                await asyncio.sleep(0.05)
         else:
-            await ctx.send(response)
-            
-    except Exception as e:
-        await ctx.send(f"❌ Error processing chat: {str(e)}")
+            m = await ctx.send(response)
+            sent_messages.append((m, response))
 
+        # If the user asked to create a poll, try to parse options and add reactions
+        try:
+            poll_lc = message.lower()
+            is_poll_request = ('poll' in poll_lc and 'create' in poll_lc) or re.search(r"\bcreate\b.*\bpoll\b", poll_lc)
+            if not is_poll_request:
+                return
+
+            logging.info(f"[POLL] Detected poll request: {poll_lc[:160]}")
+
+            # Lightweight option extractor (tries bullets, numbered lines, or comma lists)
+            def extract_poll_options(text: str) -> list:
+                opts = []
+                # lines beginning with a bullet or digit
+                for line in text.splitlines():
+                    s = line.strip()
+                    if not s:
+                        continue
+                    if re.match(r'^[\d]+[\.)]\s+', s) or s.startswith(('-', '*', '•')):
+                        # strip leading marker
+                        s2 = re.sub(r'^[\d]+[\.)]\s+|^[\-\*•]\s+', '', s).strip()
+                        if s2:
+                            opts.append(s2)
+                    elif ',' in s and len(s.split(',')) <= 12:
+                        parts = [p.strip() for p in s.split(',') if p.strip()]
+                        if len(parts) > 1:
+                            opts.extend(parts)
+                # Fallback: if we found nothing, try newline tokens
+                if not opts:
+                    lines = [l.strip() for l in text.splitlines() if l.strip()]
+                    if len(lines) > 1:
+                        return lines
+                return opts
+
+            # helper to parse inline user-provided options
+            def parse_inline_from_user(msg_text: str) -> list:
+                parts = [p.strip() for p in re.split(r'[;,\n]', msg_text) if p.strip()]
+                if len(parts) > 1:
+                    return parts
+                # try splitting on double spaces
+                parts = [p.strip() for p in re.split(r'\s{2,}', msg_text) if p.strip()]
+                return parts
+
+            number_emojis = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟']
+
+            for sent_msg, chunk_text in sent_messages:
+                options = extract_poll_options(chunk_text)
+                if not options:
+                    options = parse_inline_from_user(message)
+
+                # sanitize & dedupe
+                opts_clean = []
+                seen = set()
+                for o in options:
+                    o_clean = re.sub(r"^(?:\d+[\.)]|[\-•\*]\s+|\d+\.)\s*", '', o).strip()
+                    if o_clean and o_clean.lower() not in seen:
+                        opts_clean.append(o_clean)
+                        seen.add(o_clean.lower())
+                    if len(opts_clean) >= 26:
+                        break
+
+                # If many tokens were pulled from the full user sentence (common when splitting
+                # the prompt on commas), prefer tokens that look like times (e.g. '5pm') or
+                # short option fragments. This prevents the long instruction sentence from
+                # being interpreted as an option (it often contains '1-2 hours' which would
+                # incorrectly map to a '1' clock).
+                if opts_clean:
+                    # normalize common 'other' phrasing
+                    opts_clean = [o if 'other' not in o.lower() else 'Other' for o in opts_clean]
+
+                    # collect items that look like times (contain 'am'/'pm' or standalone hour)
+                    time_like = []
+                    time_re = re.compile(r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b", flags=re.IGNORECASE)
+                    for o in opts_clean:
+                        # treat as time-like if contains pm/am or is a short digit token
+                        low = o.lower()
+                        if re.search(r"\b(am|pm)\b", low) or re.match(r"^\d{1,2}(?::\d{2})?$", o.strip()):
+                            time_like.append(o)
+
+                    # If we detected multiple time-like tokens among the parsed options,
+                    # prefer them and drop long sentence-like entries.
+                    if len(time_like) >= 2 and len(time_like) >= (len(opts_clean) // 2):
+                        opts_clean = time_like
+
+                if not opts_clean:
+                    # nothing to do
+                    continue
+
+                # Emoji banks
+                alpha_emojis = [chr(0x1F1E6 + i) for i in range(26)]
+
+                # Try to detect and extract any leading emoji in each option (the AI
+                # may include its own emoji labels). If present, prefer using the
+                # same emoji as the reaction so labels and reactions match.
+                def extract_leading_emoji(s: str):
+                    """Return (emoji, rest_of_string).
+
+                    This will detect custom discord emoji like <a:name:id>,
+                    keycap sequences (e.g. 1️⃣), and common unicode emoji
+                    sequences anywhere near the start. If no emoji is found,
+                    returns (None, original_string).
+                    
+                    NOTE: Regional indicator symbols (flag letters like 🇦 🇧) are
+                    intentionally excluded as they're typically list markers, not
+                    meaningful poll reaction emojis.
+                    """
+                    if not s:
+                        return None, s
+                    # custom emoji like <a:name:id> at start
+                    m = re.match(r'^(<a?:\w+:\d+>)\s*(.*)', s)
+                    if m:
+                        return m.group(1), m.group(2).strip()
+
+                    # Try to find a keycap (e.g. 1️⃣) or digit+combining marks at start
+                    m = re.match(r'^([0-9]\ufe0f?\u20e3)\s*(.*)', s)
+                    if m:
+                        return m.group(1), m.group(2).strip()
+
+                    # Generic emoji regex for several common emoji blocks.
+                    # Explicitly EXCLUDES regional indicator symbols (U+1F1E6-U+1F1FF)
+                    # which are used for flag letters and often appear as list markers.
+                    emoji_pattern = re.compile(
+                        r'(^|\s)('
+                        r'<a?:\w+:\d+>|'  # custom emoji
+                        r'[\u2600-\u26FF]\ufe0f?|'  # Misc symbols
+                        r'[\u2700-\u27BF]\ufe0f?|'  # Dingbats
+                        r'[\U0001F300-\U0001F5FF]+|'  # symbols & pictographs
+                        r'[\U0001F600-\U0001F64F]+|'  # emoticons
+                        r'[\U0001F680-\U0001F6FF]+|'  # transport & map
+                        r'[0-9]\ufe0f?\u20e3'  # keycap
+                        r')', flags=re.UNICODE)
+
+                    m2 = emoji_pattern.search(s)
+                    if m2:
+                        # Use the matched emoji token (strip leading space)
+                        token = m2.group(2)
+                        # remove the first occurrence of the token from the string
+                        rest = s.replace(token, '', 1).strip()
+                        return token, rest
+
+                    # Fallback: if first character looks non-ascii and is likely emoji
+                    # BUT exclude regional indicators (0x1F1E6-0x1F1FF)
+                    first = s[0]
+                    first_ord = ord(first)
+                    if first_ord > 127 and not first.isalnum():
+                        # Exclude regional indicator range
+                        if not (0x1F1E6 <= first_ord <= 0x1F1FF):
+                            rest = s[1:].strip()
+                            return first, rest
+
+                    return None, s
+
+                leading = []
+                stripped_labels = []
+                for o in opts_clean:
+                    em, rest = extract_leading_emoji(o)
+                    leading.append(em)
+                    stripped_labels.append(rest if rest else o)
+
+                # Only use emojis that the AI explicitly included in the response
+                reaction_emojis = []
+                
+                # Extract emojis the AI included, filtering out regional indicators
+                for i, opt in enumerate(opts_clean):
+                    lead = leading[i] if i < len(leading) else None
+                    # Double-check: exclude any regional indicator symbols
+                    if lead and len(lead) == 1 and 0x1F1E6 <= ord(lead) <= 0x1F1FF:
+                        lead = None  # Ignore regional indicators
+                    
+                    if lead:
+                        reaction_emojis.append(lead)
+
+                # Add reactions using only the emojis found in AI response
+                poll_debug = os.getenv('POLL_DEBUG', '0') == '1'
+                
+                # Filter out plain ASCII digits, None values, and regional indicators
+                filtered = []
+                for e in reaction_emojis:
+                    if not e:
+                        continue
+                    # Skip plain ASCII digits
+                    if len(e) == 1 and e.isdigit():
+                        continue
+                    # Skip regional indicators
+                    if len(e) == 1 and 0x1F1E6 <= ord(e) <= 0x1F1FF:
+                        continue
+                    filtered.append(e)
+                
+                if poll_debug:
+                    try:
+                        await ctx.send(f"[POLL DEBUG] will add {len(filtered)} reactions: {', '.join(filtered)}")
+                    except Exception:
+                        pass
+
+                for em in filtered:
+                    try:
+                        await sent_msg.add_reaction(em)
+                        await asyncio.sleep(0.25)
+                    except discord.Forbidden:
+                        await ctx.send('❌ I do not have permission to add reactions. Please give me Add Reactions permission.')
+                        break
+                    except Exception as ex:
+                        logging.exception(f"[POLL] Failed to add reaction {em}: {ex}")
+                        continue
+        except Exception:
+            # ignore poll reaction errors
+            pass
+
+    except Exception as e:
+        await ctx.send(f"❌ Error processing chat: {str(e)}")                        
 @bot.command()
 async def ask(ctx, *, question):
     """Ask AI a question without conversation memory"""
@@ -618,34 +782,34 @@ async def clear_history(ctx):
 
 @bot.command()
 async def history(ctx):
-    """View your recent chat history"""
+    """Show recent chat history"""
     try:
         user_id = str(ctx.author.id)
         history = await get_chat_history(user_id, limit=5)
-        
+
         if not history:
-            await ctx.send("📭 Your chat history is empty!")
+            await ctx.send("ℹ️ No chat history found.")
             return
-        
+
         embed = discord.Embed(
             title="💬 Your Recent Chat History",
             color=discord.Color.green()
         )
-        
+
         for i, (user_msg, ai_response) in enumerate(history, 1):
             # Truncate long messages for display
             display_user_msg = user_msg[:100] + "..." if len(user_msg) > 100 else user_msg
             display_ai_response = ai_response[:200] + "..." if len(ai_response) > 200 else ai_response
-            
+
             embed.add_field(
                 name=f"💬 Exchange {i}",
                 value=f"**You:** {display_user_msg}\n**Dogbot:** {display_ai_response}",
                 inline=False
             )
-        
+
         embed.set_footer(text="Use !clear_history to clear this history")
         await ctx.send(embed=embed)
-        
+
     except Exception as e:
         await ctx.send(f"❌ Error retrieving history: {str(e)}")
 
