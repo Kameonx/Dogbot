@@ -1644,6 +1644,64 @@ async def modhelp(ctx):
     embed.set_footer(text="🔧 These commands help with troubleshooting and management!")
     await ctx.send(embed=embed)
 
+
+@bot.command(name='help')
+async def help_cmd(ctx):
+    """Show user-facing help for common commands."""
+    embed = discord.Embed(
+        title="🐶 Dogbot Help",
+        description="Common commands to interact with Dogbot. Use `!modhelp` for moderator and debug commands.",
+        color=discord.Color.blue()
+    )
+
+    embed.add_field(
+        name="💬 Chat & AI",
+        value=(
+            "`!chat <message>` - Chat with the AI and optionally create polls\n"
+            "`!ask <question>` - Ask the AI without conversation memory\n"
+            "`!generate <prompt>` - Generate an AI image (if enabled)\n"
+            "`!clear_history` - Clear your chat history\n"
+            "`!history` - Show recent chat history"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="🎭 Roles",
+        value=(
+            "`!dogsrole`, `!catsrole`, `!lizardsrole`, `!elvesrole` - Add fun server roles to yourself\n"
+            "`!pvprole`, `!tankrole`, `!healerrole`, `!dpsrole` - Add gameplay roles to yourself\n"
+            "Use `!removedogsrole` / `!removecatsrole` / `!removeelvesrole` etc. to remove them from yourself"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="🎵 Music (basic)",
+        value=(
+            "`!join` - Make the bot join your voice channel and start music\n"
+            "`!leave` - Make the bot leave voice channel\n"
+            "`!play <url>` - Play a YouTube URL\n"
+            "`!skip` / `!next` - Skip the current song\n"
+            "`!np` - Show now playing\n"
+            "`!playlist` / `!queue` - Show playlist info"
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="🔧 Diagnostics",
+        value=(
+            "`!status` - Voice connection status\n"
+            "`!audiotest` - Test audio system components\n"
+            "`!voicediag` - Detailed voice diagnostics"
+        ),
+        inline=False
+    )
+
+    embed.set_footer(text="Use !modhelp to view moderator commands and assignment tools.")
+    await ctx.send(embed=embed)
+
 ## Download command removed: the bot now streams audio only.
 
 @bot.command()
