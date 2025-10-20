@@ -66,6 +66,10 @@ cats_role_name = "Cats"
 lizards_role_name = "Lizards"
 pvp_role_name = "PVP"
 elves_role_name = "Elves"
+# Game role names (added for tank/healer/dps commands)
+tank_role_name = "Tank"
+healer_role_name = "Healer"
+dps_role_name = "DPS"
 
 # Initialize global variables for music functionality
 music_bot = None
@@ -447,6 +451,7 @@ async def on_message(message):
     # Just process commands, don't handle them manually here
     await bot.process_commands(message)
 
+
 @bot.event
 async def on_command_error(ctx, error):
     """Surface command errors so they don't look like silent failures."""
@@ -463,6 +468,7 @@ async def on_command_error(ctx, error):
     # Always log traceback for debugging
     print("[COMMAND_ERROR]", type(error).__name__, "-", error)
 
+
 @bot.before_invoke
 async def log_command_invocation(ctx):
     try:
@@ -473,6 +479,7 @@ async def log_command_invocation(ctx):
         print(f"[COMMAND] {user} invoked !{cmd} in {chan} @ {guild}")
     except Exception as e:
         print(f"[COMMAND] Invocation log error: {e}")
+
 
 @bot.event
 async def on_voice_state_update(member, before, after):
@@ -501,6 +508,7 @@ def has_admin_or_moderator_role(ctx):
         return False
     except Exception:
         return False
+
 
 @bot.command()
 async def chat(ctx, *, message: str):
@@ -619,8 +627,18 @@ async def chat(ctx, *, message: str):
                     # nothing to do
                     continue
 
-                # Emoji banks
+                # Emoji selection heuristics (time vs dungeon vs general)
+                # Emoji banks. If FORCE_SAFE_EMOJI is set, prefer conservative sets
+                dungeon_emojis = ['🐉','🗡️','🛡️','🧙','🧭','🕯️','🗺️','👹','👾','🧟']
+                time_emojis = number_emojis.copy()
                 alpha_emojis = [chr(0x1F1E6 + i) for i in range(26)]
+                if FORCE_SAFE_EMOJI:
+                    # Regional indicator letters 🇦..🇿 are safe and single-codepoint sequences
+                    alpha_emojis = [chr(0x1F1E6 + i) for i in range(26)]
+                    # Reduce dungeon emojis to simple safe symbols if needed
+                    dungeon_emojis = ['⚔️','🛡️','🧭','🗺️','🔮','🕯️','🔱','🏹','🪄','🗡️']
+                    # Keep number keycaps for times and numeric options
+                    time_emojis = number_emojis.copy()
 
                 # Try to detect and extract any leading emoji in each option (the AI
                 # may include its own emoji labels). If present, prefer using the
@@ -632,10 +650,6 @@ async def chat(ctx, *, message: str):
                     keycap sequences (e.g. 1️⃣), and common unicode emoji
                     sequences anywhere near the start. If no emoji is found,
                     returns (None, original_string).
-                    
-                    NOTE: Regional indicator symbols (flag letters like 🇦 🇧) are
-                    intentionally excluded as they're typically list markers, not
-                    meaningful poll reaction emojis.
                     """
                     if not s:
                         return None, s
@@ -650,13 +664,13 @@ async def chat(ctx, *, message: str):
                         return m.group(1), m.group(2).strip()
 
                     # Generic emoji regex for several common emoji blocks.
-                    # Explicitly EXCLUDES regional indicator symbols (U+1F1E6-U+1F1FF)
-                    # which are used for flag letters and often appear as list markers.
+                    # This is not perfect but covers most use-cases we need.
                     emoji_pattern = re.compile(
                         r'(^|\s)('
                         r'<a?:\w+:\d+>|'  # custom emoji
                         r'[\u2600-\u26FF]\ufe0f?|'  # Misc symbols
                         r'[\u2700-\u27BF]\ufe0f?|'  # Dingbats
+                        r'[\U0001F1E6-\U0001F1FF]+|'  # flags
                         r'[\U0001F300-\U0001F5FF]+|'  # symbols & pictographs
                         r'[\U0001F600-\U0001F64F]+|'  # emoticons
                         r'[\U0001F680-\U0001F6FF]+|'  # transport & map
@@ -672,75 +686,359 @@ async def chat(ctx, *, message: str):
                         return token, rest
 
                     # Fallback: if first character looks non-ascii and is likely emoji
-                    # BUT exclude regional indicators (0x1F1E6-0x1F1FF)
                     first = s[0]
-                    first_ord = ord(first)
-                    if first_ord > 127 and not first.isalnum():
-                        # Exclude regional indicator range
-                        if not (0x1F1E6 <= first_ord <= 0x1F1FF):
-                            rest = s[1:].strip()
-                            return first, rest
+                    if ord(first) > 127 and not first.isalnum():
+                        rest = s[1:].strip()
+                        return first, rest
 
                     return None, s
 
                 leading = []
                 stripped_labels = []
+                # Expand common colon-style shortcodes like :rainbow: into actual emoji
+                SHORTCODE_TO_EMOJI = {
+                    'rainbow': '🌈', 'fire': '🔥', 'snake': '🐍', 'man_detective': '🕵️‍♂️',
+                    'wrench': '🔧', 'clock': '⏰', 'cloud': '☁️', 'sun_with_face': '🌞',
+                    'ocean': '🌊', 'deciduous_tree': '🌳', 'pirate_flag': '🏴\u200d☠️', 'brain': '🧠',
+                    'european_castle': '🏰', 'chart_with_upwards_trend': '📈', 'tada': '🎉'
+                }
+
+                def expand_shortcodes(text: str):
+                    if not text:
+                        return text
+                    def repl(m):
+                        key = m.group(1)
+                        return SHORTCODE_TO_EMOJI.get(key, m.group(0))
+                    return re.sub(r':([a-z0-9_+-]+):', repl, text, flags=re.IGNORECASE)
+
+                # apply to the chunk and the option texts so later parsing sees real emoji
+                chunk_text = expand_shortcodes(chunk_text)
+                # expand shortcodes in parsed options too
+                opts_clean = [expand_shortcodes(o) for o in opts_clean]
                 for o in opts_clean:
                     em, rest = extract_leading_emoji(o)
                     leading.append(em)
                     stripped_labels.append(rest if rest else o)
+                # replace opts_clean visuals with stripped labels for display
+                opts_display = stripped_labels[:]
 
-                # Only use emojis that the AI explicitly included in the response
-                reaction_emojis = []
-                
-                # Extract emojis the AI included, filtering out regional indicators
-                for i, opt in enumerate(opts_clean):
-                    lead = leading[i] if i < len(leading) else None
-                    # Double-check: exclude any regional indicator symbols
-                    if lead and len(lead) == 1 and 0x1F1E6 <= ord(lead) <= 0x1F1FF:
-                        lead = None  # Ignore regional indicators
-                    
-                    if lead:
-                        reaction_emojis.append(lead)
+                def looks_like_times(opts):
+                    return any(re.search(r"\d{1,2}(:\d{2})?\s*(am|pm)?", o, flags=re.IGNORECASE) or re.search(r"\d{1,2}\s*[-–—]\s*\d{1,2}", o) for o in opts)
+                def looks_like_dungeon(opts):
+                    keywords = ['dungeon','dragon','monster','boss','cavern','lair','raid','dnd','dungeons']
+                    return any(any(k in o.lower() for k in keywords) for o in opts)
 
-                # Add reactions using only the emojis found in AI response
-                poll_debug = os.getenv('POLL_DEBUG', '0') == '1'
-                
-                # Filter out plain ASCII digits, None values, and regional indicators
-                filtered = []
-                for e in reaction_emojis:
-                    if not e:
-                        continue
-                    # Skip plain ASCII digits
-                    if len(e) == 1 and e.isdigit():
-                        continue
-                    # Skip regional indicators
-                    if len(e) == 1 and 0x1F1E6 <= ord(e) <= 0x1F1FF:
-                        continue
-                    filtered.append(e)
-                
-                if poll_debug:
+                emojis = []
+                if looks_like_dungeon(opts_clean):
+                    emojis = [dungeon_emojis[i % len(dungeon_emojis)] for i in range(len(opts_clean))]
+                elif looks_like_times(opts_clean):
+                    # If the user explicitly asked for clock emoji mapping (e.g.
+                    # 'map the correct clock emoji' or mentioned 'clock'), then
+                    # deterministically map each parsed hour to the correct clock
+                    # glyph (🕐..🕛). Otherwise, fall back to safe random emoji
+                    # assignment. This honors the user's explicit instruction even
+                    # when FORCE_SAFE_EMOJI is True.
+                    want_clocks = bool(re.search(r"clock|clock emoji|map the correct clock|map.*clock", message, flags=re.IGNORECASE))
+
+                    if want_clocks:
+                        # deterministic clock mapping
+                        clock_map = {
+                            12: '🕛', 1: '🕐', 2: '🕑', 3: '🕒', 4: '🕓', 5: '🕔',
+                            6: '🕕', 7: '🕖', 8: '🕗', 9: '🕘', 10: '🕙', 11: '🕚'
+                        }
+                        emojis = []
+                        used = set()
+                        # Try to parse explicit hour tokens first; if parsing fails,
+                        # fall back to positional mapping based on numeric content.
+                        hours_parsed = []
+                        for opt in opts_clean:
+                            m = re.search(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", opt, flags=re.IGNORECASE)
+                            if m:
+                                h = int(m.group(1))
+                                ampm = m.group(3)
+                                if ampm:
+                                    ampm = ampm.lower()
+                                    if ampm == 'pm' and h != 12:
+                                        h = (h % 12) + 12
+                                    if ampm == 'am' and h == 12:
+                                        h = 0
+                                h12 = h % 12
+                                if h12 == 0:
+                                    h12 = 12
+                                hours_parsed.append(h12)
+                            else:
+                                hours_parsed.append(None)
+
+                        # If no explicit hours parsed but options contain plain digits like '5',
+                        # try extracting single-number tokens in order
+                        if all(h is None for h in hours_parsed):
+                            simple_nums = []
+                            for opt in opts_clean:
+                                m = re.search(r"\b(\d{1,2})\b", opt)
+                                simple_nums.append(int(m.group(1)) if m else None)
+                            if any(n is not None for n in simple_nums):
+                                hours_parsed = [ (n % 12) if n is not None else None for n in simple_nums]
+
+                        # Build emojis in order
+                        for idx, opt in enumerate(opts_clean):
+                            picked = None
+                            lowopt = opt.lower()
+                            # special-case Other
+                            if 'other' in lowopt:
+                                picked = '🔄'
+
+                            if picked is None:
+                                h12 = hours_parsed[idx]
+                                if isinstance(h12, int):
+                                    cand = clock_map.get(h12)
+                                    if cand and cand not in used:
+                                        picked = cand
+
+                            # Try adjacent or leading emoji if parsing failed
+                            if not picked:
+                                lead = leading[idx] if idx < len(leading) else None
+                                if lead and lead not in used:
+                                    picked = lead
+
+                            # As a last resort, pick the next unused number keycap or alpha
+                            if not picked:
+                                for te in number_emojis + alpha_emojis + ['🔘']:
+                                    if te not in used:
+                                        picked = te
+                                        break
+
+                            emojis.append(picked)
+                            used.add(picked)
+                    else:
+                        # Non-clock safe random assignment (preserve AI leading emojis)
+                        extra_safe = ['🔹','🔸','⚪','⚫','🔻','🔺','🟣','🟢','🟡','🔵','🟠','🔴','🟤']
+                        if FORCE_SAFE_EMOJI:
+                            safe_pool = number_emojis + alpha_emojis + extra_safe
+                        else:
+                            safe_pool = number_emojis + alpha_emojis + ['🎯','🎲','🎴','🪄','🛡️','⚔️'] + extra_safe
+
+                        safe_pool = [e for e in safe_pool if e]
+                        count = len(opts_clean)
+                        used = set()
+                        emojis = [None] * count
+                        for idx, opt in enumerate(opts_clean):
+                            lead = leading[idx] if idx < len(leading) else None
+                            if lead:
+                                emojis[idx] = lead
+                                used.add(lead)
+
+                        available = [e for e in safe_pool if e not in used]
+                        if len(available) < count:
+                            available = available + [e for e in alpha_emojis if e not in available]
+                        picks = random.sample(available, k=max(0, count - sum(1 for e in emojis if e))) if available else []
+                        pi = 0
+                        for i in range(count):
+                            if emojis[i] is None:
+                                pick = picks[pi] if pi < len(picks) else ('🔘')
+                                emojis[i] = pick
+                                used.add(pick)
+                                pi += 1
+                elif len(opts_clean) == 2:
+                    emojis = ['✅','❌']
+                else:
+                    # default: number keycaps up to 10, then alphabet fallbacks
+                    emojis = []
+                    for i in range(len(opts_clean)):
+                        if i < len(number_emojis):
+                            emojis.append(number_emojis[i])
+                        else:
+                            emojis.append(alpha_emojis[i - len(number_emojis)])
+
+                # final dedupe & ensure one-per-option
+                # For time-like polls we've already chosen emojis in order and ensured uniqueness
+                # (used set). Preserve the ordering for time-mode to match the displayed labels.
+                if looks_like_times(opts_clean):
+                    # if the AI already labeled options with emojis, prefer those
+                    final = []
+                    for i, cand in enumerate(emojis):
+                        lead = leading[i] if i < len(leading) else None
+                        if lead:
+                            final.append(lead)
+                        else:
+                            final.append(cand)
+                else:
+                    final = []
+                    used = set()
+                    for i in range(len(opts_clean)):
+                        cand = emojis[i] if i < len(emojis) else None
+                        if cand in used or cand is None:
+                            # find first unused
+                            for c in (number_emojis + alpha_emojis + ['🔘']):
+                                if c not in used:
+                                    cand = c
+                                    break
+                        final.append(cand)
+                        used.add(cand)
+
+                # Edit the message to display labeled options (best-effort)
                     try:
-                        await ctx.send(f"[POLL DEBUG] will add {len(filtered)} reactions: {', '.join(filtered)}")
+                        # Helper: extract emoji-like tokens from the whole AI chunk text
+                        def find_emoji_tokens(text: str):
+                            if not text:
+                                return []
+                            # Broad emoji-ish pattern: includes common emoji blocks, variation selectors, and ZWJ
+                            pat = re.compile(r'([\U0001F1E6-\U0001F9FF\u2600-\u26FF\u2700-\u27BF\u200d\ufe0f]+)', flags=re.UNICODE)
+                            toks = [m.group(1) for m in pat.finditer(text)]
+                            return toks
+
+                        chunk_emojis = find_emoji_tokens(chunk_text)
+
+                        # Helper: find an emoji immediately before or after the option text in the chunk
+                        def find_adjacent_emoji(option_text: str, full_text: str):
+                            if not option_text or not full_text:
+                                return None
+                            try:
+                                # escape the option for regex and allow small variations in whitespace
+                                opt_pat = re.escape(option_text.strip())
+                                for m in re.finditer(opt_pat, full_text, flags=re.IGNORECASE):
+                                    s, e = m.start(), m.end()
+                                    # window size (characters) to search for adjacent emojis
+                                    window = 12
+                                    after = full_text[e:e+window]
+                                    before = full_text[max(0, s-window):s]
+
+                                    # emoji-ish regex (covers common blocks and custom emoji)
+                                    adj_pat = re.compile(r'(<a?:\w+:\d+>|[\u2600-\u26FF]\ufe0f?|[\u2700-\u27BF]\ufe0f?|[\U0001F1E6-\U0001F9FF]+|[0-9]\ufe0f?\u20e3)', flags=re.UNICODE)
+
+                                    # prefer emoji immediately after the option (e.g., "Dinner 🍽️")
+                                    m2 = adj_pat.search(after)
+                                    if m2:
+                                        return m2.group(1)
+
+                                    # otherwise check before (e.g., "🍽️ Dinner")
+                                    m3 = list(adj_pat.finditer(before))
+                                    if m3:
+                                        return m3[-1].group(1)
+                                return None
+                            except Exception:
+                                return None
+                        # Build the display_emojis list so that the emoji shown next to
+                        # each option is exactly the emoji we will add as a reaction.
+                        display_emojis = [None] * len(final)
+                        used_em = set()
+
+                        # First pass: prefer any explicit emoji the AI already used in the option
+                        for i in range(len(final)):
+                            lead = leading[i] if i < len(leading) else None
+                            if lead and lead not in used_em:
+                                display_emojis[i] = lead
+                                used_em.add(lead)
+
+                        # Second preference: if the AI chunk contained emoji tokens, use them
+                        # in order for any positions that don't already have a leading emoji.
+                        if chunk_emojis:
+                            # take first N tokens
+                            for i in range(len(final)):
+                                if display_emojis[i] is None and i < len(chunk_emojis):
+                                    tok = chunk_emojis[i]
+                                    if tok not in used_em:
+                                        display_emojis[i] = tok
+                                        used_em.add(tok)
+
+                        # Second pass: fill remaining slots from computed final list
+                        for i in range(len(final)):
+                            if display_emojis[i] is None:
+                                cand = final[i] if i < len(final) else None
+                                if cand and cand not in used_em:
+                                    display_emojis[i] = cand
+                                    used_em.add(cand)
+
+                        # Third pass: fill with preferred banks ensuring uniqueness
+                        if FORCE_SAFE_EMOJI:
+                            # Prefer number keycaps then regional indicators
+                            banks = number_emojis + alpha_emojis + ['🔘']
+                        else:
+                            banks = number_emojis + alpha_emojis + ['🔘']
+                        bidx = 0
+                        for i in range(len(final)):
+                            if display_emojis[i] is None:
+                                while bidx < len(banks) and banks[bidx] in used_em:
+                                    bidx += 1
+                                pick = banks[bidx] if bidx < len(banks) else '🔘'
+                                display_emojis[i] = pick
+                                used_em.add(pick)
+
+                        # Safety: pad if somehow short
+                        while len(display_emojis) < len(opts_display):
+                            for c in banks:
+                                if c not in used_em:
+                                    display_emojis.append(c)
+                                    used_em.add(c)
+                                    break
+
+                        # Build display lines using the exact emojis we will react with
+                        display_lines = [f"{display_emojis[i]} {opts_display[i] if i < len(opts_display) else opts_clean[i]}" for i in range(len(display_emojis))]
+
+                        already_has = any(opt in chunk_text for opt in opts_display) or any(e in chunk_text for e in display_emojis)
+                        if not already_has:
+                            new_content = chunk_text + "\n\n" + "Select an option:\n" + "\n".join(display_lines)
+                            await sent_msg.edit(content=new_content)
+                            await asyncio.sleep(0.12)
+                        # --- Add reactions for this sent_msg (authoritative per-message) ---
+                        try:
+                            # determine debug flag for this block
+                            poll_debug = os.getenv('POLL_DEBUG', '0') == '1'
+                            # Determine authoritative reaction list for this message using safe lookups
+                            definitive_msg = locals().get('display_emojis') or locals().get('emojis') or locals().get('reaction_list') or locals().get('ordered') or locals().get('final') or number_emojis[:len(opts_clean)]
+                            definitive_msg = definitive_msg[:len(opts_clean)]
+
+                            seen_msg = set()
+                            final_reactions_msg = []
+                            leading_list = leading if 'leading' in locals() else []
+                            for token in definitive_msg:
+                                if not token:
+                                    continue
+                                if len(token) == 1 and token.isdigit():
+                                    continue
+                                if token in number_emojis and token not in leading_list:
+                                    continue
+                                if token in seen_msg:
+                                    continue
+                                seen_msg.add(token)
+                                final_reactions_msg.append(token)
+
+                            if poll_debug:
+                                try:
+                                    await ctx.send(f"[POLL DEBUG] will add {len(final_reactions_msg)} reactions (for one message): {final_reactions_msg}")
+                                except Exception:
+                                    logging.exception('Failed to send POLL_DEBUG')
+
+                            for token in final_reactions_msg:
+                                try:
+                                    m = re.match(r'^<a?:(\w+):(\d+)>$', token)
+                                    if m:
+                                        name = m.group(1)
+                                        eid = int(m.group(2))
+                                        pe = discord.PartialEmoji(name=name, id=eid, animated=token.startswith('<a:'))
+                                        await sent_msg.add_reaction(pe)
+                                    else:
+                                        await sent_msg.add_reaction(token)
+                                    await asyncio.sleep(0.18)
+                                except discord.Forbidden:
+                                    await ctx.send('❌ I do not have permission to add reactions. Please give me Add Reactions permission.')
+                                    break
+                                except Exception as ex:
+                                    logging.exception('[POLL] Failed to add reaction %s: %s', token, ex)
+                                    continue
+                        except Exception:
+                            # don't let reaction errors break the whole chat
+                            logging.exception('Failed while preparing reactions for sent_msg')
                     except Exception:
                         pass
 
-                for em in filtered:
-                    try:
-                        await sent_msg.add_reaction(em)
-                        await asyncio.sleep(0.25)
-                    except discord.Forbidden:
-                        await ctx.send('❌ I do not have permission to add reactions. Please give me Add Reactions permission.')
-                        break
-                    except Exception as ex:
-                        logging.exception(f"[POLL] Failed to add reaction {em}: {ex}")
-                        continue
+            # (Reactions are added per-message above to ensure correct targeting.)
         except Exception:
             # ignore poll reaction errors
             pass
 
     except Exception as e:
-        await ctx.send(f"❌ Error processing chat: {str(e)}")                        
+        await ctx.send(f"❌ Error processing chat: {str(e)}")
+
 @bot.command()
 async def ask(ctx, *, question):
     """Ask AI a question without conversation memory"""
@@ -1283,11 +1581,17 @@ async def modhelp(ctx):
             "`!catsrole` - Add Cats role 🐱\n"
             "`!lizardsrole` - Add Lizards role 🦎\n"
             "`!pvprole` - Add PVP role ⚔️\n"
+            "`!tankrole` - Add Tank role 🛡️\n"
+            "`!healerrole` - Add Healer role 💚\n"
+            "`!dpsrole` - Add DPS role ⚔️\n"
             "**Remove Roles:**\n"
             "`!removedogsrole` - Remove Dogs role\n"
             "`!removecatsrole` - Remove Cats role\n"
             "`!removelizardsrole` - Remove Lizards role\n"
-            "`!removepvprole` - Remove PVP role"
+            "`!removepvprole` - Remove PVP role\n"
+            "`!removetankrole` - Remove Tank role\n"
+            "`!removehealerrole` - Remove Healer role\n"
+            "`!removedpsrole` - Remove DPS role"
         ),
         inline=False
     )
@@ -1305,7 +1609,13 @@ async def modhelp(ctx):
             "`!assignelvesrole @username` - Assign Elves role to user\n"
             "`!removeelvesrolefrom @username` - Remove Elves role from user\n"
             "`!assignpvprole @username` - Assign PVP role to user\n"
-            "`!removepvprolefrom @username` - Remove PVP role from user"
+            "`!removepvprolefrom @username` - Remove PVP role from user\n"
+            "`!assigntankrole @username` - Assign Tank role to user\n"
+            "`!removetankrolefrom @username` - Remove Tank role from user\n"
+            "`!assignhealerrole @username` - Assign Healer role to user\n"
+            "`!removehealerrolefrom @username` - Remove Healer role from user\n"
+            "`!assigndpsrole @username` - Assign DPS role to user\n"
+            "`!removedpsrolefrom @username` - Remove DPS role from user"
         ),
         inline=False
     )
@@ -1542,6 +1852,69 @@ async def assigndogsrole(ctx, member: Optional[discord.Member] = None):
     except Exception as e:
         await ctx.send(f"❌ Error assigning role: {e}")
 
+
+@bot.command()
+async def tankrole(ctx):
+    """Add the Tank role to yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=tank_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{tank_role_name}' role doesn't exist on this server!")
+        return
+
+    if role in ctx.author.roles:
+        await ctx.send(f"🛡️ You already have the {tank_role_name} role!")
+        return
+
+    try:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"🛡️ Successfully added the {tank_role_name} role! Stay strong!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error assigning role: {e}")
+
+
+@bot.command()
+async def healerrole(ctx):
+    """Add the Healer role to yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=healer_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{healer_role_name}' role doesn't exist on this server!")
+        return
+
+    if role in ctx.author.roles:
+        await ctx.send(f"💚 You already have the {healer_role_name} role!")
+        return
+
+    try:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"💚 Successfully added the {healer_role_name} role! Heal on!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error assigning role: {e}")
+
+
+@bot.command()
+async def dpsrole(ctx):
+    """Add the DPS role to yourself"""
+    role = discord.utils.get(ctx.guild.roles, name=dps_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{dps_role_name}' role doesn't exist on this server!")
+        return
+
+    if role in ctx.author.roles:
+        await ctx.send(f"⚔️ You already have the {dps_role_name} role!")
+        return
+
+    try:
+        await ctx.author.add_roles(role)
+        await ctx.send(f"⚔️ Successfully added the {dps_role_name} role! Bring the pain!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error assigning role: {e}")
+
 @bot.command()
 async def removedogsrolefrom(ctx, member: Optional[discord.Member] = None):
     """Remove Dogs role from a user (moderator only)"""
@@ -1721,6 +2094,234 @@ async def removepvprolefrom(ctx, member: Optional[discord.Member] = None):
     try:
         await member.remove_roles(role)
         await ctx.send(f"⚔️ Successfully removed the {pvp_role_name} role from {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+
+@bot.command()
+async def assigntankrole(ctx, member: Optional[discord.Member] = None):
+    """Assign Tank role to a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to! Usage: `!assigntankrole @username`")
+        return
+    role = discord.utils.get(ctx.guild.roles, name=tank_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{tank_role_name}' role doesn't exist on this server!")
+        return
+    if role in member.roles:
+        await ctx.send(f"🛡️ {member.mention} already has the {tank_role_name} role!")
+        return
+    try:
+        await member.add_roles(role)
+        await ctx.send(f"🛡️ Successfully assigned the {tank_role_name} role to {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error assigning role: {e}")
+
+
+@bot.command()
+async def removetankrole(ctx, member: Optional[discord.Member] = None):
+    """Remove the Tank role from yourself, or from @user if you're a moderator"""
+    role = discord.utils.get(ctx.guild.roles, name=tank_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{tank_role_name}' role doesn't exist on this server!")
+        return
+    target = member or ctx.author
+    if member is not None and not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to remove roles from others!")
+        return
+    if role not in target.roles:
+        await ctx.send(f"❌ {target.mention if member else 'You'} don't have the {tank_role_name} role!")
+        return
+    try:
+        await target.remove_roles(role)
+        if member:
+            await ctx.send(f"🛡️ Successfully removed the {tank_role_name} role from {target.mention}!")
+        else:
+            await ctx.send(f"🛡️ Successfully removed your {tank_role_name} role!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+
+@bot.command()
+async def removetankrolefrom(ctx, member: Optional[discord.Member] = None):
+    """Remove Tank role from a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from! Usage: `!removetankrolefrom @username`")
+        return
+    role = discord.utils.get(ctx.guild.roles, name=tank_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{tank_role_name}' role doesn't exist on this server!")
+        return
+    if role not in member.roles:
+        await ctx.send(f"❌ {member.mention} doesn't have the {tank_role_name} role!")
+        return
+    try:
+        await member.remove_roles(role)
+        await ctx.send(f"🛡️ Successfully removed the {tank_role_name} role from {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+
+@bot.command()
+async def assignhealerrole(ctx, member: Optional[discord.Member] = None):
+    """Assign Healer role to a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to! Usage: `!assignhealerrole @username`")
+        return
+    role = discord.utils.get(ctx.guild.roles, name=healer_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{healer_role_name}' role doesn't exist on this server!")
+        return
+    if role in member.roles:
+        await ctx.send(f"💚 {member.mention} already has the {healer_role_name} role!")
+        return
+    try:
+        await member.add_roles(role)
+        await ctx.send(f"💚 Successfully assigned the {healer_role_name} role to {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error assigning role: {e}")
+
+
+@bot.command()
+async def removehealerrole(ctx, member: Optional[discord.Member] = None):
+    """Remove the Healer role from yourself, or from @user if you're a moderator"""
+    role = discord.utils.get(ctx.guild.roles, name=healer_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{healer_role_name}' role doesn't exist on this server!")
+        return
+    target = member or ctx.author
+    if member is not None and not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to remove roles from others!")
+        return
+    if role not in target.roles:
+        await ctx.send(f"❌ {target.mention if member else 'You'} don't have the {healer_role_name} role!")
+        return
+    try:
+        await target.remove_roles(role)
+        if member:
+            await ctx.send(f"💚 Successfully removed the {healer_role_name} role from {target.mention}!")
+        else:
+            await ctx.send(f"💚 Successfully removed your {healer_role_name} role!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+
+@bot.command()
+async def removehealerrolefrom(ctx, member: Optional[discord.Member] = None):
+    """Remove Healer role from a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from! Usage: `!removehealerrolefrom @username`")
+        return
+    role = discord.utils.get(ctx.guild.roles, name=healer_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{healer_role_name}' role doesn't exist on this server!")
+        return
+    if role not in member.roles:
+        await ctx.send(f"❌ {member.mention} doesn't have the {healer_role_name} role!")
+        return
+    try:
+        await member.remove_roles(role)
+        await ctx.send(f"💚 Successfully removed the {healer_role_name} role from {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+
+@bot.command()
+async def assigndpsrole(ctx, member: Optional[discord.Member] = None):
+    """Assign DPS role to a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    if member is None:
+        await ctx.send("❌ Please mention a user to assign the role to! Usage: `!assigndpsrole @username`")
+        return
+    role = discord.utils.get(ctx.guild.roles, name=dps_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{dps_role_name}' role doesn't exist on this server!")
+        return
+    if role in member.roles:
+        await ctx.send(f"⚔️ {member.mention} already has the {dps_role_name} role!")
+        return
+    try:
+        await member.add_roles(role)
+        await ctx.send(f"⚔️ Successfully assigned the {dps_role_name} role to {member.mention}!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to assign roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error assigning role: {e}")
+
+
+@bot.command()
+async def removedpsrole(ctx, member: Optional[discord.Member] = None):
+    """Remove the DPS role from yourself, or from @user if you're a moderator"""
+    role = discord.utils.get(ctx.guild.roles, name=dps_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{dps_role_name}' role doesn't exist on this server!")
+        return
+    target = member or ctx.author
+    if member is not None and not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to remove roles from others!")
+        return
+    if role not in target.roles:
+        await ctx.send(f"❌ {target.mention if member else 'You'} don't have the {dps_role_name} role!")
+        return
+    try:
+        await target.remove_roles(role)
+        if member:
+            await ctx.send(f"⚔️ Successfully removed the {dps_role_name} role from {target.mention}!")
+        else:
+            await ctx.send(f"⚔️ Successfully removed your {dps_role_name} role!")
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to remove roles!")
+    except Exception as e:
+        await ctx.send(f"❌ Error removing role: {e}")
+
+
+@bot.command()
+async def removedpsrolefrom(ctx, member: Optional[discord.Member] = None):
+    """Remove DPS role from a user (moderator only)"""
+    if not has_admin_or_moderator_role(ctx):
+        await ctx.send("❌ You need Admin or Moderator role to use this command!")
+        return
+    if member is None:
+        await ctx.send("❌ Please mention a user to remove the role from! Usage: `!removedpsrolefrom @username`")
+        return
+    role = discord.utils.get(ctx.guild.roles, name=dps_role_name)
+    if role is None:
+        await ctx.send(f"❌ The '{dps_role_name}' role doesn't exist on this server!")
+        return
+    if role not in member.roles:
+        await ctx.send(f"❌ {member.mention} doesn't have the {dps_role_name} role!")
+        return
+    try:
+        await member.remove_roles(role)
+        await ctx.send(f"⚔️ Successfully removed the {dps_role_name} role from {member.mention}!")
     except discord.Forbidden:
         await ctx.send("❌ I don't have permission to remove roles!")
     except Exception as e:
